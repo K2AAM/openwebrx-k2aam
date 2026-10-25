@@ -92,8 +92,8 @@ Ale2gMessagePanel.prototype.render = function() {
     const stop = $('<button type="button">').text('Stop').prop('disabled',true).appendTo(row);
     const scopeRow = $('<div class="ale-scan-row">').appendTo(controls);
     const scopeLabel = $('<label>').appendTo(scopeRow);
-    const shared = $('<input type="checkbox" aria-label="Allow shared SDR retuning">').appendTo(scopeLabel);
-    scopeLabel.append(document.createTextNode(' Retune shared SDR across bands — affects EVERY listener'));
+    const shared = $('<input type="checkbox" aria-label="Scan across HF bands">').appendTo(scopeLabel);
+    scopeLabel.append(document.createTextNode(' Scan across HF bands (retunes SDR)'));
     const details = $('<details>').appendTo(controls);
     $('<summary>').text('Channels / skip · published plans and monitoring candidates').appendTo(details);
     const channels = $('<div class="ale-scan-channels">').appendTo(details);

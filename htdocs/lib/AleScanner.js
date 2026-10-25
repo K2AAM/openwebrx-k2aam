@@ -18,7 +18,7 @@ class AleScanController {
         this.shared = !!options.shared; this.dwell = options.dwell * 1000;
         this.channels = [...new Set(channels)].filter(f => Number.isSafeInteger(f) && f > 0 &&
             (this.shared || this.api.fits(f)));
-        if (!this.channels.length) throw new Error('No enabled bank channels fit this capture. Select another profile or explicitly enable shared SDR retuning.');
+        if (!this.channels.length) throw new Error('No enabled bank channels fit this capture. Select another profile or enable Scan across HF bands.');
         this.api.stopNativeScanner(); this.profile = snap.profile; this.socket = snap.socket;
         this.running = true; this.index = -1;
         await this.next();

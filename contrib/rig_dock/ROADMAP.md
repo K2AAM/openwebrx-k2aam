@@ -15,7 +15,7 @@ Verify the branch against both the SDRplay remote receiver and the Optiplex Airs
 
 ## Next project: ALE decoder
 
-An experimental receive-only 2G ALE prototype is in contrib/ale: a standalone decoder adapted from KiwiSDR/gr-ale, reference-audio tests, native USB mode/DSP integration, a message panel adopted by the shared tray, and a backed-up installer for stock 1.2.126. The 45-channel catalog contains HFN, HFL and optional COTHEN/HFGCS candidates. Experimental browser bank scanning now supports decoder-activity hold and explicit shared-retune opt-in. Live RF/scanner qualification, unattended backend scanning and 3G decoding remain pending. See contrib/ale/decoder/README.md for scope and limitations.
+An experimental receive-only 2G ALE prototype is in contrib/ale: a standalone decoder adapted from KiwiSDR/gr-ale, reference-audio tests, native USB mode/DSP integration, a message panel adopted by the shared tray, and a backed-up installer for stock 1.2.126. The 45-channel catalog contains HFN, HFL and optional COTHEN/HFGCS candidates. Experimental browser bank scanning now supports decoder-activity hold and explicit cross-band tuning opt-in. Live RF/scanner qualification, unattended backend scanning and 3G decoding remain pending. See contrib/ale/decoder/README.md for scope and limitations.
 
 ## Upstream maintenance
 

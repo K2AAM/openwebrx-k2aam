@@ -51,12 +51,12 @@ MP3/WAV file conversion uses the receiver's `ffmpeg`; the pinned AU reference ne
 
 ## Using the ALE scanner
 
-After restarting, select **ALE 2G (experimental)** from Modes. The scanner controls are inside its native message panel/shared decoder tray, separate from the stock RIG **Scan** button.
+After restarting, select **ALE 2G (experimental)** from Modes. The scanner controls are inside its native message panel/decoder tray, separate from the stock RIG **Scan** button.
 
 1. Expand **ALE scanner**, then select HFN, HFL, COTHEN candidates, or HFGCS candidates. On a small phone, increase the decoder tray Height to make room for the controls.
 2. Expand **Channels / skip** to uncheck unwanted entries.
-3. Leave shared retuning unchecked to scan only entries whose entire USB passband fits inside the current SDR capture. A narrow capture may contain only one bank entry, or none.
-4. For a dedicated receiver or an owner-authorized shared receiver, explicitly check **Retune shared SDR across bands — affects EVERY listener**. This uses the same native `setfrequency` request and magic-key/server permissions as manual out-of-capture tuning. It does not bypass permissions or alter profiles.
+3. Leave **Scan across HF bands** unchecked to scan only entries whose entire USB passband fits inside the current SDR capture. A narrow capture may contain only one bank entry, or none.
+4. Check **Scan across HF bands (retunes SDR)** to scan beyond the current capture. Retuning changes the SDR capture available to connected browsers. This uses the same native `setfrequency` request and magic-key/server permissions as manual out-of-capture tuning. It does not bypass permissions or alter profiles.
 5. Start with a **10-second dwell** and click **Start ALE scan**. Dwell is adjustable from 3–60 seconds and is experimental, not a validated optimum.
 
 The scanner shows tuning/scanning/activity/decoded/stop status. It holds on decoder synchronization/activity, not waterfall signal strength, then resumes three seconds after activity ends. A decoded message also extends the idle hold. A 120-second maximum hold prevents a stuck activity flag from holding forever; a longer exchange can be cut off at that limit. Acquisition resets through the existing native decoder restart on each frequency change. Channels are integer USB dial frequencies, with no audio-frequency offset.
@@ -102,7 +102,7 @@ The source's 15-second calling/preamble duration is not a scanner dwell setting.
 
 ## Remaining scanner work
 
-The first scanner runs in a visible browser tab, with explicit opt-in shared retuning. Server-side unattended operation, heard-station history, custom-channel editing, export, and validated weak-signal/dwell behavior remain future work. Stock OWRX bookmark Scanner remains separate and does not automatically load this catalog.
+The first scanner runs in a visible browser tab, with explicit opt-in cross-band tuning. Server-side unattended operation, heard-station history, custom-channel editing, export, and validated weak-signal/dwell behavior remain future work. Stock OWRX bookmark Scanner remains separate and does not automatically load this catalog.
 
 ## Maintenance
 

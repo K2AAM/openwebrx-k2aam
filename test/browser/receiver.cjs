@@ -325,7 +325,7 @@ const server=http.createServer((req,res)=>{
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
         await page.locator('.ale-scan-controls > summary').click();
         check(await page.getByRole('button',{name:'Start ALE scan',exact:true}).isVisible(),'ALE scanner controls are visible in tray');
-        check(await page.getByLabel('Allow shared SDR retuning').isChecked()===false,'ALE shared retuning is opt-in');
+        check(await page.getByLabel('Scan across HF bands').isChecked()===false,'ALE cross-band scanning is opt-in');
         await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
         await page.waitForFunction(()=>window.alePanel.scanner.running&&!window.alePanel.scanner.tuning);
         check(await page.evaluate(()=>UI.getFrequency()===7102000),'ALE bank start tunes native demodulator');
@@ -336,12 +336,12 @@ const server=http.createServer((req,res)=>{
         await page.getByRole('button',{name:'Stop',exact:true}).click();
         check(await page.evaluate(()=>!alePanel.scanner.running),'ALE Stop cancels scanning');
         await page.getByLabel('ALE scan bank').selectOption('cothen_candidates');
-        await page.getByLabel('Allow shared SDR retuning').check();
+        await page.getByLabel('Scan across HF bands').check();
         await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
         await page.waitForFunction(()=>alePanel.scanner.running&&!alePanel.scanner.tuning&&UI.getFrequency()===5250000);
-        check(await page.evaluate(()=>UI.getModulation()==='ale2g'),'shared scan restores ALE after native center restart');
+        check(await page.evaluate(()=>UI.getModulation()==='ale2g'),'cross-band scan restores ALE after native center restart');
         await page.getByRole('button',{name:'Stop',exact:true}).click();
-        await page.getByLabel('Allow shared SDR retuning').uncheck();
+        await page.getByLabel('Scan across HF bands').uncheck();
         await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_offset_freq:0,start_mod:'usb'}}));
         await page.waitForTimeout(150);
         await page.evaluate(()=>UI.setModulation('ft8'));
