@@ -37,7 +37,7 @@ class UpdateTests(unittest.TestCase):
         self.target.write_bytes(old)
         entry['sha256'] = installer.digest(old)
         css = next(item for item in record['files'] if Path(item['path']).name == 'rig_dock.css')
-        css_version = '0.2.0' if version == '0.2.0' else '0.1.3'
+        css_version = version if version in ('0.2.0', '0.2.1') else '0.1.3'
         css_bytes = (PACKAGE / f'tests/fixtures/rig_dock_v{css_version}.css').read_bytes()
         Path(css['path']).write_bytes(css_bytes)
         css['sha256'] = installer.digest(css_bytes)
@@ -47,7 +47,7 @@ class UpdateTests(unittest.TestCase):
         return {str(p): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
 
     def test_supported_versions_update_and_uninstall(self):
-        for version in ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.2.0'):
+        for version in ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.2.0', '0.2.1'):
             with self.subTest(version=version):
                 self.use_old(version)
                 updater.update(self.state)

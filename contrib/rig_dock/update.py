@@ -6,9 +6,10 @@ from pathlib import Path
 import tempfile
 from install import ASSETS, FILES, STATE_DEFAULT, InstallError, atomic, digest, plan_uninstall
 
-VERSION = '0.2.1'
+VERSION = '0.3.0'
 
 OLD_JS = {
+    'fd7ecfcc4e1ee60585fa770aa73990c82531fff1769340cac86ee2b3a37b0a39',
     '22f3514650389fef4dc570499d3230ba2a05a6b221ff59e5333792ddced66cd3',
     'fadf3975345193b882420542a4c9a98725643dacbf9e61a2beac8a42569b276b',
     '96ab348f1805abc8ce5e20c77d8e71ecbdd352d0250f6541372e2d76bd1c3c31',

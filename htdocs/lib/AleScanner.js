@@ -246,7 +246,7 @@ class AleServerScanClient {
         }
     }
     start(options) {
-        this.following = true;
+        this.following = true; this.manualTakeover = false;
         this.pending = true; this.pendingSince = performance.now(); this.status('Starting server scanner…');
         try { this.send('start', options); }
         catch (error) { this.pending = false; this.status(error.message); }
@@ -256,6 +256,22 @@ class AleServerScanClient {
         try { this.send('stop'); }
         catch (error) { this.pending = false; this.status(error.message); }
     }
+    takeControl() {
+        if (this.handoff) return this.handoff;
+        this.manualTakeover = true; this.handoffError = null;
+        this.stop();
+        this.handoff = (async () => {
+            const deadline = performance.now()+12000;
+            while (this.running || this.pending) {
+                if (this.handoffError) throw new Error(this.handoffError);
+                if (performance.now() >= deadline) throw new Error('ALE scanner did not stop; manual tuning was cancelled');
+                await new Promise(resolve => setTimeout(resolve,100));
+                this.poll();
+            }
+            if (this.handoffError) throw new Error(this.handoffError);
+        })().finally(() => { this.handoff = null; });
+        return this.handoff;
+    }
     receive(event) {
         if (typeof event.data !== 'string') return;
         let data;
@@ -263,7 +279,7 @@ class AleServerScanClient {
         if (data.type !== 'ale_scan_state' || !data.value) return;
         const state = data.value;
         this.pending = false;
-        if (state.error) { this.status(state.error); return; }
+        if (state.error) { this.handoffError = state.error; this.status(state.error); return; }
         if (!state.available) return;
         if (state.session !== this.session) { this.session = state.session; this.sequence = 0; }
         this.running = !!state.running;
@@ -275,7 +291,7 @@ class AleServerScanClient {
             }
         }
         if (UI.getModulation() === 'ale2g') this.following = true;
-        if (this.running && this.following && Number.isSafeInteger(state.frequency)) {
+        if (this.running && this.following && !this.manualTakeover && Number.isSafeInteger(state.frequency)) {
             // Follow inside the hardware capture only; never send a hardware retune from polling.
             const panel = UI.getDemodulatorPanel();
             if (!panel.centerFreqTimeout && panel.center_freq === center_freq &&

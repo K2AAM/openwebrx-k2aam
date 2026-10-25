@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check/install experimental ALE 2G on stock OWRX+ 1.2.126, with backups."""
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -11,7 +12,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent.parent
 STATE = Path('/var/lib/openwebrx/ale2g')
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 
 
 def digest(data):
@@ -20,6 +21,41 @@ def digest(data):
 
 def blob(data):
     return hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest()
+
+
+
+# Exact public antenna-switcher patch used by the existing RSPdx installation.
+ANTENNA_IMPORT = b'from owrx.antenna_switcher import handle_antenna_message\n'
+ANTENNA_ANCHOR = b'                if message["type"] == "dspcontrol":\n'
+ANTENNA_HANDLER = (b'                if message["type"] in ("getantenna", "setantenna"):\n'
+                   b'                    handle_antenna_message(self, message)\n'
+                   b'                elif message["type"] == "dspcontrol":\n')
+
+
+def antenna_base(data):
+    if data is None or not data.startswith(ANTENNA_IMPORT) or data.count(ANTENNA_IMPORT) != 1 or data.count(ANTENNA_HANDLER) != 1:
+        return None
+    return data[len(ANTENNA_IMPORT):].replace(ANTENNA_HANDLER,ANTENNA_ANCHOR,1)
+
+
+def preserve_antenna(old, new):
+    if antenna_base(old) is None:
+        return new
+    if new.count(ANTENNA_ANCHOR) != 1 or ANTENNA_IMPORT in new:
+        raise ValueError('Unsupported antenna/ALE connection structure. No files changed.')
+    merged = ANTENNA_IMPORT+new.replace(ANTENNA_ANCHOR,ANTENNA_HANDLER,1)
+    ast.parse(merged)
+    return merged
+
+
+def checked_native(relative, old, new, expected):
+    if old is not None and blob(old) == expected:
+        return new
+    if relative == 'owrx/connection.py':
+        base = antenna_base(old)
+        if base is not None and blob(base) == expected:
+            return preserve_antenna(old,new)
+    raise ValueError(f'Unsupported or edited OWRX file: {relative}. No files changed.')
 
 
 def atomic(path, data, mode=0o644):
@@ -48,9 +84,10 @@ def plan(package, htdocs, binary_target, baselines=None):
         old = target.read_bytes() if target.exists() else None
         if expected is None and old is not None:
             raise ValueError(f'An ALE file already exists: {target}')
-        if expected is not None and (old is None or blob(old) != expected):
-            raise ValueError(f'Unsupported or edited OWRX file: {target}. No files changed.')
-        changes.append((target, source.read_bytes(), old, target.stat().st_mode & 0o777 if old is not None else 0o644))
+        new = source.read_bytes()
+        if expected is not None:
+            new = checked_native(relative,old,new,expected)
+        changes.append((target, new, old, target.stat().st_mode & 0o777 if old is not None else 0o644))
     binary = HERE/'decoder/owrx-ale'
     version = subprocess.run([str(binary), '--version'], check=True, capture_output=True, timeout=5).stdout
     if version.strip() != b'owrx-ale 0.1.0':
@@ -91,7 +128,7 @@ def upgrade(package, htdocs, binary_target, state, write=False, baselines=None):
     manifest = state/'install.json'
     original_manifest = manifest.read_bytes()
     record = json.loads(original_manifest)
-    if record.get('version') not in ('0.1.0', '0.2.0', VERSION):
+    if record.get('version') not in ('0.1.0', '0.2.0', '0.3.0', VERSION):
         raise ValueError('Unsupported installed ALE version.')
     baselines = json.loads((HERE/'install-baselines.json').read_text()) if baselines is None else baselines
     wanted = {}
@@ -116,6 +153,8 @@ def upgrade(package, htdocs, binary_target, state, write=False, baselines=None):
         if entry['backup'] and digest(Path(entry['backup']).read_bytes()) != entry['original_sha256']:
             raise ValueError(f'Backup changed: {target}. No files changed.')
         new = wanted[target].read_bytes()
+        if wanted[target] == SOURCE/'owrx/connection.py':
+            new = preserve_antenna(current,new)
         changes.append((target, new, current, target.stat().st_mode & 0o777))
         entry['sha256'] = digest(new)
     new_backups = []
@@ -127,10 +166,10 @@ def upgrade(package, htdocs, binary_target, state, write=False, baselines=None):
         old = target.read_bytes() if target.exists() else None
         if expected is None and old is not None:
             raise ValueError(f'New ALE asset already exists: {target}')
-        if expected is not None and (old is None or blob(old) != expected):
-            raise ValueError(f'Unsupported or edited new native target: {target}. No files changed.')
-        mode = target.stat().st_mode & 0o777 if old is not None else 0o644
         new = wanted[target].read_bytes()
+        if expected is not None:
+            new = checked_native(relative,old,new,expected)
+        mode = target.stat().st_mode & 0o777 if old is not None else 0o644
         changes.append((target, new, old, mode))
         entry = {'path':str(target), 'backup':None, 'original_sha256':digest(old) if old is not None else None,
                  'sha256':digest(new), 'mode':mode}

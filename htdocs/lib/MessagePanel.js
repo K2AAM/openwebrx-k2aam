@@ -69,7 +69,17 @@ Ale2gMessagePanel.prototype.render = function() {
         $('<style id="ale-scan-style">').text(
             '.ale-layout{display:flex;flex-direction:column;min-height:0;height:100%}' +
             '.ale-layout>table{display:flex;flex-direction:column;width:100%;flex:1 1 0;min-height:24px;height:auto!important}' +
-            '.ale-layout thead{flex:0 0 auto}.ale-layout tr{display:table;width:100%;table-layout:fixed}' +
+            '.ale-layout thead{flex:0 0 auto}.ale-layout tbody{scrollbar-gutter:stable}' +
+            '#openwebrx-panel-ale2g-message .ale-layout tr{display:grid;grid-template-columns:76px 94px 88px 88px 160px minmax(0,1fr);width:100%;box-sizing:border-box}' +
+            '#openwebrx-panel-ale2g-message .ale-layout th,#openwebrx-panel-ale2g-message .ale-layout td{text-align:left;min-width:0;width:auto!important;padding:5px 7px;overflow-wrap:anywhere;white-space:normal;box-sizing:border-box}' +
+            '#openwebrx-panel-ale2g-message .ale-layout th{color:#a7bad0;font-size:11px}' +
+            '.ale-layout tbody tr{border-top:1px solid #ffffff0a;font-variant-numeric:tabular-nums}' +
+            '.ale-event{color:#9de2c3}.ale-raw{display:inline-block;margin-left:10px;vertical-align:top;font-size:11px;color:#a7bad0}' +
+            '.ale-raw summary{cursor:pointer}.ale-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0}' +
+            '@media(max-width:620px){#openwebrx-panel-ale2g-message .ale-layout tr{grid-template-columns:68px 84px minmax(0,1fr) minmax(0,1fr)}' +
+            '#openwebrx-panel-ale2g-message .ale-layout thead th:nth-child(n+5){display:none}' +
+            '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(5){grid-column:1/3;padding-top:0}' +
+            '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(6){grid-column:3/5;padding-top:0}}' +
             '.ale-layout tbody{flex:1 1 0;min-height:0;height:auto!important;overflow:auto}' +
             '.ale-scan-controls{flex:0 1 auto;overflow:auto;padding:6px 55px 6px 6px;box-sizing:border-box;font:12px system-ui}' +
             '.ale-scan-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px}' +
@@ -123,14 +133,58 @@ Ale2gMessagePanel.prototype.render = function() {
             dwell.val(state.options.dwell); shared.prop('checked',state.options.across);
             channels.find('input').each(function(){this.checked=state.options.channels.includes(Number(this.value));});
         }
+        if (!me.serverScanner.running && me.serverWasRunning) restoreChannels();
+        me.serverWasRunning = me.serverScanner.running;
         if (me.serverScanner.running && me.scanner.running) me.scanner.stop('Server scanner owns this SDR');
         if (server.prop('checked') || me.serverScanner.running) updateControls(text);
     }, event => me.pushMessage(event));
-    renderChannels();
-    bank.on('change', renderChannels);
+    let loadedSource = null, preferences = {enabled:{}};
+    const preferenceKey = 'owrx_ale_scan_preferences_v1';
+    function currentSource() { return String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0]; }
+    function savePreferences() {
+        const source = currentSource(); if (!source) return;
+        preferences.bank = bank.val(); preferences.dwell = Number(dwell.val());
+        preferences.across = shared.prop('checked'); preferences.server = server.prop('checked');
+        preferences.enabled[bank.val()] = channels.find('input:checked').map(function(){return Number(this.value);}).get();
+        try {
+            const stored = JSON.parse(localStorage.getItem(preferenceKey) || '{}');
+            stored[source] = preferences; localStorage.setItem(preferenceKey,JSON.stringify(stored));
+        } catch (_) { /* Scanning remains usable with unavailable storage. */ }
+    }
+    function restoreChannels() {
+        renderChannels();
+        const selected = preferences.enabled[bank.val()];
+        if (Array.isArray(selected)) channels.find('input').each(function(){ this.checked=selected.includes(Number(this.value)); });
+    }
+    function loadPreferences() {
+        const source = currentSource(); if (!source || source === loadedSource) return;
+        loadedSource = source; preferences = {enabled:{}};
+        try {
+            const saved = JSON.parse(localStorage.getItem(preferenceKey) || '{}')[source];
+            if (saved && typeof saved === 'object') preferences = {...saved,enabled:saved.enabled && typeof saved.enabled === 'object' ? saved.enabled : {}};
+        } catch (_) { /* Ignore damaged preferences. */ }
+        const savedBank = ALE_SCAN_BANKS.find(item => item.id === preferences.bank);
+        bank.val(savedBank ? savedBank.id : ALE_SCAN_BANKS[0].id);
+        dwell.val(Number.isFinite(preferences.dwell) && preferences.dwell >= 3 && preferences.dwell <= 60 ? preferences.dwell : 10);
+        shared.prop('checked',preferences.across === true); server.prop('checked',preferences.server !== false);
+        restoreChannels();
+    }
+    window.owrxAleScanner = {
+        isRunning: () => me.scanner.running || me.serverScanner.running || me.serverScanner.pending,
+        status: () => status.text(),
+        takeControl: () => {
+            me.scanner.stop('Stopped: manual receiver control');
+            return me.serverScanner.running || me.serverScanner.pending ? me.serverScanner.takeControl() : Promise.resolve();
+        }
+    };
+    renderChannels(); loadPreferences();
+    bank.on('change', () => { restoreChannels(); savePreferences(); });
+    channels.on('change','input',savePreferences);
+    dwell.add(shared).add(server).on('change',savePreferences);
     server.on('change', () => updateControls('Stopped · '+(server.prop('checked') ? 'server' : 'browser')));
     start.on('click', async () => {
         try {
+            savePreferences();
             const selected = channels.find('input:checked').map(function(){return Number(this.value);}).get();
             if (server.prop('checked')) {
                 UI.toggleScanner(false);
@@ -143,13 +197,13 @@ Ale2gMessagePanel.prototype.render = function() {
         if (me.serverScanner.running || me.serverScanner.pending) me.serverScanner.stop();
         else me.scanner.stop();
     });
-    this.scanTimer = setInterval(() => this.scanner.tick(), 200);
+    this.scanTimer = setInterval(() => { this.scanner.tick(); if (!window.owrxAleScanner.isRunning()) loadPreferences(); }, 200);
     window.addEventListener('pagehide', () => {
         this.scanner.stop('Stopped: page closed');
         this.serverScanner.destroy();
     });
     window.addEventListener('pageshow', () => this.serverScanner.resume());
-    layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Message</th></tr></thead><tbody></tbody></table>'));
+    layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Event</th><th>Message / details</th></tr></thead><tbody></tbody></table>'));
 };
 Ale2gMessagePanel.prototype.pushMessage = function(message) {
     if (message.test_audio && this.serverScanner.running) this.serverScanner.stop();
@@ -157,12 +211,28 @@ Ale2gMessagePanel.prototype.pushMessage = function(message) {
     this.scanner.event(message);
     if (message.event === 'activity') return;
     const row = $('<tr>');
+    const events = {
+        sounding_this_was:['Sounding · TWS','Station identification'],
+        sounding_this_is:['Sounding · TIS','Station identification'],
+        destination:['Address','Destination received'], call:['Call','Call received'],
+        call_ack:['Call ACK','Acknowledgment'], call_established:['Call EST','Link established'],
+        amd:['AMD text',null], dtm:['DTM text',null], command:['Command',null]
+    };
+    const event = events[message.event] || ['Decode',null];
     const values = [Utils.HHMMSS(message.timestamp), (message.freq / 1000).toFixed(1),
-        message.source || '—', message.destination || '—', message.message];
+        message.source || '—', message.destination || '—', event[0]];
     values.forEach(function(value, index) {
         // Decoder output is untrusted radio text, never HTML.
-        $('<td>').addClass(index === 4 ? 'message' : '').text(String(value)).appendTo(row);
+        $('<td>').addClass(index === 4 ? 'ale-event' : '').text(String(value)).appendTo(row);
     });
+    const body = $('<td class="message">').appendTo(row);
+    if (event[1] === null) body.text(String(message.message || ''));
+    else {
+        $('<span>').text((message.test_audio ? '[TEST AUDIO] ' : '')+event[1]).appendTo(body);
+        const details = $('<details class="ale-raw">').appendTo(body);
+        $('<summary>').text('Raw decode').appendTo(details);
+        $('<pre>').text(String(message.message || '')).appendTo(details);
+    }
     this.el.find('tbody').append(row);
     this.clearMessages(250);
     this.scrollToBottom();

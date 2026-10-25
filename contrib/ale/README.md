@@ -13,11 +13,11 @@ sudo /usr/bin/python3 contrib/ale/install.py --install
 sudo systemctl restart openwebrx
 ```
 
-The check is read-only and requires unmodified versions of the eight native files it patches. The installer refuses edited/unsupported files and existing decoder assets, saves backups, preserves file modes and rolls back failed writes. It does not restart the service. This backend change requires the explicit restart shown above. A versioned receiver bundle URL makes the updated native UI available after reloading the page.
+The check is read-only and requires supported versions of the eight native files it patches. The installer refuses edited/unsupported files and existing decoder assets, saves backups, preserves file modes and rolls back failed writes. It does not restart the service. This backend change requires the explicit restart shown above. A versioned receiver bundle URL makes the updated native UI available after reloading the page.
 
 If necessary, supply `--owrx-root /usr/lib/python3/dist-packages/owrx` and `--htdocs /usr/lib/python3/dist-packages/htdocs`. The Python root must have sibling `owrx` and `csdr` packages. Backups/state are in `/var/lib/openwebrx/ale2g` and the executable installs to `/usr/local/bin/owrx-ale`.
 
-## Upgrade an existing 0.1.0 or 0.2.0 ALE installation
+## Upgrade an existing 0.1.0–0.3.0 ALE installation
 
 ```bash
 git switch ale-scanlists
@@ -28,7 +28,18 @@ sudo /usr/bin/python3 contrib/ale/install.py --upgrade
 sudo systemctl restart openwebrx
 ```
 
-The upgrade checks every installed hash and original backup before writing. It preserves the original stock-file backups so uninstall still restores the pre-ALE installation. New backend files and the native connection handler are checked too, with an original-file backup retained for uninstall. Edited files stop the upgrade. Refresh the receiver after restart. The native receiver bundle and new scanner script use `ale=0.3.0` cache keys; the decoder executable remains version 0.1.0 because its demodulation code is unchanged.
+The upgrade checks every installed hash and original backup before writing. It preserves the original stock-file backups so uninstall still restores the pre-ALE installation. New backend files and the native connection handler are checked too, with an original-file backup retained for uninstall. The exact existing RSPdx antenna-switcher connection patch is recognized by removing its known hook and checking the remaining stock-file hash; the generated ALE connection handler retains that hook. Other edits stop the upgrade. Uninstall ALE before uninstalling the antenna switcher, so its original connection hash is restored first. Refresh the receiver after restart. The native receiver bundle and new scanner script use `ale=0.4.0` cache keys; the decoder executable remains version 0.1.0 because its demodulation code is unchanged.
+
+## Apply the accompanying RIG Dock update
+
+ALE's installer updates native ALE files only. For an already installed RIG Dock, also run the following from the same ale-scanlists checkout to apply the compact layout, Fit, frequency selector and manual-control handoff:
+
+```bash
+sudo /usr/bin/python3 contrib/rig_dock/update.py --check
+sudo /usr/bin/python3 contrib/rig_dock/update.py
+```
+
+Reload the receiver after both updates. For a fresh dock install, follow [the RIG instructions](../rig_dock/README.md). Keep the receiver trial on OptiplexSDR before upgrading the remote SDRplay installation.
 
 ## Reference audio in the actual OWRX message panel
 
@@ -59,9 +70,13 @@ After restarting, select **ALE 2G (experimental)** from Modes. The scanner contr
 4. Check **Scan across HF bands (retunes SDR)** to scan beyond the current capture. Retuning changes the SDR capture available to connected browsers. Server control checks the receiver magic key and center-frequency permission, and each hardware hop rechecks the server retune permission. The optional browser scanner uses the native `setfrequency` request. It does not bypass permissions or alter profiles.
 5. Start with a **10-second dwell** and click **Start ALE scan**. Dwell is adjustable from 3–60 seconds and is experimental, not a validated optimum.
 
+Bank, channel exclusions, dwell, engine and cross-band selections are saved per SDR in this browser. Reload restores controls without starting a scan. These preferences do not configure service startup or restore an antenna after reboot.
+
+The output separates decoded addresses from event labels. Sounding rows show Station identification with Raw decode details; empty destinations remain empty, and repeated soundings remain separate events. The [ALE sounding specification](https://hflink.com/standards/FED_STD_1045A.pdf) identifies the sending station with THIS IS/THIS WAS and requires no text-message section. AMD/DTM text is retained verbatim by the display. The RIG Fit button reduces excess ALE panel height while preserving the Height slider.
+
 The scanner shows tuning/scanning/activity/decoded/stop status. It holds on decoder synchronization/activity, not waterfall signal strength, then resumes three seconds after activity ends. A decoded message also extends the idle hold. A 120-second maximum hold prevents a stuck activity flag from holding forever; a longer exchange can be cut off at that limit. Acquisition resets through the existing native decoder restart on each frequency change. Channels are integer USB dial frequencies, with no audio-frequency offset.
 
-With server scanning enabled, hiding or closing the tab only detaches its display. Click **Stop** to end the scanner. Receiver profile, sample-rate or unexpected source-center changes stop it, as do source failure/shutdown or revoked retune permission. Scheduled profile changes can also stop it after listeners leave; the scanner does not override native schedules. Stop it before using that SDR for other listening. An observing ALE tab follows the scanned frequency when its capture has caught up.
+With server scanning enabled, hiding or closing the tab only detaches its display. Click **Stop** to end the scanner. Receiver profile, sample-rate or unexpected source-center changes stop it, as do source failure/shutdown or revoked retune permission. Scheduled profile changes can also stop it after listeners leave; the scanner does not override native schedules. Updated RIG mode selection, Tune, step buttons and stock Scan stop the ALE scanner and wait for its acknowledgement before taking manual control. Other native controls still require stopping the scanner first. An observing ALE tab follows the scanned frequency when its capture has caught up.
 
 The scanner does not resume automatically after an OWRX restart. Its 250-message history lasts for the server process lifetime; decoded messages are also written to the normal openwebrx journal, subject to system log retention. The backend does not retain browser connections. Uncheck **Run on server** for the older browser scanner, which stops on hidden tab, disconnect, manual tuning/mode/profile change, or failed tuning. An already-sent hardware retune cannot be recalled by Stop. The stock signal-level scanner is stopped when ALE scanning starts; do not run both simultaneously.
 

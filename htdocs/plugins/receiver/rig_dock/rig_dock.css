@@ -18,9 +18,9 @@ body.rig-dock-active [data-toggle-panel='openwebrx-panel-status'],
 body.rig-dock-active [data-toggle-panel='openwebrx-panel-receiver'],
 body.rig-dock-active #plugin-button-rig_audio { display: none !important; }
 #rig-dock *, .rd-popover * { box-sizing: border-box; }
-#rig-dock { padding: 10px 16px 0; }
+#rig-dock { padding: 7px 14px 0; }
 .rd-main, .rd-toolbar, .rd-footer, .rd-group, .rd-tune-form, .rd-popover-heading { display: flex; align-items: center; }
-.rd-main { gap: 16px; min-height: 40px; flex-wrap: wrap; }
+.rd-main { gap: 12px; min-height: 40px; flex-wrap: wrap; }
 .rd-group { gap: 6px; min-width: 0; }
 .rd-label, .rd-menu-label { color: var(--rd-muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .rd-frequency { gap: 12px; }
@@ -107,7 +107,7 @@ body.rig-dock-active .rd-decoder-native {
     color: #9df1c1; border-color: #419f83; background: #183c35;
 }
 .rd-antennas .rsp-antenna-buttons button { padding: 7px 11px; min-height: 35px; flex: 0 0 auto; min-width: max-content; }
-.rd-toolbar { flex-wrap: wrap; gap: 8px; padding: 10px 0; }
+.rd-toolbar { flex-wrap: wrap; gap: 7px; padding: 7px 0; }
 .rd-toolbar > .rd-group { padding-right: 10px; border-right: 1px solid #2b3c50; }
 .rd-toolbar .openwebrx-panel-slider { margin: 0 !important; width: 84px !important; max-width: 100%; }
 .rd-toolbar .openwebrx-slider-button { flex: 0 0 25px; width: 25px; height: 25px; margin: 0; padding: 1px; border-radius: 4px; background: #26394e; }
@@ -124,7 +124,7 @@ body.rig-dock-active #openwebrx-panel-receiver select, .rd-popover input:not([ty
 .rd-connection::before { content: '●'; font-size: 9px; margin-right: 6px; }
 .rd-connection.rd-connected { color: #8edab7; }
 .rd-antenna-status { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.rd-antenna-status::before { content: 'Shared · '; }
+.rd-antenna-status::before { content: 'Antenna · '; }
 .rd-clock { margin-left: auto; font-variant-numeric: tabular-nums; }
 .rd-meter { display: flex; align-items: center; gap: 8px; }
 .rd-meter #openwebrx-smeter { width: 95px; min-width: 60px; height: 7px; padding: 0; margin: 0; }
@@ -197,3 +197,9 @@ body.rig-dock-active #openwebrx-panel-log,
 body.rig-dock-active [data-toggle-panel='openwebrx-panel-log'] {
     display: none !important;
 }
+
+.rd-actions { margin-left: auto; gap: 6px; }
+.rd-frequency .webrx-actual-freq { cursor: pointer; }
+.rd-tune-form select { flex: 0 0 70px; width: 70px; }
+#rig-dock .rd-ale-status { border: 0; background: transparent; color: #9de2c3; padding: 0; min-height: 24px; font-size: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
+@media(max-width:620px){.rd-actions{margin-left:0}.rd-ale-status{max-width:100%!important;flex:1 1 100%;order:3}.rd-decoder-title{max-width:none;flex:1 1 90px}}

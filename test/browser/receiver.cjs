@@ -51,7 +51,7 @@ const server=http.createServer((req,res)=>{
         args:JSON.parse(process.env.PLAYWRIGHT_CHROMIUM_ARGS||'[]')});
     const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];
     page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message);});
-    let checks=0;const check=(v,msg)=>{assert.ok(v,msg);checks++;};
+    let checks=0;const check=(v,msg)=>{assert.ok(v,msg);checks++;if(process.env.RECEIVER_TEST_PROGRESS)console.log(checks+': '+msg);};
     try{
         const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:3});
         const cold=await mobileContext.newPage(),coldErrors=[];
@@ -187,6 +187,18 @@ const server=http.createServer((req,res)=>{
         await page.locator('.rd-antennas button').filter({hasText:'C - HF'}).click();
         await page.waitForSelector('.rd-antennas button[title="Antenna C"][aria-pressed="true"]');
         check(await page.evaluate(()=>ws.selected==='Antenna C'),'antenna C selection works');
+        await page.evaluate(()=>{
+            const node=document.querySelector('.webrx-actual-freq');
+            node.innerHTML='<span class="digit">7</span>.074000 MHz';
+            node.addEventListener('click',()=>window.nativeFrequencyClick=true,{once:true});
+        });
+        await page.locator('.webrx-actual-freq .digit').click();
+        check(await page.locator('#rd-popover-tune').isVisible()&&!await page.evaluate(()=>!!window.nativeFrequencyClick),'clicking a native frequency digit opens one RIG frequency editor');
+        await page.getByLabel('Frequency units',{exact:true}).selectOption('kHz');
+        await page.getByLabel('Frequency with units',{exact:true}).fill('7074');
+        await page.locator('#rd-popover-tune').getByRole('button',{name:'Tune',exact:true}).click();
+        await page.waitForFunction(()=>UI.getFrequency()===7074000);
+        check(await page.evaluate(()=>UI.getFrequency()===7074000),'explicit unit selection tunes a unitless number correctly');
         await page.locator('[aria-controls="rd-popover-bandpass"]').click();
         await page.locator('#rd-popover-bandpass input').nth(0).fill('-2700');await page.locator('#rd-popover-bandpass input').nth(1).fill('-200');
         await page.getByRole('button',{name:'Apply',exact:true}).click();
@@ -238,8 +250,9 @@ const server=http.createServer((req,res)=>{
         await page.locator('.rd-tune-form input').fill('7127000 Hz');await page.locator('.rd-tune-form input').press('Enter');
         check(await page.evaluate(()=>UI.getFrequency()===7127000),'frequency entry accepts Hz with Enter');
         await page.locator('[aria-controls="rd-popover-tune"]').click();
+        await page.getByLabel('Frequency units',{exact:true}).selectOption('MHz');
         await page.locator('.rd-tune-form input').fill('7.128');await page.locator('.rd-tune-form button').click();
-        check(await page.evaluate(()=>UI.getFrequency()===7128000),'unitless frequency remains MHz');
+        check(await page.evaluate(()=>UI.getFrequency()===7128000),'a unitless frequency uses the selected MHz scale');
         check(await page.evaluate(()=>!ws.sent.some(x=>x.type==='setfrequency')),'in-window tuning does not retune the shared SDR');
         await page.evaluate(()=>{UI.setModulation('rtty','lsb');UI.getDemodulatorPanel().setMagicKey('test-key');ws.requiredKey='test-key';});
         await page.locator('[aria-controls="rd-popover-tune"]').click();
@@ -323,6 +336,32 @@ const server=http.createServer((req,res)=>{
         check(await page.locator('#openwebrx-panel-ale2g-message tbody img').count()===0,'radio text cannot inject HTML into ALE output');
         await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
+        await page.evaluate(()=>{
+            for (const [source,freq] of [['ADW',15043000],['JNR',11226000],['OFF',5708000]])
+                alePanel.pushMessage({mode:'ALE2G',timestamp:Date.now(),freq,source,destination:'',event:'sounding_this_was',message:`[Sounding THIS WAS] [From: ${source}]`});
+        });
+        const sounding=page.locator('#openwebrx-panel-ale2g-message tbody tr').last();
+        check(await sounding.locator('td').nth(2).innerText()==='OFF'&&await sounding.locator('td').nth(3).innerText()==='—','sounding keeps the literal OFF address with no invented destination');
+        check(await sounding.innerText().then(t=>t.includes('Sounding · TWS')&&!t.includes('[From: OFF]')),'sounding summary avoids repeating raw protocol fields');
+        await sounding.getByText('Raw decode',{exact:true}).click();
+        check(await sounding.locator('pre').innerText()==='[Sounding THIS WAS] [From: OFF]','original sounding remains available in raw details');
+        await sounding.getByText('Raw decode',{exact:true}).click();
+        check(await page.evaluate(()=>{
+            const head=[...document.querySelectorAll('#openwebrx-panel-ale2g-message th')];
+            const cells=[...document.querySelector('#openwebrx-panel-ale2g-message tbody tr').children];
+            return head.every((th,i)=>Math.abs(th.getBoundingClientRect().left-cells[i].getBoundingClientRect().left)<1);
+        }),'all ALE column headings align with their data');
+        await page.getByRole('button',{name:'Fit',exact:true}).click();
+        // Fit starts enabled on a fresh browser; exercise toggling back on explicitly.
+        if(await page.getByRole('button',{name:'Fit',exact:true}).getAttribute('aria-pressed')==='false') await page.getByRole('button',{name:'Fit',exact:true}).click();
+        await page.screenshot({path:path.join(root,'test-results/ale-compact-desktop.png')});
+        const compactHeight=await page.locator('#rig-decoder-tray').evaluate(n=>n.getBoundingClientRect().height);
+        check(compactHeight<260,'Fit bounds a few ALE rows instead of reserving a large empty pane');
+        await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
+        check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'ALE rows fit the phone width');
+        await page.screenshot({path:path.join(root,'test-results/ale-compact-mobile.png')});
+        await page.setViewportSize({width:1440,height:900});
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         await page.locator('.ale-scan-controls > summary').click();
         check(await page.getByLabel('Run scanner on server').isChecked(),'server scanning is the default');
         await page.getByLabel('Run scanner on server').uncheck();
@@ -365,8 +404,16 @@ const server=http.createServer((req,res)=>{
         check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length)===stopsBefore,'pagehide sends no server stop request');
         // Reconnect the observer without creating a second backend worker.
         await page.evaluate(()=>{alePanel.serverScanner.poll();});
-        await page.getByRole('button',{name:'Stop',exact:true}).click();
-        await page.waitForFunction(()=>!alePanel.serverScanner.running);
+        await page.locator('[aria-controls="rd-popover-mode"]').click();
+        await page.getByLabel('Search modes',{exact:true}).fill('');
+        await page.locator('#rd-popover-mode [data-mode="usb"]').click();
+        await page.waitForFunction(()=>!alePanel.serverScanner.running&&UI.getModulation()==='usb');
+        check(await page.evaluate(()=>!ws.scanState.running),'choosing a RIG mode waits for server scanner Stop');
+        await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
+        check(await page.evaluate(()=>UI.getModulation()==='usb'),'later scanner status does not pull manual mode back to ALE');
+        const savedScan = await page.evaluate(()=>JSON.parse(localStorage.getItem('owrx_ale_scan_preferences_v1')).sdrplay);
+        check(savedScan.bank==='cothen_candidates'&&savedScan.across&&savedScan.server,'scan bank, engine and scope are saved per receiver in this browser');
+        await page.evaluate(()=>UI.setModulation('ale2g'));
         await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_mod:'usb'}}));
         await page.waitForTimeout(150);
@@ -485,11 +532,15 @@ const server=http.createServer((req,res)=>{
         check(await page.evaluate(()=>!document.body.classList.contains('rig-dock-active')),'stock controls restored');
         check(await page.evaluate(()=>savedSquelchNode===document.querySelector('.openwebrx-squelch-slider')&&!document.querySelector('#rig-dock')),'native nodes restored after destroy');
         check(await page.evaluate(()=>savedDecoderNodes.every(node=>node.parentElement===savedDecoderParents.get(node)&&!node.classList.contains('rd-decoder-native'))),'all native decoder panels return to their original parents');
+        check(await page.locator('.webrx-actual-freq').getAttribute('role')===null,'stock frequency readout attributes are restored');
         check(await page.locator('#removed-decoder').count()===0,'teardown does not recreate a decoder removed by its owner');
         await page.getByRole('button',{name:'RIG Dock',exact:true}).click();await page.waitForSelector('#rig-dock');
         check(await page.evaluate(()=>!Plugins.rig_audio||!Plugins.rig_audio.isEnabled()),'reenabling dock keeps filter bypassed or unloaded');
         await page.reload();await page.waitForSelector('#rig-dock');
         check(await page.evaluate(()=>!Plugins.rig_audio),'reload does not load optional filter');
+        await page.waitForFunction(()=>document.querySelector('[aria-label="ALE scan bank"]').value==='cothen_candidates');
+        check(await page.getByLabel('Scan across HF bands').isChecked()&&await page.getByLabel('Run scanner on server').isChecked(),'saved scan selections restore after a page reload');
+        check(await page.evaluate(()=>!window.owrxAleScanner.isRunning()),'restoring scan preferences does not start an unattended scan');
         const studio=page;const studioErrors=[];
         studio.on('pageerror',e=>studioErrors.push(e.message));
         await studio.goto(`http://127.0.0.1:${server.address().port}/?studio-init=1`);

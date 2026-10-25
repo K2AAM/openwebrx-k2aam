@@ -36,6 +36,31 @@ class InstallerTests(unittest.TestCase):
     def plan(self):
         return installer.plan(self.package, self.web, self.binary, self.baselines)
 
+    def antenna_fixture(self):
+        target=self.package/'owrx/connection.py'
+        stock=b'import logging\nclass Client:\n    def receive(self,message):\n'+installer.ANTENNA_ANCHOR+b'                    pass\n'
+        self.baselines['owrx/connection.py']=installer.blob(stock)
+        patched=installer.ANTENNA_IMPORT+stock.replace(installer.ANTENNA_ANCHOR,installer.ANTENNA_HANDLER)
+        target.write_bytes(patched)
+        return target,patched
+
+    def test_antenna_connection_install_upgrade_and_restore(self):
+        target,patched=self.antenna_fixture();original=self.snapshot()
+        installer.apply(self.plan(),self.state)
+        self.assertIn(installer.ANTENNA_HANDLER,target.read_bytes())
+        self.assertIn(b'"ale_scan"',target.read_bytes())
+        self.assertEqual(target.read_bytes().count(installer.ANTENNA_IMPORT),1)
+        installer.upgrade(self.package,self.web,self.binary,self.state,write=True,baselines=self.baselines)
+        self.assertIn(installer.ANTENNA_HANDLER,target.read_bytes())
+        installer.undo(self.state)
+        self.assertEqual(target.read_bytes(),patched);self.assertEqual(self.snapshot(),original)
+
+    def test_antenna_extra_edits_are_rejected(self):
+        target,patched=self.antenna_fixture();target.write_bytes(patched+b'# unrecognized edit\n')
+        before=self.snapshot()
+        with self.assertRaises(ValueError):self.plan()
+        self.assertEqual(self.snapshot(),before)
+
     def test_check_roundtrip_and_permissions(self):
         original = self.snapshot()
         changes = self.plan()
@@ -65,6 +90,12 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(self.snapshot(),original)
 
     def test_server_upgrade_adds_verified_native_backup(self):
+        self.server_upgrade_roundtrip()
+
+    def test_antenna_server_upgrade_adds_verified_native_backup(self):
+        self.antenna_fixture();self.server_upgrade_roundtrip()
+
+    def server_upgrade_roundtrip(self):
         original = self.snapshot()
         installer.apply(self.plan(), self.state)
         record = json.loads((self.state/'install.json').read_text())

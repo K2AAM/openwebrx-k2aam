@@ -9,6 +9,8 @@
 - Record button compatibility with native recording visibility and server permissions.
 - In-place upgrade from dock versions 0.1.0–0.1.3, with backups and uninstall support.
 
+The ale-scanlists branch adds RIG Dock 0.3.0: compact top-row Record/More controls, clickable frequency entry with explicit units, ALE Stop/manual-control handoff and Fit sizing for compact ALE rows. The ALE installer now preserves the recognized antenna connection hook and browser scan preferences survive reload. Persistent station history, service-start resume, fault recovery and AGC presets remain follow-up work.
+
 ## Receiver verification
 
 Verify the branch against both the SDRplay remote receiver and the Optiplex Airspy receiver. Exercise decoder switching, phone layout, SSTV/fax image updates, collapsed processing, downloaded recordings, and a frequency outside the current profile. Browser tests simulate receiver transport and do not validate RF decoding quality.
