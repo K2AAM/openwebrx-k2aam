@@ -9,5 +9,6 @@
   "owrx/ale.py": null,
   "owrx/ale_protocol.py": null,
   "csdr/module/ale.py": null,
-  "csdr/chain/ale.py": null
+  "csdr/chain/ale.py": null,
+  "htdocs/lib/AleScanner.js": null
 }

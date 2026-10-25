@@ -1,6 +1,6 @@
 # Experimental ALE 2G receiver and channel banks
 
-This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one selected channel. Automatic scan-bank control is still future work. Receiver profiles and RIG Dock assets are not changed by the ALE installer.
+This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one channel at a time. The experimental browser scanner steps through enabled bank entries and holds on decoder activity. Receiver profiles and RIG Dock assets are not changed by the ALE installer.
 
 ## Receiver trial on stock OWRX+ 1.2.126
 
@@ -17,7 +17,53 @@ The check is read-only and requires unmodified versions of the seven native file
 
 If necessary, supply `--owrx-root /usr/lib/python3/dist-packages/owrx` and `--htdocs /usr/lib/python3/dist-packages/htdocs`. The Python root must have sibling `owrx` and `csdr` packages. Backups/state are in `/var/lib/openwebrx/ale2g` and the executable installs to `/usr/local/bin/owrx-ale`.
 
-After restarting, select **ALE 2G (experimental)** from Modes and tune a USB dial frequency below. The message panel uses the existing shared decoder tray. Start with one channel and confirm recognizable output before attempting any scanning. Recordings are useful for repeatable comparisons.
+## Upgrade an existing 0.1.0 ALE installation
+
+```bash
+git switch ale-scanlists
+git pull --ff-only
+make -C contrib/ale/decoder
+sudo /usr/bin/python3 contrib/ale/install.py --check
+sudo /usr/bin/python3 contrib/ale/install.py --upgrade
+sudo systemctl restart openwebrx
+```
+
+The upgrade checks every installed hash and original backup before writing. It preserves the original stock-file backups so uninstall still restores the pre-ALE installation. Edited files stop the upgrade. Refresh the receiver after restart. The native receiver bundle and new scanner script use `ale=0.2.0` cache keys; the decoder executable remains version 0.1.0 because its demodulation code is unchanged.
+
+## Reference audio in the actual OWRX message panel
+
+Stop scanning, select **ALE 2G (experimental)**, keep the browser page open, and do not tune during the test. First fetch the pinned reference sample:
+
+```bash
+/usr/bin/python3 contrib/ale/decoder/fetch_test_audio.py
+sudo /usr/bin/python3 contrib/ale/live_test.py --pid "$(pgrep -x owrx-ale)"
+```
+
+This helper requires exactly one PID (or pass the desired PID explicitly if there are multiple ALE listeners). It starts a separate installed decoder, streams the reference PCM at real-time speed with five seconds of trailing silence, and forwards clearly labeled `[TEST AUDIO]` results into that listener's native parser/WebSocket/panel. Expect `THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG` and source `BAS`. The real receiver audio is not replaced, mixed with the test, or transmitted. No service restart is needed for the test itself.
+
+To use the Signal Wiki MP3 or another recording already on the receiver instead:
+
+```bash
+sudo /usr/bin/python3 contrib/ale/live_test.py --pid "$(pgrep -x owrx-ale)" --audio /home/k2aam/2G_ALEaudio.mp3
+```
+
+MP3/WAV file conversion uses the receiver's `ffmpeg`; the pinned AU reference needs only Python. Files are limited to three minutes. Root is needed to inspect and open the service process's output pipe. The helper verifies the executable and session identity, stops if the live decoder restarts/tunes, and labels all test events. The updated scanner stops when test events arrive. This is a decoder/output-path test: it does **not** validate the SDR RF input, native resampling, or float-to-PCM conversion. Browser rows may also contain concurrent real receptions, which do not have the test label. Clear the test rows before monitoring.
+
+## Using the ALE scanner
+
+After restarting, select **ALE 2G (experimental)** from Modes. The scanner controls are inside its native message panel/shared decoder tray, separate from the stock RIG **Scan** button.
+
+1. Expand **ALE scanner**, then select HFN, HFL, COTHEN candidates, or HFGCS candidates. On a small phone, increase the decoder tray Height to make room for the controls.
+2. Expand **Channels / skip** to uncheck unwanted entries.
+3. Leave shared retuning unchecked to scan only entries whose entire USB passband fits inside the current SDR capture. A narrow capture may contain only one bank entry, or none.
+4. For a dedicated receiver or an owner-authorized shared receiver, explicitly check **Retune shared SDR across bands — affects EVERY listener**. This uses the same native `setfrequency` request and magic-key/server permissions as manual out-of-capture tuning. It does not bypass permissions or alter profiles.
+5. Start with a **10-second dwell** and click **Start ALE scan**. Dwell is adjustable from 3–60 seconds and is experimental, not a validated optimum.
+
+The scanner shows tuning/scanning/activity/decoded/stop status. It holds on decoder synchronization/activity, not waterfall signal strength, then resumes three seconds after activity ends. A decoded message also extends the idle hold. A 120-second maximum hold prevents a stuck activity flag from holding forever; a longer exchange can be cut off at that limit. Acquisition resets through the existing native decoder restart on each frequency change. Channels are integer USB dial frequencies, with no audio-frequency offset.
+
+Scanning stops on Stop, manual frequency/mode/profile/source-center change, disconnect, hidden browser tab, failed tuning or a ten-second retune timeout. Keep the receiver tab visible; this is a browser scanner, not an unattended server-side scanner. An already-sent hardware retune cannot be recalled by Stop. No scanning state is automatically restored on reload. The stock signal-level scanner is stopped when ALE scanning starts; do not run both simultaneously.
+
+The optional utility frequencies are historical monitoring candidates, not verified current assignments or guaranteed activity. User observations are still needed to choose a productive subset and dwell. First confirm a recognizable off-air decode before relying on hold/resume performance. **3G ALE is not implemented.**
 
 To restore stock native files, run `sudo /usr/bin/python3 contrib/ale/install.py --uninstall`, then restart openwebrx and reload the page. Later edits stop restoration before any writes. When running the fork itself, its native source already has the integration: build/install the executable and restart the fork; do not run this patch installer against its own checkout.
 
@@ -54,17 +100,9 @@ The optional utility banks come from the [KiwiSDR ALE net list](https://github.c
 
 The source's 15-second calling/preamble duration is not a scanner dwell setting. Timing needs to be measured with the receiver and decoder, particularly when hardware retuning is required.
 
-## Scanner behavior to implement
+## Remaining scanner work
 
-Start with a selected bank and user Start/Stop controls. Default to channels whose entire USB passband fits within the current SDR capture. Tune the listener's demodulator in this mode, and show entries outside the capture instead of moving the shared hardware automatically.
-
-An optional full-list scanner needs explicit control of a dedicated SDR source, or owner-controlled shared-source tuning. Crossing HF bands can move the hardware capture for other listeners. Loading this catalog must not enable that behavior.
-
-Hold a channel on decoder synchronization/activity through a complete ALE exchange, then resume after a configurable idle period. A signal-strength threshold alone can stop on unrelated signals or noise. Determine dwell, acquisition delay and maximum hold from recorded-signal and receiver tests; this catalog contains no validated timing settings.
-
-Log UTC, dial frequency, bank, source/destination addresses, event, message and quality indicators where available. Support heard-station history, channel enable/skip, custom entries and export. Retuning must reset acquisition so samples and partial words from different channels cannot mix.
-
-OWRX 1.2.126's stock Scanner uses current-waterfall FFT levels and scannable bookmarks. It does not supply full-HF tuning or ALE-specific activity/hold logic. Decoder and scanner integration remain separate implementation work.
+The first scanner runs in a visible browser tab, with explicit opt-in shared retuning. Server-side unattended operation, heard-station history, custom-channel editing, export, and validated weak-signal/dwell behavior remain future work. Stock OWRX bookmark Scanner remains separate and does not automatically load this catalog.
 
 ## Maintenance
 

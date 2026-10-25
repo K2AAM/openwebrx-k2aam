@@ -7,7 +7,7 @@ let html=read('htdocs/index.html');
 html=html.replace(/<script[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link[^>]*>/g,'').replace('onload="openwebrx_init();"','');
 html=html.replace('${header}','<header style="display:flex;justify-content:space-between;padding:18px 24px;background:#0b1728;color:#e7eff9;font:16px system-ui"><b>OpenWebRX+ <span style="color:#75d8f1">K2AAM</span></b><span style="font-size:11px;color:#a6bacf">Preview · simulated receiver</span></header>');
 html=html.replace('</header>','<button data-toggle-panel="openwebrx-panel-log" onclick="toggle_panel(\'openwebrx-panel-log\',true)">Chat</button></header>');
-const scripts=['htdocs/lib/jquery-3.7.1.min.js','htdocs/lib/jquery.nanoscroller.min.js','htdocs/lib/Plugins.js','htdocs/lib/lame.min.js','htdocs/lib/AudioEngine.js','test/browser/fixture.js','htdocs/lib/Utils.js','htdocs/lib/UI.js','htdocs/lib/Modes.js','htdocs/lib/Waterfall.js','htdocs/lib/MessagePanel.js','htdocs/lib/Js8Threads.js','htdocs/lib/MetaPanel.js','htdocs/lib/DemodulatorPanel.js'];
+const scripts=['htdocs/lib/jquery-3.7.1.min.js','htdocs/lib/jquery.nanoscroller.min.js','htdocs/lib/Plugins.js','htdocs/lib/lame.min.js','htdocs/lib/AudioEngine.js','test/browser/fixture.js','htdocs/lib/Utils.js','htdocs/lib/UI.js','htdocs/lib/Modes.js','htdocs/lib/Waterfall.js','htdocs/lib/AleScanner.js','htdocs/lib/MessagePanel.js','htdocs/lib/Js8Threads.js','htdocs/lib/MetaPanel.js','htdocs/lib/DemodulatorPanel.js'];
 const core=read('htdocs/openwebrx.js');
 const nativeFunctions=['resize_scale','openwebrx_resize','panel_displayed','toggle_panel','first_show_panel','initPanels',...Array.from(core.matchAll(/^function (secondary_demod_\w+)\(/gm),match=>match[1])];
 const resizeFunctions=nativeFunctions.map(name=>core.match(new RegExp('function '+name+'\\([^\\n]*\\)\\s*\\{[\\s\\S]*?\\n\\}'))[0]).join('\n');
@@ -125,6 +125,7 @@ const server=http.createServer((req,res)=>{
             console.log(`${checks} ${useWebKit?'WebKit':'Chromium'} cold mobile startup checks passed; simulated RF transport.`);
             return;
         }
+        await page.bringToFront();
         await page.goto(`http://127.0.0.1:${server.address().port}/`);
         await page.waitForSelector('body.rig-dock-active');
         await page.waitForSelector('.rd-antennas button');
@@ -302,7 +303,7 @@ const server=http.createServer((req,res)=>{
             await page.evaluate(mode=>UI.setModulation(mode),mode);
             await page.waitForFunction(suffix=>{
                 const node=document.getElementById('openwebrx-panel-'+suffix);
-                return node&&node.parentElement.id==='rig-decoder-body'&&node.style.display!=='none'&&!node.movement&&
+                return node&&node.parentElement.id==='rig-decoder-body'&&node.style.display!=='none'&&
                     !document.getElementById('rig-decoder-tray').hidden;
             },suffix,{timeout:10000,polling:50}).catch(async error=>{
                 console.error('Decoder mode failed:',mode,suffix,await page.evaluate(suffix=>{
@@ -322,6 +323,27 @@ const server=http.createServer((req,res)=>{
         check(await page.locator('#openwebrx-panel-ale2g-message tbody img').count()===0,'radio text cannot inject HTML into ALE output');
         await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
+        await page.locator('.ale-scan-controls > summary').click();
+        check(await page.getByRole('button',{name:'Start ALE scan',exact:true}).isVisible(),'ALE scanner controls are visible in tray');
+        check(await page.getByLabel('Allow shared SDR retuning').isChecked()===false,'ALE shared retuning is opt-in');
+        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
+        await page.waitForFunction(()=>window.alePanel.scanner.running&&!window.alePanel.scanner.tuning);
+        check(await page.evaluate(()=>UI.getFrequency()===7102000),'ALE bank start tunes native demodulator');
+        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',freq:7102000,event:'activity',active:true}));
+        check(await page.locator('.ale-scan-status').innerText().then(s=>s.includes('Activity / hold')),'native ALE activity reaches scanner hold');
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'activity events do not create message rows');
+        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',freq:7102000,event:'activity',active:false}));
+        await page.getByRole('button',{name:'Stop',exact:true}).click();
+        check(await page.evaluate(()=>!alePanel.scanner.running),'ALE Stop cancels scanning');
+        await page.getByLabel('ALE scan bank').selectOption('cothen_candidates');
+        await page.getByLabel('Allow shared SDR retuning').check();
+        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
+        await page.waitForFunction(()=>alePanel.scanner.running&&!alePanel.scanner.tuning&&UI.getFrequency()===5250000);
+        check(await page.evaluate(()=>UI.getModulation()==='ale2g'),'shared scan restores ALE after native center restart');
+        await page.getByRole('button',{name:'Stop',exact:true}).click();
+        await page.getByLabel('Allow shared SDR retuning').uncheck();
+        await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_offset_freq:0,start_mod:'usb'}}));
+        await page.waitForTimeout(150);
         await page.evaluate(()=>UI.setModulation('ft8'));
         await page.waitForFunction(()=>!document.getElementById('rig-decoder-tray').hidden);
         await page.evaluate(()=>{

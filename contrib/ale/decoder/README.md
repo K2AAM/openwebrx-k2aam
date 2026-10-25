@@ -34,6 +34,6 @@ The JSON `kind` distinguishes `activity` from `decode`. Decodes include event, s
 
 Implemented: decoder executable, file helper, OWRX feature detection, USB mode, 8 kHz secondary DSP chain, channel-reset handling and a bounded native message panel that is adopted by RIG Dock's shared tray. The mode is hidden unless `owrx-ale --version` succeeds.
 
-Not implemented: 3G ALE, automatic scan-bank control, transmit/link establishment, station-directory lookups or weak-signal qualification. Activity events are available for later scanner hold logic. The 45-channel JSON/CSV catalog is in the parent directory.
+The native browser scanner uses activity events for hold/resume; see ../README.md. Not implemented: 3G ALE, unattended backend scanning, transmit/link establishment, station-directory lookups or weak-signal qualification. The 45-channel JSON/CSV catalog is in the parent directory.
 
 Native pycsdr process handling and RF decoding must still be checked on a receiver. Local reference-audio, parser and browser tests do not replace that check.

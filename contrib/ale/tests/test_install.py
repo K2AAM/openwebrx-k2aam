@@ -47,6 +47,44 @@ class InstallerTests(unittest.TestCase):
         installer.undo(self.state)
         self.assertEqual(self.snapshot(), original)
 
+    def test_upgrade_preserves_original_restore(self):
+        original = self.snapshot()
+        installer.apply(self.plan(), self.state)
+        record = json.loads((self.state/'install.json').read_text())
+        extra = self.web/'lib/AleScanner.js'
+        record['files'] = [e for e in record['files'] if e['path'] != str(extra)]
+        record['version'] = '0.1.0'
+        extra.unlink()
+        (self.state/'install.json').write_text(json.dumps(record))
+        before = self.snapshot()
+        installer.upgrade(self.package,self.web,self.binary,self.state)
+        self.assertEqual(self.snapshot(),before)
+        installer.upgrade(self.package,self.web,self.binary,self.state,write=True)
+        self.assertTrue(extra.exists())
+        installer.undo(self.state)
+        self.assertEqual(self.snapshot(),original)
+
+    def test_upgrade_rejects_changed_files_and_rolls_back_failure(self):
+        installer.apply(self.plan(), self.state)
+        before = self.snapshot()
+        manifest = (self.state/'install.json').read_bytes()
+        write = installer.atomic
+        def fail(path, *args):
+            if path.name == 'install.json':
+                raise OSError('manifest failure')
+            return write(path, *args)
+        with patch.object(installer, 'atomic', fail):
+            with self.assertRaises(OSError):
+                installer.upgrade(self.package,self.web,self.binary,self.state,write=True)
+        self.assertEqual(self.snapshot(),before)
+        self.assertEqual((self.state/'install.json').read_bytes(),manifest)
+        target = self.package/'owrx/ale.py'
+        target.write_bytes(b'changed')
+        before = self.snapshot()
+        with self.assertRaises(ValueError):
+            installer.upgrade(self.package,self.web,self.binary,self.state,write=True)
+        self.assertEqual(self.snapshot(),before)
+
     def test_edited_file_rejected_before_writes(self):
         (self.package/'owrx/modes.py').write_bytes(b'custom source')
         before = self.snapshot()

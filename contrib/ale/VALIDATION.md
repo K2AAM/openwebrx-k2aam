@@ -1,16 +1,17 @@
-# ALE 2G prototype 0.1.0 validation
+# ALE scanner/output-test update 0.2.0
 
-Completed locally:
+The C++ decoder remains 0.1.0. This update adds activity transport, a browser scanner, an optional known-audio replay helper, and a backed-up upgrade path.
 
-- 12 decoder, protocol and installer tests passed. The external SHA-256-pinned Kiwi reference waveform yields the expected AMD text and BAS sounding address. The same cases pass with AddressSanitizer and UndefinedBehaviorSanitizer. Leak detection was disabled because the development process environment cannot support LeakSanitizer.
-- Thirty seconds each of silence, deterministic noise and a single 1 kHz tone produce no decoded messages in these tests. This is a small negative set, not a measured false-positive rate or weak-signal qualification.
-- EOF, partial blocks, odd PCM byte count, incorrect sample rate, invalid JSON, oversized events and old-channel results are exercised. The WAV helper rejects the wrong format before decoding.
-- Installer checks are read-only; installation/restoration preserve bytes and file modes in temporary fixtures. Edited-file rejection, failed-write rollback, and refusing later-edited files on uninstall are covered.
-- 168 Chromium receiver checks passed. The native ALE mode/panel joins the shared decoder tray, preserves the decoded source and exact dial frequency, escapes radio-supplied text, and uses the tray's Clear action. Existing receiver controls and 32 other mode variants remain covered.
-- Modified Python and JavaScript files passed syntax checks.
+Validation:
 
-The standalone prototype genuinely demodulates the reference audio. Receiver DSP input and transport in browser tests are simulated. The development environment does not have a complete SDR/pycsdr stack. Native process creation/restart, PCM routing, service permissions, and live RF performance must be confirmed on the receiver before describing the integration as production-ready.
+- 18 local decoder/parser/installer/helper tests passed. They cover reference decoding, output before EOF on a continuing stream with trailing silence, silence/noise/single-tone negatives, bad PCM/JSON, stale frequency rejection, activity/test flags, failed upgrade rollback, original backup restoration after upgrade, and labeled test-audio forwarding into a controlled output pipe.
+- 30 local scanner/catalog/native-tuning assertions passed. Scanner tests use an injected clock/tuning API to cover dwell, activity and message holds, quiet release, maximum hold, stale events, manual tuning/mode/profile/center changes, disconnect, hidden tab, cancelled in-flight tuning, retune rejection, and exact agreement with the 45-entry source catalog.
+- Browser tests use native OWRX 1.2.126 HTML/UI/MessagePanel/DemodulatorPanel code with simulated RF transport. They cover scanner controls, safe default scope, native in-capture tuning, activity routing without empty rows, Stop, and cross-band config acknowledgement/ALE restoration, along with existing receiver/decoder controls.
 
-No receiver was accessed or restarted during development. The ALE installer touches no profiles, antenna backend, receiver plugin init or RIG Dock assets. It does change native receiver/Python files and requires a service restart after installation or restoration.
+Receiver evidence supplied during development: the installed binary passes the known reference test; the existing native parser/WebSocket/browser path displays injected decoded reference messages; process input counters show 16,000 bytes/s; a captured noise segment contains nonzero, non-full-scale PCM. Two supplied off-air recordings produce no decoder events offline. Their signal identity remains unconfirmed. None of this establishes successful off-air ALE reception or scanner performance.
 
-Automatic scan-bank selection/hold/resume and 3G ALE are not implemented. The provided channels are receive candidates; their presence in a catalog does not prove current activity or reception.
+The supplied Signal Wiki sample decodes independently after MP3-to-8 kHz PCM conversion. A continuing-stream check recovers its text with trailing silence before EOF, so EOF is not required for this sample. That input audio is user supplied, not redistributed in the repository.
+
+The development environment lacks a complete RF/pycsdr stack. The replay helper's process-pipe forwarding is exercised with a controlled pipe in tests; root access to the actual service process and end-to-end native deployment still require the receiver trial. Scanner radio transport and server permission handling are simulated in browser tests. Live acquisition, channel dwell and false holds require on-air evaluation.
+
+No receiver was accessed or restarted during development. This update does not modify receiver profiles, antenna-switcher files, RIG Dock assets, or the original plugin init. It modifies native Python/frontend files and requires a service restart and browser reload. The scanner stops when the tab is hidden; it is not an unattended backend service. 3G ALE and transmit are not implemented.

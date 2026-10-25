@@ -64,9 +64,68 @@ Ale2gMessagePanel.prototype.supportsMessage = function(message) {
     return message.mode === 'ALE2G';
 };
 Ale2gMessagePanel.prototype.render = function() {
-    this.el.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Message</th></tr></thead><tbody></tbody></table>'));
+    const me = this;
+    if (!document.getElementById('ale-scan-style')) {
+        $('<style id="ale-scan-style">').text(
+            '.ale-layout{display:flex;flex-direction:column;min-height:0;height:100%}' +
+            '.ale-layout>table{display:flex;flex-direction:column;width:100%;flex:1 1 0;min-height:24px;height:auto!important}' +
+            '.ale-layout thead{flex:0 0 auto}.ale-layout tr{display:table;width:100%;table-layout:fixed}' +
+            '.ale-layout tbody{flex:1 1 0;min-height:0;height:auto!important;overflow:auto}' +
+            '.ale-scan-controls{flex:0 1 auto;overflow:auto;padding:6px 55px 6px 6px;box-sizing:border-box;font:12px system-ui}' +
+            '.ale-scan-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px}' +
+            '.ale-scan-controls button,.ale-scan-controls select,.ale-scan-controls input{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
+            '.ale-scan-controls select option{color:#111;background:#fff}' +
+            '.ale-scan-controls input[type=number]{width:48px}.ale-scan-channels{max-height:90px;overflow:auto}' +
+            '.ale-scan-channels label{display:inline-block;margin:3px 8px 3px 0}.ale-scan-status{overflow-wrap:anywhere}'
+        ).appendTo('head');
+    }
+    const layout = $('<div class="ale-layout">').appendTo(this.el);
+    const controls = $('<details class="ale-scan-controls">').appendTo(layout);
+    const summary = $('<summary>').text('ALE scanner · ').appendTo(controls);
+    const status = $('<span class="ale-scan-status" role="status">').text('Stopped · current capture only').appendTo(summary);
+    const row = $('<div class="ale-scan-row">').appendTo(controls);
+    const bank = $('<select aria-label="ALE scan bank">').appendTo(row);
+    ALE_SCAN_BANKS.forEach(b => $('<option>').val(b.id).text(b.name).appendTo(bank));
+    const dwellLabel = $('<label>').text('Dwell (s) ').appendTo(row);
+    const dwell = $('<input type="number" min="3" max="60" value="10" aria-label="ALE dwell seconds">').appendTo(dwellLabel);
+    const start = $('<button type="button">').text('Start ALE scan').appendTo(row);
+    const stop = $('<button type="button">').text('Stop').prop('disabled',true).appendTo(row);
+    const scopeRow = $('<div class="ale-scan-row">').appendTo(controls);
+    const scopeLabel = $('<label>').appendTo(scopeRow);
+    const shared = $('<input type="checkbox" aria-label="Allow shared SDR retuning">').appendTo(scopeLabel);
+    scopeLabel.append(document.createTextNode(' Retune shared SDR across bands — affects EVERY listener'));
+    const details = $('<details>').appendTo(controls);
+    $('<summary>').text('Channels / skip · published plans and monitoring candidates').appendTo(details);
+    const channels = $('<div class="ale-scan-channels">').appendTo(details);
+    function renderChannels() {
+        channels.empty();
+        ALE_SCAN_BANKS.find(b => b.id === bank.val()).channels.forEach(frequency => {
+            const label = $('<label>').appendTo(channels);
+            $('<input type="checkbox" checked>').val(frequency).appendTo(label);
+            label.append(document.createTextNode(' ' + (frequency/1000).toFixed(1) + ' kHz'));
+        });
+    }
+    this.scanner = new AleScanController(aleNativeScanApi(text => {
+        status.text(text); start.prop('disabled', !!(me.scanner && me.scanner.running));
+        stop.prop('disabled', !(me.scanner && me.scanner.running));
+        bank.add(dwell).add(shared).add(channels.find('input')).prop('disabled', !!(me.scanner && me.scanner.running));
+    }));
+    renderChannels();
+    bank.on('change', renderChannels);
+    start.on('click', async () => {
+        try {
+            const selected = channels.find('input:checked').map(function(){return Number(this.value);}).get();
+            await me.scanner.start(selected, {dwell:Number(dwell.val()), shared:shared.prop('checked')});
+        } catch(error) { me.scanner.stop(error.message); }
+    });
+    stop.on('click', () => me.scanner.stop());
+    this.scanTimer = setInterval(() => this.scanner.tick(), 200);
+    window.addEventListener('pagehide', () => this.scanner.stop('Stopped: page closed'));
+    layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Message</th></tr></thead><tbody></tbody></table>'));
 };
 Ale2gMessagePanel.prototype.pushMessage = function(message) {
+    this.scanner.event(message);
+    if (message.event === 'activity') return;
     const row = $('<tr>');
     const values = [Utils.HHMMSS(message.timestamp), (message.freq / 1000).toFixed(1),
         message.source || '—', message.destination || '—', message.message];

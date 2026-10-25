@@ -47,12 +47,16 @@ jobs:
           npx playwright install --with-deps chromium webkit
       - name: Validate JavaScript syntax
         run: |
+          node --check htdocs/lib/AleScanner.js
+          node --check htdocs/lib/MessagePanel.js
           node --check htdocs/plugins.js
           node --check htdocs/plugins/receiver/rig_dock/bootstrap.js
           node --check htdocs/plugins/receiver/rig_dock/rig_dock.js
           node --check htdocs/plugins/receiver/rig_audio/rig_audio.js
       - name: Installer and update tests
         run: python3 -m unittest discover -s contrib/rig_dock/tests -v
+      - name: ALE scanner state and catalog tests
+        run: node contrib/ale/tests/scanner.cjs
       - name: Receiver browser tests
         run: npm run test:receiver
       - name: Mobile WebKit startup tests

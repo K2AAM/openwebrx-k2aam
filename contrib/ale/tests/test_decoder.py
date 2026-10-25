@@ -5,6 +5,8 @@ import math
 import os
 from pathlib import Path
 import random
+import select
+import time
 import struct
 import subprocess
 import sys
@@ -51,8 +53,29 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual([e['active'] for e in events if e['kind'] == 'activity'], [True, False])
         self.assertTrue(all(e['frequency_hz'] == 7102000 for e in events))
         parsed = [protocol.decode_event(line, 7102000, 123456) for line in result.stdout.splitlines()]
-        self.assertEqual(len([e for e in parsed if e]), 2)
+        self.assertEqual(len([e for e in parsed if e and e['event'] != 'activity']), 2)
         self.assertTrue(any(e.get('source') == 'BAS' for e in parsed))
+
+    def test_reference_decodes_on_stream_without_eof(self):
+        process = subprocess.Popen([str(BINARY), '--frequency-hz', '7102000'],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        try:
+            process.stdin.write(self.pcm + bytes(16000*5))
+            process.stdin.flush()
+            output = b''
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select([process.stdout], [], [], 0.1)
+                if ready:
+                    output += os.read(process.stdout.fileno(), 8192)
+                if b'THE QUICK BROWN FOX' in output:
+                    break
+            self.assertIsNone(process.poll(), 'decoder must still be streaming')
+            self.assertIn(b'THE QUICK BROWN FOX', output)
+        finally:
+            process.stdin.close()
+            process.wait(timeout=5)
+            process.stdout.close()
 
     def test_no_decodes_from_silence_noise_or_single_tone(self):
         rng = random.Random(7102)
@@ -100,6 +123,16 @@ class ProtocolTests(unittest.TestCase):
 
     def test_previous_channel_output_is_rejected(self):
         self.assertFalse(protocol.decode_event(json.dumps(self.valid()).encode(),14109000,42))
+
+    def test_activity_validation_and_test_audio(self):
+        event = {'kind':'activity', 'active':True, 'frequency_hz':7102000}
+        value = protocol.decode_event(json.dumps(event).encode(),7102000,42)
+        self.assertEqual(value['event'], 'activity')
+        self.assertTrue(value['active'])
+        event['active'] = 'true'
+        self.assertFalse(protocol.decode_event(json.dumps(event).encode(),7102000,42))
+        event = self.valid(); event['test_audio'] = True
+        self.assertTrue(protocol.decode_event(json.dumps(event).encode(),7102000,42)['test_audio'])
 
     def test_bad_and_oversized_events_are_ignored(self):
         for value in (b'bad json', b'[]', b'null', b'x'*4097, b'{"kind":"activity"}'):

@@ -1,0 +1,216 @@
+/* Receive-only ALE scanning. Uses native OWRX tuning and existing server permissions. */
+'use strict';
+
+class AleScanController {
+    constructor(api) { this.api = api; this.running = false; this.generation = 0; }
+    status(text) { this.api.status(text); }
+    stop(reason = 'Stopped') {
+        this.running = false; this.generation++; this.tuning = false;
+        if (this.cancelTune) this.cancelTune();
+        this.cancelTune = null; this.status(reason);
+    }
+    async start(channels, options) {
+        this.stop();
+        if (!Number.isFinite(options.dwell) || options.dwell < 3 || options.dwell > 60)
+            throw new Error('Dwell must be between 3 and 60 seconds.');
+        const snap = this.api.snapshot();
+        if (!snap.connected || snap.mode !== 'ale2g') throw new Error('Select ALE 2G on a connected receiver first.');
+        this.shared = !!options.shared; this.dwell = options.dwell * 1000;
+        this.channels = [...new Set(channels)].filter(f => Number.isSafeInteger(f) && f > 0 &&
+            (this.shared || this.api.fits(f)));
+        if (!this.channels.length) throw new Error('No enabled bank channels fit this capture. Select another profile or explicitly enable shared SDR retuning.');
+        this.api.stopNativeScanner(); this.profile = snap.profile; this.socket = snap.socket;
+        this.running = true; this.index = -1;
+        await this.next();
+    }
+    async next() {
+        if (!this.running) return;
+        const generation = this.generation;
+        this.index = (this.index + 1) % this.channels.length;
+        this.frequency = this.channels[this.index]; this.active = false; this.holdStart = null;
+        this.releaseAt = 0; this.tuning = true;
+        this.status('Tuning ' + (this.frequency / 1000).toFixed(1) + ' kHz…');
+        try {
+            await this.api.tune(this.frequency, this.shared, () => this.running && generation === this.generation,
+                cancel => { this.cancelTune = cancel; });
+            if (!this.running || generation !== this.generation) return;
+            this.cancelTune = null; this.capture = this.api.snapshot().center;
+            this.tuning = false; this.deadline = this.api.now() + this.dwell;
+            this.status('Scanning ' + (this.index + 1) + '/' + this.channels.length + ' · ' +
+                (this.frequency / 1000).toFixed(1) + ' kHz');
+        } catch (error) {
+            if (generation === this.generation) this.stop(error.message);
+        }
+    }
+    event(message) {
+        if (message.test_audio) { this.stop('TEST AUDIO — scanning stopped'); return; }
+        if (!this.running || this.tuning || message.freq !== this.frequency) return;
+        const now = this.api.now();
+        if (message.event === 'activity') {
+            this.active = message.active;
+            if (!message.active && this.holdStart === null) return;
+        }
+        if (this.holdStart === null) this.holdStart = now;
+        this.releaseAt = now + 3000;
+        this.status((message.event === 'activity' ? 'Activity / hold' : 'Decoded / hold') + ' · ' +
+            (this.frequency / 1000).toFixed(1) + ' kHz');
+    }
+    tick() {
+        if (!this.running) return;
+        const snap = this.api.snapshot();
+        if (!snap.connected || snap.socket !== this.socket) return this.stop('Stopped: receiver disconnected');
+        if (snap.profile !== this.profile) return this.stop('Stopped: receiver/profile changed');
+        if (snap.hidden) return this.stop('Stopped: receiver tab is hidden');
+        if (snap.nativeScanner) return this.stop('Stopped: stock Scanner started');
+        if (this.tuning) return;
+        if (snap.mode !== 'ale2g' || Math.abs(snap.frequency - this.frequency) > 1 || snap.center !== this.capture)
+            return this.stop('Stopped: manual tuning, mode, or SDR center changed');
+        const now = this.api.now();
+        if (this.holdStart !== null) {
+            if (now - this.holdStart < 120000 && (this.active || now < this.releaseAt)) return;
+        } else if (now < this.deadline) return;
+        void this.next();
+    }
+}
+
+function aleNativeScanApi(status) {
+    const fits = frequency => {
+        const demod = UI.getDemodulator();
+        const pass = demod && demod.get_bandpass ? demod.get_bandpass() : {low_cut:600, high_cut:2650};
+        return typeof center_freq === 'number' && typeof bandwidth === 'number' && bandwidth > 0 &&
+            frequency + Math.min(200, pass.low_cut) > center_freq - bandwidth / 2 &&
+            frequency + Math.max(2800, pass.high_cut) < center_freq + bandwidth / 2;
+    };
+    const snapshot = () => ({
+        connected: typeof ws !== 'undefined' && ws && ws.readyState === 1,
+        socket: typeof ws !== 'undefined' ? ws : null,
+        mode: UI.getModulation(), frequency: UI.getFrequency(),
+        center: typeof center_freq !== 'undefined' ? center_freq : null,
+        profile: $('#openwebrx-sdr-profiles-listbox').val(), hidden: document.hidden,
+        nativeScanner: typeof scanner !== 'undefined' && scanner.isRunning()
+    });
+    return {
+        now: () => performance.now(), status, snapshot, fits,
+        stopNativeScanner: () => UI.toggleScanner(false),
+        tune: (frequency, shared, alive, onCancel) => new Promise((resolve, reject) => {
+            if (!alive()) return reject(new Error('Scan cancelled'));
+            if (fits(frequency)) {
+                if (UI.setFrequency(frequency, false) === false || Math.abs(UI.getFrequency() - frequency) > 1)
+                    return reject(new Error('Receiver refused tuning'));
+                return resolve();
+            }
+            if (!shared) return reject(new Error('Channel no longer fits the capture'));
+            const initial = snapshot(), sock = initial.socket;
+            if (!initial.connected) return reject(new Error('Receiver disconnected'));
+            let acknowledged = false, timer, settled = false;
+            const deadline = performance.now() + 10000;
+            const done = error => {
+                if (settled) return;
+                settled = true;
+                clearInterval(timer); sock.removeEventListener('message', receive);
+                error ? reject(new Error(error)) : resolve();
+            };
+            const receive = event => {
+                if (typeof event.data !== 'string') return;
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'config' && data.value) {
+                        if (data.value.allow_center_freq_changes === false) return done('Server does not allow SDR retuning');
+                        if (data.value.center_freq === frequency) acknowledged = true;
+                    }
+                } catch (_) { /* Non-config messages are irrelevant. */ }
+            };
+            sock.addEventListener('message', receive);
+            onCancel(() => done('Scan cancelled'));
+            timer = setInterval(() => {
+                const current = snapshot(), panel = UI.getDemodulatorPanel();
+                if (!alive() || current.hidden || current.profile !== initial.profile || current.socket !== sock || !current.connected)
+                    return done('Tuning cancelled: receiver changed or disconnected');
+                if (!acknowledged && (current.center !== initial.center || Math.abs(current.frequency-initial.frequency)>1))
+                    return done('Tuning cancelled: manual tuning or external SDR center change');
+                if (performance.now() > deadline) return done('Retune timed out: check server permission, magic key, and SDR range');
+                if (!acknowledged || panel.centerFreqTimeout || panel.center_freq !== center_freq || !fits(frequency)) return;
+                UI.setModulation('ale2g');
+                if (UI.setFrequency(frequency, false) === false || Math.abs(UI.getFrequency() - frequency) > 1)
+                    return done('SDR moved but listening frequency was refused');
+                done();
+            }, 100);
+            try {
+                sock.send(JSON.stringify({type:'setfrequency',params:{frequency, key:UI.getDemodulatorPanel().getMagicKey()}}));
+            } catch (error) { done(error.message); }
+        })
+    };
+}
+
+// Generated from contrib/ale/channels.json; no live activity is implied.
+const ALE_SCAN_BANKS = [
+  {
+    "id": "hfn_us_hf",
+    "name": "Amateur HFN \u2014 US HF",
+    "channels": [
+      1843000,
+      3596000,
+      7102000,
+      10145500,
+      14109000,
+      18106000,
+      21096000,
+      24926000,
+      28146000
+    ]
+  },
+  {
+    "id": "hfl_us_hf",
+    "name": "Amateur HFL \u2014 US HF",
+    "channels": [
+      1996000,
+      3996000,
+      5357000,
+      5371500,
+      7296000,
+      10131000,
+      14346000,
+      18117500,
+      21432500,
+      24932000,
+      28312500
+    ]
+  },
+  {
+    "id": "cothen_candidates",
+    "name": "COTHEN \u2014 monitoring candidates",
+    "channels": [
+      5250000,
+      5732000,
+      5909500,
+      7527000,
+      8912000,
+      10242000,
+      11494000,
+      12222000,
+      13312000,
+      13907000,
+      14582000,
+      15867000,
+      18594000,
+      20890000,
+      24838500
+    ]
+  },
+  {
+    "id": "hfgcs_candidates",
+    "name": "HFGCS ALE \u2014 monitoring candidates",
+    "channels": [
+      3137000,
+      4721000,
+      5708000,
+      6721000,
+      9025000,
+      11226000,
+      13215000,
+      15043000,
+      18003000,
+      23337000
+    ]
+  }
+];
