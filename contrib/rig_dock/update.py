@@ -6,7 +6,10 @@ from pathlib import Path
 import tempfile
 from install import ASSETS, FILES, STATE_DEFAULT, InstallError, atomic, digest, plan_uninstall
 
+VERSION = '0.2.1'
+
 OLD_JS = {
+    '22f3514650389fef4dc570499d3230ba2a05a6b221ff59e5333792ddced66cd3',
     'fadf3975345193b882420542a4c9a98725643dacbf9e61a2beac8a42569b276b',
     '96ab348f1805abc8ce5e20c77d8e71ecbdd352d0250f6541372e2d76bd1c3c31',
     '89a6da28aedf289b2d61953ce8f4ecf0749a336fcae509ff6c10340868ca1f7e',
@@ -39,12 +42,12 @@ def update(state=STATE_DEFAULT, check=False):
         if old != new:
             changes.append((path, old, new, path.stat().st_mode & 0o777))
     if not changes:
-        print('RIG Dock v0.2.0 is already installed. Reload the receiver page.')
+        print(f'RIG Dock v{VERSION} is already installed. Reload the receiver page.')
         return
     if check:
-        print('Update check passed. No files changed. Run without --check to update to v0.2.0.')
+        print(f'Update check passed. No files changed. Run without --check to update to v{VERSION}.')
         return
-    backup = Path(tempfile.mkdtemp(prefix='update-backup-v0.2.0-', dir=state))
+    backup = Path(tempfile.mkdtemp(prefix=f'update-backup-v{VERSION}-', dir=state))
     atomic(backup / 'install.json', saved)
     for path, old, _, _ in changes:
         atomic(backup / path.name, old)
@@ -57,7 +60,7 @@ def update(state=STATE_DEFAULT, check=False):
             atomic(path, old, mode)
         atomic(manifest, saved)
         raise
-    print('RIG Dock updated to v0.2.0. Reload the receiver page; no OWRX restart needed.')
+    print(f'RIG Dock updated to v{VERSION}. Reload the receiver page; no OWRX restart needed.')
 
 
 def main():

@@ -43,7 +43,7 @@ body.rig-dock-active .rd-antennas .rsp-antenna[hidden], .rig-dock-ui[hidden], .r
     font-weight: 500; cursor: pointer; white-space: nowrap; text-shadow: none;
 }
 .rd-decoder-tray {
-    position: fixed; left: 0; right: 0; bottom: var(--rig-dock-height, 142px); z-index: 1051;
+    position: fixed; left: 0; right: 0; bottom: var(--rig-dock-height, 142px); z-index: 1049;
     display: flex; flex-direction: column; box-sizing: border-box; min-height: 0;
     background: var(--rd-bg); color: var(--rd-text); border-top: 1px solid #4b6481;
     box-shadow: 0 -4px 18px #0004; font: 12px system-ui, -apple-system, sans-serif;

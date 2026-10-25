@@ -1,5 +1,6 @@
 const fs=require('node:fs');const path=require('node:path');const http=require('node:http');const assert=require('node:assert/strict');
-const {chromium}=require('playwright');
+const {chromium,webkit}=require('playwright');
+const useWebKit=process.argv.includes('--webkit');
 const root=path.resolve(__dirname,'../..');
 const read=p=>fs.readFileSync(path.join(root,p),'utf8');
 let html=read('htdocs/index.html');
@@ -45,13 +46,85 @@ const server=http.createServer((req,res)=>{
 (async()=>{
     fs.mkdirSync(path.join(root,'test-results'),{recursive:true});
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-    const browser=await chromium.launch({headless:true,
+    const browser=await (useWebKit?webkit:chromium).launch(useWebKit?{headless:true}:{headless:true,
         executablePath:process.env.CHROMIUM_EXECUTABLE_PATH||undefined,
         args:JSON.parse(process.env.PLAYWRIGHT_CHROMIUM_ARGS||'[]')});
     const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];
     page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message);});
     let checks=0;const check=(v,msg)=>{assert.ok(v,msg);checks++;};
     try{
+        const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:3});
+        const cold=await mobileContext.newPage(),coldErrors=[];
+        cold.on('pageerror',e=>coldErrors.push(e.message));
+        let releaseStyles;
+        await cold.route('**/rig_dock.css?*',async route=>{
+            await new Promise(resolve=>{releaseStyles=resolve;});await route.continue();
+        });
+        await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
+        await cold.waitForFunction(()=>window.Plugins?.rig_dock?._version);
+        await cold.waitForSelector('#rig-dock-startup');
+        check(await cold.locator('#openwebrx-panel-receiver').isHidden(),'cold load hides floating native controls while the stylesheet is delayed');
+        check(await cold.locator('#openwebrx-panel-status').isHidden(),'cold load hides the floating status panel before dock CSS arrives');
+        check(await cold.evaluate(()=>!document.getElementById('rig-dock')),'cold load waits for the dock stylesheet');
+        const stylesLoaded=cold.waitForResponse(r=>r.url().includes('rig_dock.css'));
+        releaseStyles();await stylesLoaded;
+        await cold.evaluate(()=>{
+            window.startupPaints=[];
+            function capture(){
+                if(document.body.classList.contains('rig-dock-active')&&!document.body.classList.contains('rig-dock-loading')){
+                    startupPaints.push({frequency:document.querySelector('#rig-dock .webrx-actual-freq').textContent,
+                        profile:document.getElementById('openwebrx-sdr-profiles-listbox').value});
+                }
+                if(startupPaints.length<3)requestAnimationFrame(capture);
+            }
+            requestAnimationFrame(capture);
+        });
+        await cold.evaluate(()=>coldStartup.config());
+        await cold.waitForTimeout(200);
+        check(await cold.evaluate(()=>waterfall_setup_done&&!UI.getDemodulator()&&!document.getElementById('rig-dock')),'cold load waits for receiver data after the waterfall canvas exists');
+        await cold.evaluate(()=>coldStartup.modes());await cold.waitForTimeout(120);
+        check(await cold.evaluate(()=>!UI.getDemodulator()&&!document.getElementById('rig-dock')),'cold load waits for supported mode features');
+        await cold.evaluate(()=>coldStartup.features());await cold.waitForTimeout(120);
+        check(await cold.evaluate(()=>!!UI.getDemodulator()&&!document.getElementById('rig-dock')),'cold load waits for the profile list after the demodulator starts');
+        await cold.evaluate(()=>coldStartup.profiles());
+        await cold.waitForSelector('body.rig-dock-active:not(.rig-dock-loading)');
+        check(await cold.locator('#rig-dock .webrx-actual-freq').textContent()==='7.074000 MHz','cold load reveals the configured frequency instead of 0 Hz');
+        check(await cold.locator('#rig-dock #openwebrx-sdr-profiles-listbox').inputValue()==='sdrplay|40m','cold load reveals the selected profile');
+        await cold.waitForFunction(()=>startupPaints.length>=3);
+        check(await cold.evaluate(()=>startupPaints.every(p=>p.frequency==='7.074000 MHz'&&p.profile==='sdrplay|40m')),'every initial visible mobile frame has a populated frequency and profile');
+        check(await cold.locator('#rig-dock-startup').count()===0,'connecting notice is removed after receiver readiness');
+        await cold.waitForSelector('#rig-decoder-tray');
+        check(await cold.evaluate(()=>{
+            const tray=document.getElementById('rig-decoder-tray'),r=tray.getBoundingClientRect();
+            return !document.getElementById('openwebrx-panel-receiver').contains(tray)&&Math.abs(r.left)<1&&Math.abs(r.width-innerWidth)<1;
+        }),'cold mobile decoder tray spans the viewport outside the native receiver panel');
+        await cold.evaluate(()=>document.getElementById('openwebrx-panel-receiver').style.setProperty('transform','translate3d(80px,0,0)','important'));
+        check(await cold.evaluate(()=>{
+            const r=document.getElementById('rig-decoder-tray').getBoundingClientRect();
+            return Math.abs(r.left)<1&&Math.abs(r.width-innerWidth)<1;
+        }),'native receiver transforms cannot move or clip the decoder tray');
+        await cold.evaluate(()=>{Plugins.rig_dock.destroy(false);});
+        check(await cold.locator('#rig-decoder-tray').count()===0,'restoring stock controls removes the separate decoder tray');
+        check(await cold.evaluate(()=>savedDecoderNodes.every(n=>n.parentElement===savedDecoderParents.get(n))),'cold-load decoder nodes return to their native positions');
+        await cold.unroute('**/rig_dock.css?*');
+        await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`);
+        await cold.waitForSelector('#rig-dock-startup');
+        await cold.evaluate(()=>{coldStartup.modes();coldStartup.features();coldStartup.profiles();});
+        await cold.waitForTimeout(150);
+        check(await cold.evaluate(()=>!document.getElementById('rig-dock')),'profiles and modes arriving first still wait for the initial receiver config');
+        await cold.evaluate(()=>coldStartup.config());
+        await cold.waitForSelector('body.rig-dock-active:not(.rig-dock-loading)');
+        check(await cold.locator('#rig-dock .webrx-actual-freq').textContent()==='7.074000 MHz','reverse startup message order settles without a refresh');
+        await cold.route('**/rig_dock.css?*',route=>route.abort());
+        await cold.goto(`http://127.0.0.1:${server.address().port}/`);
+        await cold.waitForFunction(()=>window.Plugins?.rig_dock?._script_loaded&&!document.body.classList.contains('rig-dock-loading'));
+        check(await cold.locator('#openwebrx-panel-receiver').isVisible()&&await cold.locator('#rig-dock').count()===0,'stylesheet failure restores usable stock controls');
+        check(await cold.locator('#rig-dock-startup').count()===0,'stylesheet failure removes the connecting notice');
+        check(coldErrors.length===0,'no errors during cold mobile startup: '+coldErrors.join('; '));
+        if(process.argv.includes('--startup-only')){
+            console.log(`${checks} ${useWebKit?'WebKit':'Chromium'} cold mobile startup checks passed; simulated RF transport.`);
+            return;
+        }
         await page.goto(`http://127.0.0.1:${server.address().port}/`);
         await page.waitForSelector('body.rig-dock-active');
         await page.waitForSelector('.rd-antennas button');

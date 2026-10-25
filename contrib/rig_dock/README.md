@@ -1,6 +1,8 @@
-# K2AAM receiver UI — RIG Dock 0.2.0
+# K2AAM receiver UI — RIG Dock 0.2.1
 
 This fork adds a compact receiver dock and a shared decoder tray to OpenWebRX+ 1.2.126. The receiver page loads the dock before station plugins. Map pages retain their existing loader.
+
+On first load, a compact connecting bar stays visible until the stylesheet, waterfall scale, supported modes/features, active demodulator, and selected profile are ready. The dock is then revealed with its configured frequency and profile. A failed stylesheet load or a 20-second startup timeout restores stock controls.
 
 ## Decoder tray
 
@@ -12,6 +14,7 @@ All native message panels, digital voice/radio metadata panels, and the secondar
 - IF waterfall toggles the small decoder waterfall. Phones default to full-width results where text/results are available; users can enable the IF view, and that choice is saved. Decoded messages retain their native scrolling, callsign/map links, and Clear handlers.
 - Text, WSJT-family, JS8, packet, paging, aeronautical, image, skimmer, mesh, and digital-radio metadata outputs share the tray.
 - Native expand/collapse flags are settled explicitly because the tray does not use the floating panels' 3-D transitions.
+- The tray sits beside the native panel stacks so a receiver panel transform cannot shift or clip it. Dock menus remain above the tray.
 - More controls → Use stock controls restores native nodes, positions, and controls in the current tab.
 
 ## Receiver controls
@@ -35,7 +38,7 @@ git clone --branch k2aam-ui https://github.com/K2AAM/openwebrx-k2aam.git
 cd openwebrx-k2aam
 ```
 
-For an already installed RIG Dock 0.1.0–0.1.3:
+For an already installed RIG Dock 0.1.0–0.2.0 (run `git pull --ff-only` first when updating an existing clone):
 
 ```bash
 sudo /usr/bin/python3 contrib/rig_dock/update.py --check

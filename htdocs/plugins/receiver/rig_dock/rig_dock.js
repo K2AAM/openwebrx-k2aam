@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.rig_dock;
-    plugin._version = '0.2.0';
+    plugin._version = '0.2.1';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
@@ -13,6 +13,7 @@
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
     let decoderNodes = [], decoderSignature = '', decoderCollapsed = false, decoderPercent = 28;
     let decoderIFPreference = null;
+    let startupStyle, startupNotice;
     const refs = {};
     const $ = (selector, root) => (root || document).querySelector(selector);
     const all = (selector, root) => Array.from((root || document).querySelectorAll(selector));
@@ -26,6 +27,40 @@
     function on(node, type, fn, options) {
         node.addEventListener(type, fn, options);
         listeners.push(() => node.removeEventListener(type, fn, options));
+    }
+    function showStartup() {
+        // The main stylesheet may still be downloading on a cold connection.
+        // Visibility keeps native panel measurements and initialization intact.
+        startupStyle = el('style');
+        startupStyle.textContent = 'body.rig-dock-loading #openwebrx-panels-container { visibility: hidden !important; }' +
+            '#rig-dock-startup { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1050;' +
+            'box-sizing: border-box; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));' +
+            'background: #111c2c; color: #b8d5e8; border-top: 1px solid #4b6481;' +
+            'font: 13px system-ui, -apple-system, sans-serif; pointer-events: none; }';
+        startupNotice = el('div', '', 'Connecting to receiver…');
+        startupNotice.id = 'rig-dock-startup'; startupNotice.setAttribute('role', 'status');
+        document.head.append(startupStyle);
+        document.body.classList.add('rig-dock-loading');
+        document.body.append(startupNotice);
+    }
+    function hideStartup() {
+        document.body.classList.remove('rig-dock-loading');
+        if (startupNotice) startupNotice.remove();
+        if (startupStyle) startupStyle.remove();
+        startupNotice = startupStyle = null;
+    }
+    function receiverReady() {
+        const profiles = $('#openwebrx-sdr-profiles-listbox');
+        const nativePanel = window.jQuery && window.jQuery('#openwebrx-panel-receiver').data('panel');
+        return typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done &&
+            typeof scale_canvas !== 'undefined' && scale_canvas &&
+            typeof scale_ctx !== 'undefined' && scale_ctx &&
+            typeof Modes !== 'undefined' && Modes.initComplete() &&
+            nativePanel && !nativePanel.centerFreqTimeout &&
+            typeof center_freq !== 'undefined' && nativePanel.center_freq === center_freq &&
+            nativePanel.getDemodulator() && typeof UI !== 'undefined' &&
+            Number.isFinite(UI.getFrequency()) && UI.getFrequency() > 0 &&
+            profiles && profiles.selectedIndex >= 0 && !!profiles.value;
     }
     function button(text, fn, className) {
         const node = el('button', 'rd-button ' + (className || ''), text);
@@ -501,7 +536,10 @@
         refs.decoderCollapse.title = 'Collapse the output area while decoding continues';
         refs.decoderBody = el('div', 'rd-decoder-body'); refs.decoderBody.id = 'rig-decoder-body';
         header.append(refs.decoderTitle, heightLabel, refs.decoderIF, refs.decoderClear, refs.decoderCollapse);
-        tray.append(header, refs.decoderBody); panel.append(tray);
+        tray.append(header, refs.decoderBody);
+        // A fixed child of the native animated receiver panel can inherit its
+        // transformed containing block. Keep the tray beside the panel stacks.
+        $('#openwebrx-panels-container').append(tray);
         adoptDecoders();
         decoderObserver = new MutationObserver(() => {
             if (decoderFrame !== null) return;
@@ -661,6 +699,7 @@
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', false);
         document.body.classList.add('rig-dock-active');
         on(window, 'resize', reserveSpace);
+        if (window.visualViewport) on(window.visualViewport, 'resize', reserveSpace);
         on(document, 'pointerdown', event => {
             if (popup && !popup.contains(event.target) && !opener.contains(event.target)) closePopup(false);
         });
@@ -674,19 +713,28 @@
     plugin.init = async function () {
         if (mounted) return true;
         const returning = $('#rig-dock-return'); if (returning) returning.remove();
+        let styleTimeout;
         try {
-            await Plugins._load_style(base + 'rig_dock.css?v=' + plugin._version);
-            // Plugins run at DOM ready, before the first receiver config creates the scale.
+            showStartup();
             const deadline = Date.now() + 20000;
-            while (!(typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done &&
-                    typeof scale_canvas !== 'undefined' && scale_canvas &&
-                    typeof scale_ctx !== 'undefined' && scale_ctx)) {
-                if (Date.now() > deadline) throw new Error('RIG Dock: waiting for the receiver to initialize; stock controls retained. Reload after the receiver connects.');
+            await Promise.race([
+                Plugins._load_style(base + 'rig_dock.css?v=' + plugin._version),
+                new Promise((resolve, reject) => {
+                    styleTimeout = window.setTimeout(() => reject(new Error('RIG Dock: stylesheet load timed out; stock controls retained.')), 20000);
+                })
+            ]);
+            clearTimeout(styleTimeout);
+            // Config, modes/features, profiles, and the native 50 ms demodulator
+            // restart can finish independently. The canvas alone is not readiness.
+            while (!receiverReady()) {
+                if (Date.now() > deadline) throw new Error('RIG Dock: receiver startup timed out; stock controls retained. Reload after the receiver connects.');
                 await new Promise(resolve => window.setTimeout(resolve, 100));
             }
             mount(); return true;
         } catch (error) {
             console.error(error); if (mounted) plugin.destroy(false); return false;
+        } finally {
+            clearTimeout(styleTimeout); hideStartup();
         }
     };
     plugin.destroy = function (showReturn) {
@@ -695,8 +743,10 @@
         if (decoderObserver) decoderObserver.disconnect();
         if (decoderFrame !== null) cancelAnimationFrame(decoderFrame);
         decoderFrame = null; clearTimeout(decoderCanvasTimer);
-        decoderNodes.forEach(node => node.classList.remove('rd-decoder-native'));
-        all('.rd-native-clear', panel).forEach(node => node.classList.remove('rd-native-clear'));
+        decoderNodes.forEach(node => {
+            node.classList.remove('rd-decoder-native');
+            all('.rd-native-clear', node).forEach(control => control.classList.remove('rd-native-clear'));
+        });
         decoderNodes = []; decoderSignature = '';
         closePopup(false);
         if (Plugins.rig_audio && Plugins.rig_audio.setEnabled) Plugins.rig_audio.setEnabled(false);
@@ -711,6 +761,7 @@
                 else marker.replaceWith(node);
             }
         }); moved = [];
+        if (refs.decoderTray) refs.decoderTray.remove();
         all('.rig-dock-ui', panel).forEach(node => node.remove());
         document.body.classList.remove('rig-dock-active');
         document.documentElement.style.removeProperty('--rig-dock-height');

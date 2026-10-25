@@ -26,7 +26,7 @@ jobs:
       - name: Install browser test dependencies
         run: |
           npm ci --ignore-scripts
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
       - name: Validate JavaScript syntax
         run: |
           node --check htdocs/plugins.js
@@ -37,3 +37,5 @@ jobs:
         run: python3 -m unittest discover -s contrib/rig_dock/tests -v
       - name: Receiver browser tests
         run: npm run test:receiver
+      - name: Mobile WebKit startup tests
+        run: npm run test:startup:webkit

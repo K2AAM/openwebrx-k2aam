@@ -115,5 +115,19 @@ window.setupFixture = function () {
     window.savedSquelchNode=document.querySelector('.openwebrx-squelch-slider');
     window.savedDecoderNodes=Array.from(document.querySelectorAll('.openwebrx-message-panel,.openwebrx-meta-panel,#openwebrx-panel-digimodes'));
     window.savedDecoderParents=new Map(savedDecoderNodes.map(node=>[node,node.parentElement]));
-    if(!location.search.includes('delay-start'))finishReceiverStartup();
+    if(location.search.includes('cold-start')) {
+        // The first config can initialize the waterfall before modes/features
+        // and the profile list arrive in separate websocket messages.
+        const startupModes=Modes.modes;
+        p.stopDemodulator();p.center_freq=undefined;
+        Modes.modes=[];Modes.features={};
+        $('#openwebrx-sdr-profiles-listbox').empty();
+        savedFrequencyNode.textContent='0 Hz';
+        window.coldStartup={
+            config(){finishReceiverStartup();p.setCenterFrequency(center_freq);p.setInitialParams({offset_frequency:-26000,secondary_mod:'ft8',mod:'usb'});},
+            modes(){Modes.modes=startupModes;Modes.updatePanels();},
+            features(){Modes.setFeatures({sdr:true});},
+            profiles(){$('#openwebrx-sdr-profiles-listbox').html('<option value="sdrplay|40m">RSPdx-R2 · 40m</option>').val('sdrplay|40m');}
+        };
+    } else if(!location.search.includes('delay-start'))finishReceiverStartup();
 };
