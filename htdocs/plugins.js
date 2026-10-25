@@ -8,9 +8,18 @@
  */
 
 // Wait for the page to load, then load the plugins.
-$(document).ready(function () {
+$(document).ready(async function () {
     // detect which plugins to load
     Plugins._type = (typeof mapManager !== 'undefined') ? 'map' : 'receiver';
+    if (Plugins._type === 'receiver') {
+        try {
+            // Install the legacy-loader guard before the station's init.js.
+            // Map pages keep their existing plugin initialization.
+            await Plugins._load_script('static/plugins/receiver/rig_dock/bootstrap.js');
+        } catch (error) {
+            console.warn('RIG Dock bootstrap unavailable; loading the station plugins.', error);
+        }
+    }
     Plugins.init();
 });
 
@@ -141,3 +150,4 @@ Plugins._debug = function (msg) {
 Plugins._banner = function (name) {
     return 'PLUGINS: ' + (Plugins[name] && Plugins[name]._remote ? '[remote]' : '[local]') + ' "' + name + '" ';
 }
+

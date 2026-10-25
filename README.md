@@ -1,3 +1,12 @@
+K2AAM receiver UI fork
+=====================
+
+This fork of OpenWebRX+ adds a compact RIG dock and a shared decoder tray directly above it. The RF waterfall reserves space for text, image, and digital-radio decoder output. The tray has height/collapse controls and retains native decoder nodes and processing. The branch also includes native recording and frequency-entry fixes.
+
+See **[receiver UI setup and updates](contrib/rig_dock/README.md)**, **[validation](contrib/rig_dock/VALIDATION.md)**, and **[roadmap](contrib/rig_dock/ROADMAP.md)**. The receiver loader starts the dock automatically in this fork; an installer/updater can apply only the browser assets to an existing stock installation.
+
+Upstream project documentation follows.
+
 OpenWebRX+
 =========
 
@@ -87,3 +96,4 @@ OpenWebRX is available under Affero GPL v3 license
 
 OpenWebRX is also available under a commercial license on request. Please contact me at the address
 *&lt;randras@sdr.hu&gt;* for licensing options. 
+

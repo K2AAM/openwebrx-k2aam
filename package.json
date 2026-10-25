@@ -1,0 +1,10 @@
+{
+  "name": "openwebrx-k2aam-receiver-tests",
+  "private": true,
+  "scripts": {
+    "test:receiver": "node test/browser/receiver.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

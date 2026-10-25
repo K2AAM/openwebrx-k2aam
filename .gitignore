@@ -3,3 +3,6 @@
 tags
 .idea
 packages
+
+node_modules/
+test-results/
