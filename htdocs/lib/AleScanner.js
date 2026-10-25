@@ -214,3 +214,86 @@ const ALE_SCAN_BANKS = [
     ]
   }
 ];
+
+// The browser observes and controls the background worker; it does not own it.
+class AleServerScanClient {
+    constructor(status, event) {
+        this.status = status; this.event = event; this.running = false;
+        this.socket = null; this.session = null; this.sequence = 0; this.pending = false;
+        this.receive = this.receive.bind(this);
+        this.timer = setInterval(() => this.poll(), 2000);
+    }
+    send(action, options = {}) {
+        this.bind();
+        if (!this.socket || this.socket.readyState !== 1) throw new Error('Receiver disconnected');
+        this.socket.send(JSON.stringify({type:'ale_scan', params:{...options, action, after:this.sequence,
+            key:action === 'status' ? undefined : UI.getDemodulatorPanel().getMagicKey()}}));
+    }
+    bind() {
+        const current = typeof ws !== 'undefined' ? ws : null;
+        if (current === this.socket) return;
+        if (this.socket) this.socket.removeEventListener('message', this.receive);
+        this.socket = current;
+        if (current) current.addEventListener('message', this.receive);
+    }
+    poll() {
+        if (this.pending && performance.now()-this.pendingSince > 12000) {
+            this.pending = false; this.status('No server scanner response: restart OWRX after upgrading');
+        }
+        this.bind();
+        if (this.socket && this.socket.readyState === 1) {
+            try { this.send('status'); } catch (_) { /* Retry after reconnect. */ }
+        }
+    }
+    start(options) {
+        this.following = true;
+        this.pending = true; this.pendingSince = performance.now(); this.status('Starting server scanner…');
+        try { this.send('start', options); }
+        catch (error) { this.pending = false; this.status(error.message); }
+    }
+    stop() {
+        this.pending = true; this.pendingSince = performance.now(); this.status('Stopping server scanner…');
+        try { this.send('stop'); }
+        catch (error) { this.pending = false; this.status(error.message); }
+    }
+    receive(event) {
+        if (typeof event.data !== 'string') return;
+        let data;
+        try { data = JSON.parse(event.data); } catch (_) { return; }
+        if (data.type !== 'ale_scan_state' || !data.value) return;
+        const state = data.value;
+        this.pending = false;
+        if (state.error) { this.status(state.error); return; }
+        if (!state.available) return;
+        if (state.session !== this.session) { this.session = state.session; this.sequence = 0; }
+        this.running = !!state.running;
+        this.state = state;
+        if (Array.isArray(state.events)) for (const message of state.events) {
+            if (Number.isSafeInteger(message.scan_seq) && message.scan_seq > this.sequence) {
+                this.sequence = message.scan_seq;
+                this.event(message);
+            }
+        }
+        if (UI.getModulation() === 'ale2g') this.following = true;
+        if (this.running && this.following && Number.isSafeInteger(state.frequency)) {
+            // Follow inside the hardware capture only; never send a hardware retune from polling.
+            const panel = UI.getDemodulatorPanel();
+            if (!panel.centerFreqTimeout && panel.center_freq === center_freq &&
+                Math.abs(state.frequency-center_freq)+2800 < bandwidth/2 && UI.getDemodulator()) {
+                UI.setModulation('ale2g');
+                UI.setFrequency(state.frequency, false);
+            }
+        }
+        this.status(state.status || 'Stopped');
+    }
+    resume() {
+        if (!this.timer) this.timer = setInterval(() => this.poll(), 2000);
+        this.poll();
+    }
+    destroy() {
+        clearInterval(this.timer); this.timer = null;
+        if (this.socket) this.socket.removeEventListener('message', this.receive);
+        this.socket = null;
+        // Deliberately do not send stop when a tab is hidden, navigated or closed.
+    }
+}

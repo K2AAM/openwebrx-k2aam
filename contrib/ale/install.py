@@ -11,7 +11,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent.parent
 STATE = Path('/var/lib/openwebrx/ale2g')
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 
 
 def digest(data):
@@ -86,14 +86,14 @@ def apply(changes, state):
         raise
 
 
-def upgrade(package, htdocs, binary_target, state, write=False):
+def upgrade(package, htdocs, binary_target, state, write=False, baselines=None):
     """Preserve original uninstall backups while upgrading a verified installation."""
     manifest = state/'install.json'
     original_manifest = manifest.read_bytes()
     record = json.loads(original_manifest)
-    if record.get('version') not in ('0.1.0', VERSION):
+    if record.get('version') not in ('0.1.0', '0.2.0', VERSION):
         raise ValueError('Unsupported installed ALE version.')
-    baselines = json.loads((HERE/'install-baselines.json').read_text())
+    baselines = json.loads((HERE/'install-baselines.json').read_text()) if baselines is None else baselines
     wanted = {}
     for relative in baselines:
         part, tail = relative.split('/', 1)
@@ -118,21 +118,35 @@ def upgrade(package, htdocs, binary_target, state, write=False):
         new = wanted[target].read_bytes()
         changes.append((target, new, current, target.stat().st_mode & 0o777))
         entry['sha256'] = digest(new)
-    # Only newly introduced ALE assets may be added to a prior installation.
+    new_backups = []
     for target in wanted.keys() - seen:
-        if target.exists() or target.is_symlink():
-            raise ValueError(f'New ALE asset already exists: {target}')
         relative = next((r for r in baselines if wanted[target] == SOURCE/r), None)
-        if relative is None or baselines[relative] is not None:
-            raise ValueError(f'Installed manifest is missing a native target: {target}')
+        if relative is None or target.is_symlink():
+            raise ValueError(f'Unexpected new ALE target: {target}')
+        expected = baselines[relative]
+        old = target.read_bytes() if target.exists() else None
+        if expected is None and old is not None:
+            raise ValueError(f'New ALE asset already exists: {target}')
+        if expected is not None and (old is None or blob(old) != expected):
+            raise ValueError(f'Unsupported or edited new native target: {target}. No files changed.')
+        mode = target.stat().st_mode & 0o777 if old is not None else 0o644
         new = wanted[target].read_bytes()
-        changes.append((target, new, None, 0o644))
-        record['files'].append({'path':str(target), 'backup':None,
-                                'original_sha256':None, 'sha256':digest(new), 'mode':0o644})
+        changes.append((target, new, old, mode))
+        entry = {'path':str(target), 'backup':None, 'original_sha256':digest(old) if old is not None else None,
+                 'sha256':digest(new), 'mode':mode}
+        record['files'].append(entry)
+        if old is not None:
+            new_backups.append((entry, old))
     if not write:
         return len(changes)
     written = []
     record['version'] = VERSION
+    if new_backups:
+        backup = Path(tempfile.mkdtemp(prefix='upgrade-backup-', dir=state))
+        for index, (entry, old) in enumerate(new_backups):
+            saved = backup/f'{index}.bak'
+            atomic(saved, old)
+            entry['backup'] = str(saved)
     try:
         for target, new, old, mode in changes:
             atomic(target, new, mode)

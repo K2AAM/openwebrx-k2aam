@@ -6,8 +6,8 @@ from pycsdr.types import Format
 
 
 class AleDemodulator(ServiceDemodulator, DialFrequencyReceiver):
-    def __init__(self):
-        self.parser = AleParser()
+    def __init__(self, callback=None):
+        self.parser = AleParser(callback=callback)
         self.decoder = AleModule()
         super().__init__([Convert(Format.FLOAT, Format.SHORT), self.decoder, self.parser])
 

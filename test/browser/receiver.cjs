@@ -324,6 +324,8 @@ const server=http.createServer((req,res)=>{
         await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
         await page.locator('.ale-scan-controls > summary').click();
+        check(await page.getByLabel('Run scanner on server').isChecked(),'server scanning is the default');
+        await page.getByLabel('Run scanner on server').uncheck();
         check(await page.getByRole('button',{name:'Start ALE scan',exact:true}).isVisible(),'ALE scanner controls are visible in tray');
         check(await page.getByLabel('Scan across HF bands').isChecked()===false,'ALE cross-band scanning is opt-in');
         await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
@@ -343,6 +345,30 @@ const server=http.createServer((req,res)=>{
         await page.getByRole('button',{name:'Stop',exact:true}).click();
         await page.getByLabel('Scan across HF bands').uncheck();
         await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_offset_freq:0,start_mod:'usb'}}));
+        await page.waitForTimeout(150);
+        await page.evaluate(()=>UI.setModulation('ale2g'));
+        await page.getByLabel('Run scanner on server').check();
+        await page.getByLabel('Scan across HF bands').check();
+        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
+        await page.waitForFunction(()=>alePanel.serverScanner.running);
+        check(await page.evaluate(()=>!alePanel.scanner.running),'server scan does not run browser scan simultaneously');
+        await page.evaluate(()=>{
+            ws.scanState={...ws.scanState,sequence:1,events:[{mode:'ALE2G',freq:5250000,timestamp:Date.now(),source:'ADW',event:'sounding_this_was',message:'SERVER TEST',server_scan:true,scan_seq:1}]};
+            alePanel.serverScanner.poll();
+        });
+        await page.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr').length===1);
+        await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===1,'server history is deduplicated by sequence');
+        const stopsBefore=await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length);
+        await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+        check(await page.evaluate(()=>ws.scanState.running),'closing/hiding a tab does not stop the server worker');
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length)===stopsBefore,'pagehide sends no server stop request');
+        // Reconnect the observer without creating a second backend worker.
+        await page.evaluate(()=>{alePanel.serverScanner.poll();});
+        await page.getByRole('button',{name:'Stop',exact:true}).click();
+        await page.waitForFunction(()=>!alePanel.serverScanner.running);
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_mod:'usb'}}));
         await page.waitForTimeout(150);
         await page.evaluate(()=>UI.setModulation('ft8'));
         await page.waitForFunction(()=>!document.getElementById('rig-decoder-tray').hidden);

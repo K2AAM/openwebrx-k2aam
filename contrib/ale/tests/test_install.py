@@ -64,6 +64,31 @@ class InstallerTests(unittest.TestCase):
         installer.undo(self.state)
         self.assertEqual(self.snapshot(),original)
 
+    def test_server_upgrade_adds_verified_native_backup(self):
+        original = self.snapshot()
+        installer.apply(self.plan(), self.state)
+        record = json.loads((self.state/'install.json').read_text())
+        added = {'owrx/connection.py','owrx/ale_scan.py','owrx/ale_channels.json'}
+        retained=[]
+        for entry in record['files']:
+            relative = str(Path(entry['path']).relative_to(self.package)) if Path(entry['path']).is_relative_to(self.package) else ''
+            if relative in added:
+                target=Path(entry['path'])
+                if entry['backup']:
+                    target.write_bytes(Path(entry['backup']).read_bytes())
+                else:
+                    target.unlink()
+            else:
+                retained.append(entry)
+        record['files']=retained;record['version']='0.2.0'
+        (self.state/'install.json').write_text(json.dumps(record))
+        before=self.snapshot()
+        installer.upgrade(self.package,self.web,self.binary,self.state,baselines=self.baselines)
+        self.assertEqual(before,self.snapshot())
+        installer.upgrade(self.package,self.web,self.binary,self.state,write=True,baselines=self.baselines)
+        installer.undo(self.state)
+        self.assertEqual(self.snapshot(),original)
+
     def test_upgrade_rejects_changed_files_and_rolls_back_failure(self):
         installer.apply(self.plan(), self.state)
         before = self.snapshot()

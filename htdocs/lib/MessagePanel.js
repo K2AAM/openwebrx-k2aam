@@ -90,6 +90,10 @@ Ale2gMessagePanel.prototype.render = function() {
     const dwell = $('<input type="number" min="3" max="60" value="10" aria-label="ALE dwell seconds">').appendTo(dwellLabel);
     const start = $('<button type="button">').text('Start ALE scan').appendTo(row);
     const stop = $('<button type="button">').text('Stop').prop('disabled',true).appendTo(row);
+    const engineRow = $('<div class="ale-scan-row">').appendTo(controls);
+    const engineLabel = $('<label>').appendTo(engineRow);
+    const server = $('<input type="checkbox" checked aria-label="Run scanner on server">').appendTo(engineLabel);
+    engineLabel.append(document.createTextNode(' Run on server — continues with tab closed'));
     const scopeRow = $('<div class="ale-scan-row">').appendTo(controls);
     const scopeLabel = $('<label>').appendTo(scopeRow);
     const shared = $('<input type="checkbox" aria-label="Scan across HF bands">').appendTo(scopeLabel);
@@ -105,25 +109,51 @@ Ale2gMessagePanel.prototype.render = function() {
             label.append(document.createTextNode(' ' + (frequency/1000).toFixed(1) + ' kHz'));
         });
     }
-    this.scanner = new AleScanController(aleNativeScanApi(text => {
-        status.text(text); start.prop('disabled', !!(me.scanner && me.scanner.running));
-        stop.prop('disabled', !(me.scanner && me.scanner.running));
-        bank.add(dwell).add(shared).add(channels.find('input')).prop('disabled', !!(me.scanner && me.scanner.running));
-    }));
+    function updateControls(text) {
+        const busy = !!(me.scanner && me.scanner.running) || !!(me.serverScanner && (me.serverScanner.running || me.serverScanner.pending));
+        status.text(text); start.prop('disabled', busy); stop.prop('disabled', !busy);
+        bank.add(dwell).add(shared).add(server).add(channels.find('input')).prop('disabled',busy);
+    }
+    this.scanner = new AleScanController(aleNativeScanApi(updateControls));
+    this.serverScanner = new AleServerScanClient(text => {
+        const state = me.serverScanner.state;
+        if (me.serverScanner.running && state && state.options) {
+            server.prop('checked',true);
+            if (bank.val() !== state.bank) { bank.val(state.bank); renderChannels(); }
+            dwell.val(state.options.dwell); shared.prop('checked',state.options.across);
+            channels.find('input').each(function(){this.checked=state.options.channels.includes(Number(this.value));});
+        }
+        if (me.serverScanner.running && me.scanner.running) me.scanner.stop('Server scanner owns this SDR');
+        if (server.prop('checked') || me.serverScanner.running) updateControls(text);
+    }, event => me.pushMessage(event));
     renderChannels();
     bank.on('change', renderChannels);
+    server.on('change', () => updateControls('Stopped · '+(server.prop('checked') ? 'server' : 'browser')));
     start.on('click', async () => {
         try {
             const selected = channels.find('input:checked').map(function(){return Number(this.value);}).get();
-            await me.scanner.start(selected, {dwell:Number(dwell.val()), shared:shared.prop('checked')});
-        } catch(error) { me.scanner.stop(error.message); }
+            if (server.prop('checked')) {
+                UI.toggleScanner(false);
+                me.scanner.stop();
+                me.serverScanner.start({bank:bank.val(), channels:selected, dwell:Number(dwell.val()), across:shared.prop('checked')});
+            } else await me.scanner.start(selected, {dwell:Number(dwell.val()), shared:shared.prop('checked')});
+        } catch(error) { updateControls(error.message); }
     });
-    stop.on('click', () => me.scanner.stop());
+    stop.on('click', () => {
+        if (me.serverScanner.running || me.serverScanner.pending) me.serverScanner.stop();
+        else me.scanner.stop();
+    });
     this.scanTimer = setInterval(() => this.scanner.tick(), 200);
-    window.addEventListener('pagehide', () => this.scanner.stop('Stopped: page closed'));
+    window.addEventListener('pagehide', () => {
+        this.scanner.stop('Stopped: page closed');
+        this.serverScanner.destroy();
+    });
+    window.addEventListener('pageshow', () => this.serverScanner.resume());
     layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Message</th></tr></thead><tbody></tbody></table>'));
 };
 Ale2gMessagePanel.prototype.pushMessage = function(message) {
+    if (message.test_audio && this.serverScanner.running) this.serverScanner.stop();
+    if (this.serverScanner.running && !message.server_scan && !message.test_audio) return;
     this.scanner.event(message);
     if (message.event === 'activity') return;
     const row = $('<tr>');

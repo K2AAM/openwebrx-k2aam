@@ -81,7 +81,17 @@ window.setupFixture = function () {
         allowTune=true;
         requiredKey=null;
         tuneDelay=30;
+        scanState={available:true,session:'fixture-scan',running:false,status:'Stopped',sequence:0,events:[],source_id:'sdrplay'};
         send(value){const packet=JSON.parse(value);this.sent.push(packet); if(packet.type==='setantenna')this.selected=packet.params.antenna;
+            if(packet.type==='ale_scan') {
+                const p=packet.params;
+                if(p.action==='start') {
+                    this.scanState={...this.scanState,running:true,status:'Scanning · server',frequency:p.channels[0],bank:p.bank,options:p};
+                    this.reply({type:'config',value:{center_freq:p.channels[0],start_mod:'usb'}});
+                }
+                if(p.action==='stop')this.scanState={...this.scanState,running:false,status:'Stopped'};
+                setTimeout(()=>this.reply({type:'ale_scan_state',value:{...this.scanState,events:this.scanState.events.filter(e=>e.scan_seq>(p.after||0))}}),5);
+            }
             if(packet.type==='setfrequency' && this.allowTune && (!this.requiredKey || packet.params.key===this.requiredKey)) {
                 const frequency=packet.params.frequency;
                 setTimeout(()=>this.reply({type:'config',value:{center_freq:frequency,start_offset_freq:0,start_mod:'nfm'}}),this.tuneDelay);

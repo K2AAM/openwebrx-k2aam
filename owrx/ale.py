@@ -5,9 +5,15 @@ from owrx.ale_protocol import decode_event
 
 
 class AleParser(TextParser):
-    def __init__(self):
+    def __init__(self, callback=None):
+        self.callback = callback
         super().__init__(filePrefix='ALE', service=False)
 
     def parse(self, msg: bytes):
-        return decode_event(msg, self.frequency,
-                            round(datetime.now(timezone.utc).timestamp() * 1000))
+        event = decode_event(msg, self.frequency,
+                             round(datetime.now(timezone.utc).timestamp() * 1000))
+        if self.callback is not None:
+            if event:
+                self.callback(event)
+            return {}
+        return event

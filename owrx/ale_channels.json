@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-10-25",
+  "frequency_unit": "Hz",
+  "frequency_reference": "USB dial/carrier",
+  "default_bank": "hfn_us_hf",
+  "sources": {
+    "hflink": {
+      "url": "https://hflink.com/channels/",
+      "published_effective_date": "2019-07-15",
+      "scope": "USA column, HF ALE entries only"
+    },
+    "kiwisdr": {
+      "url": "https://github.com/jks-prv/KiwiSDR/blob/master/web/extensions/ALE_2G/ALE_nets.cjson",
+      "blob_sha": "52fef1efc622b23c390de287dd5aa8ed027375e3",
+      "scope": "US COTHEN and US HFGCS frequency arrays",
+      "qualification": "Aggregated monitoring candidates; individual entries may be incorrect, incomplete, or obsolete."
+    }
+  },
+  "banks": [
+    {
+      "id": "hfn_us_hf",
+      "name": "Amateur HFN — US HF",
+      "source": "hflink",
+      "role": "Soundings and text",
+      "modulation": "usb",
+      "protocol": "ale_2g",
+      "suggested_default": true,
+      "evidence": "published_channel_plan",
+      "channels": [
+        {
+          "frequency_hz": 1843000,
+          "band": "160m",
+          "label": "160m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 3596000,
+          "band": "80m",
+          "label": "80m",
+          "priority": true
+        },
+        {
+          "frequency_hz": 7102000,
+          "band": "40m",
+          "label": "40m",
+          "priority": true
+        },
+        {
+          "frequency_hz": 10145500,
+          "band": "30m",
+          "label": "30m",
+          "priority": true
+        },
+        {
+          "frequency_hz": 14109000,
+          "band": "20m",
+          "label": "20m",
+          "priority": true
+        },
+        {
+          "frequency_hz": 18106000,
+          "band": "17m",
+          "label": "17m",
+          "priority": true
+        },
+        {
+          "frequency_hz": 21096000,
+          "band": "15m",
+          "label": "15m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 24926000,
+          "band": "12m",
+          "label": "12m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 28146000,
+          "band": "10m",
+          "label": "10m",
+          "priority": true
+        }
+      ]
+    },
+    {
+      "id": "hfl_us_hf",
+      "name": "Amateur HFL — US HF",
+      "source": "hflink",
+      "role": "Calling",
+      "modulation": "usb",
+      "protocol": "ale_2g",
+      "suggested_default": false,
+      "evidence": "published_channel_plan",
+      "channels": [
+        {
+          "frequency_hz": 1996000,
+          "band": "160m",
+          "label": "160m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 3996000,
+          "band": "80m",
+          "label": "80m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 5357000,
+          "band": "60m",
+          "label": "60m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 5371500,
+          "band": "60m",
+          "label": "60m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 7296000,
+          "band": "40m",
+          "label": "40m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 10131000,
+          "band": "30m",
+          "label": "30m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 14346000,
+          "band": "20m",
+          "label": "20m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 18117500,
+          "band": "17m",
+          "label": "17m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 21432500,
+          "band": "15m",
+          "label": "15m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 24932000,
+          "band": "12m",
+          "label": "12m",
+          "priority": false
+        },
+        {
+          "frequency_hz": 28312500,
+          "band": "10m",
+          "label": "10m",
+          "priority": false
+        }
+      ]
+    },
+    {
+      "id": "cothen_candidates",
+      "name": "COTHEN — monitoring candidates",
+      "source": "kiwisdr",
+      "role": "Optional monitoring",
+      "modulation": "usb",
+      "protocol": "ale_2g",
+      "suggested_default": false,
+      "evidence": "aggregated_monitoring_list",
+      "channels": [
+        {
+          "frequency_hz": 5250000,
+          "label": "5250 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 5732000,
+          "label": "5732 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 5909500,
+          "label": "5909.5 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 7527000,
+          "label": "7527 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 8912000,
+          "label": "8912 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 10242000,
+          "label": "10242 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 11494000,
+          "label": "11494 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 12222000,
+          "label": "12222 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 13312000,
+          "label": "13312 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 13907000,
+          "label": "13907 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 14582000,
+          "label": "14582 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 15867000,
+          "label": "15867 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 18594000,
+          "label": "18594 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 20890000,
+          "label": "20890 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 24838500,
+          "label": "24838.5 kHz",
+          "priority": false
+        }
+      ]
+    },
+    {
+      "id": "hfgcs_candidates",
+      "name": "HFGCS ALE — monitoring candidates",
+      "source": "kiwisdr",
+      "role": "Optional monitoring",
+      "modulation": "usb",
+      "protocol": "ale_2g",
+      "suggested_default": false,
+      "evidence": "aggregated_monitoring_list",
+      "channels": [
+        {
+          "frequency_hz": 3137000,
+          "label": "3137 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 4721000,
+          "label": "4721 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 5708000,
+          "label": "5708 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 6721000,
+          "label": "6721 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 9025000,
+          "label": "9025 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 11226000,
+          "label": "11226 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 13215000,
+          "label": "13215 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 15043000,
+          "label": "15043 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 18003000,
+          "label": "18003 kHz",
+          "priority": false
+        },
+        {
+          "frequency_hz": 23337000,
+          "label": "23337 kHz",
+          "priority": false
+        }
+      ]
+    }
+  ]
+}
