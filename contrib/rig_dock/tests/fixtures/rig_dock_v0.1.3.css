@@ -1,0 +1,143 @@
+/* Scoped to the dock so stock controls can be restored without a reload. */
+body.rig-dock-active { --rd-bg: #111c2c; --rd-surface: #1a293c; --rd-border: #34465c; --rd-text: #e7eff9; --rd-muted: #9fb3ca; --rd-cyan: #68d7f3; }
+body.rig-dock-active #webrx-page-container { height: calc(100% - var(--rig-dock-height, 142px)); min-height: 0; }
+body.rig-dock-active .openwebrx-waterfall-container { min-height: 0; }
+body.rig-dock-active #openwebrx-panel-receiver {
+    position: fixed !important; inset: auto 0 0 0 !important; z-index: 1050 !important;
+    width: 100% !important; max-width: none !important; height: auto !important; max-height: none !important;
+    display: block !important; transform: none !important; transition: none !important; opacity: 1 !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important; border-top: 1px solid #4b6481 !important;
+    border-radius: 0 !important; background: var(--rd-bg) !important; color: var(--rd-text) !important;
+    font-family: system-ui, -apple-system, sans-serif; font-size: 12px;
+    box-shadow: 0 -6px 24px #0005; box-sizing: border-box;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+}
+body.rig-dock-active #openwebrx-panel-receiver > :not(.rig-dock-ui) { display: none !important; }
+body.rig-dock-active #openwebrx-panel-status,
+body.rig-dock-active [data-toggle-panel='openwebrx-panel-status'],
+body.rig-dock-active [data-toggle-panel='openwebrx-panel-receiver'],
+body.rig-dock-active #plugin-button-rig_audio { display: none !important; }
+#rig-dock *, .rd-popover * { box-sizing: border-box; }
+#rig-dock { padding: 10px 16px 0; }
+.rd-main, .rd-toolbar, .rd-footer, .rd-group, .rd-tune-form, .rd-popover-heading { display: flex; align-items: center; }
+.rd-main { gap: 16px; min-height: 40px; flex-wrap: wrap; }
+.rd-group { gap: 6px; min-width: 0; }
+.rd-label, .rd-menu-label { color: var(--rd-muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.rd-frequency { gap: 12px; }
+.rd-frequency .frequencies-container { margin: 0 !important; height: auto; }
+.rd-frequency .frequencies { width: auto; }
+.rd-frequency .webrx-actual-freq { font-size: 28px !important; color: var(--rd-cyan) !important; white-space: nowrap; margin: 0; letter-spacing: 1px; }
+.rd-frequency .webrx-mouse-freq { display: none; }
+.rd-frequency .openwebrx-bookmark-button { flex-shrink: 0; }
+.rd-profiles { flex: 1 1 170px; max-width: 300px; }
+.rd-profiles .rd-native { width: 100%; }
+.rd-profiles .rd-label { display: block; margin-bottom: 3px; }
+.rd-antennas { margin-left: auto; }
+body.rig-dock-active .rd-antennas .rsp-antenna { padding: 0 !important; border: 0; background: none; margin: 0; max-height: none !important; overflow: visible !important; }
+body.rig-dock-active .rd-antennas .rsp-antenna[hidden], .rig-dock-ui[hidden], .rd-popover [hidden], #rig-dock [hidden] { display: none !important; }
+.rd-antennas .rsp-antenna-buttons { display: flex; gap: 6px; margin: 0; }
+.rd-antennas .rsp-antenna-status, .rd-antennas .rsp-antenna-note { display: none; }
+#rig-dock .rd-button, .rd-popover .rd-button, .rd-antennas button {
+    border: 1px solid var(--rd-border); border-radius: 5px; min-height: 30px;
+    padding: 5px 10px; background: var(--rd-surface); color: var(--rd-text); font: inherit;
+    font-weight: 500; cursor: pointer; white-space: nowrap; text-shadow: none;
+}
+#rig-dock .rd-button:hover, .rd-popover .rd-button:hover, .rd-antennas button:hover { background: #283d55; border-color: #5d839f; }
+#rig-dock button:focus-visible, .rd-popover :focus-visible, #rig-dock input:focus-visible, #rig-dock select:focus-visible {
+    outline: 2px solid var(--rd-cyan); outline-offset: 3px;
+}
+#rig-dock button:disabled, .rd-popover button:disabled { opacity: .45; cursor: default; }
+#rig-dock .rd-active, #rig-dock [aria-expanded='true'], .rd-popover [aria-pressed='true'], .rd-antennas button[aria-pressed='true'] {
+    color: #9df1c1; border-color: #419f83; background: #183c35;
+}
+.rd-antennas .rsp-antenna-buttons button { padding: 7px 11px; min-height: 35px; flex: 0 0 auto; min-width: max-content; }
+.rd-toolbar { flex-wrap: wrap; gap: 8px; padding: 10px 0; }
+.rd-toolbar > .rd-group { padding-right: 10px; border-right: 1px solid #2b3c50; }
+.rd-toolbar .openwebrx-panel-slider { margin: 0 !important; width: 84px !important; max-width: 100%; }
+.rd-toolbar .openwebrx-slider-button { flex: 0 0 25px; width: 25px; height: 25px; margin: 0; padding: 1px; border-radius: 4px; background: #26394e; }
+.rd-toolbar .openwebrx-slider-button svg { width: 23px; height: 23px; }
+.rd-toolbar select { width: 68px !important; }
+body.rig-dock-active #openwebrx-panel-receiver select, .rd-popover input:not([type='checkbox']):not([type='range']) {
+    background: #0b1522; color: #e7eff9; border: 1px solid #40536b; border-radius: 4px;
+    padding: 5px 7px; font: inherit; min-height: 30px; margin: 0;
+}
+.rd-profiles select { width: 100%; max-width: 100%; }
+.rd-footer { gap: 14px; border-top: 1px solid #2a3b50; min-height: 27px; font-size: 10px; color: #9db0c7; white-space: nowrap; }
+.rd-footer > span:empty { display: none; }
+.rd-connection { color: #edba79; }
+.rd-connection::before { content: '●'; font-size: 9px; margin-right: 6px; }
+.rd-connection.rd-connected { color: #8edab7; }
+.rd-antenna-status { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rd-antenna-status::before { content: 'Shared · '; }
+.rd-clock { margin-left: auto; font-variant-numeric: tabular-nums; }
+.rd-meter { display: flex; align-items: center; gap: 8px; }
+.rd-meter #openwebrx-smeter { width: 95px; min-width: 60px; height: 7px; padding: 0; margin: 0; }
+.rd-meter #openwebrx-smeter-db { margin: 0; float: none; font-size: 10px; }
+.rd-message { border-top: 1px solid #8e6728; padding: 6px 0; color: #ffd995; }
+.rd-error { color: #ffb7a6; }
+#rig-dock .rd-recording { color: #ffaca8; border-color: #ad6865; background: #4a232b; }
+.rd-popover {
+    box-sizing: border-box;
+    position: fixed; width: 320px; max-width: calc(100vw - 20px); z-index: 1052; overflow: auto;
+    padding: 14px; border: 1px solid #4a647f; border-radius: 8px; background: #132135;
+    color: #e7eff9; box-shadow: 0 10px 50px #0009; font: 12px system-ui, -apple-system, sans-serif;
+    overscroll-behavior: contain; scrollbar-width: thin;
+}
+.rd-popover-heading { justify-content: space-between; margin-bottom: 12px; gap: 16px; }
+.rd-popover .rd-close { font-size: 20px; padding: 0 8px; min-height: 26px; background: transparent; border: 0; }
+.rd-popover .rd-native { margin: 10px 0; }
+.rd-popover .rd-native .rd-label { display: block; margin-bottom: 5px; }
+.rd-popover input[type='range'] { width: 100% !important; }
+.rd-popover select, .rd-search { width: 100%; }
+.rd-menu-label { margin: 14px 0 7px; }
+.rd-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.rd-popover .rd-mode-item { white-space: normal; overflow-wrap: anywhere; min-height: 34px; }
+.rd-popover .rd-note { color: #a7bad0; font-size: 11px; line-height: 1.5; margin: 10px 0; }
+.rd-popover .rd-check { display: flex; align-items: center; gap: 8px; margin: 12px 0; line-height: 1.4; }
+.rd-popover input[type='checkbox'] { accent-color: #59c9d0; width: 16px; height: 16px; margin: 0; }
+.rd-field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.rd-field input { width: 100%; }
+.rd-popover .rd-primary { color: #95edca; border-color: #508c83; }
+.rd-tune-form { gap: 8px; }
+.rd-tune-form input { min-width: 0; width: 100%; }
+.rd-popover .openwebrx-section { width: 100%; padding: 0; margin-top: 14px; }
+.rd-popover .rd-settings-native { max-height: none !important; overflow: visible; }
+.rd-popover .openwebrx-panel-line { max-width: 100%; }
+.rd-popover .openwebrx-section-divider { margin-top: 12px; color: #a7cadf; }
+.rd-popover #openwebrx-panel-plugins { position: static !important; display: flex; flex-wrap: wrap; width: 100%; gap: 5px; }
+.rd-popover .openwebrx-plugin-button { position: static !important; margin: 0; background: #26394e; }
+.rd-return { position: fixed; bottom: 10px; right: 10px; z-index: 1200; padding: 10px 14px; background: #132135; color: #b2eafa; border: 1px solid #638ba5; border-radius: 5px; cursor: pointer; }
+.rig-audio-bypass { padding: 7px; margin-bottom: 6px; background: #172c3b; color: #a7e9ef; font: 12px system-ui, sans-serif; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+@media (max-width: 1100px) {
+    .rd-main { gap: 10px; }
+    .rd-frequency .webrx-actual-freq { font-size: 24px !important; }
+    .rd-antennas { margin-left: 0; }
+    .rd-toolbar { gap: 7px; }
+    .rd-toolbar .openwebrx-panel-slider { width: 65px !important; }
+}
+@media (max-width: 620px) {
+    #rig-dock { padding: 8px 10px 0; }
+    .rd-main { gap: 8px; }
+    .rd-frequency { flex: 1 1 100%; justify-content: space-between; }
+    .rd-frequency .webrx-actual-freq { font-size: 25px !important; }
+    .rd-profiles { flex: 1 1 170px; max-width: none; }
+    .rd-antennas { flex: 1 1 100%; }
+    .rd-antennas .rsp-antenna { width: 100%; }
+    .rd-antennas .rsp-antenna-buttons { width: 100%; }
+    .rd-antennas .rsp-antenna-buttons button { flex: 1 1 0; min-width: 0; font-size: 11px; padding: 5px 7px; }
+    .rd-toolbar { padding: 8px 0; gap: 7px; }
+    .rd-toolbar .rd-label { font-size: 9px; }
+    .rd-toolbar > .rd-group { padding-right: 7px; }
+    .rd-toolbar .openwebrx-panel-slider { width: 56px !important; }
+    #rig-dock .rd-button { padding: 5px 8px; font-size: 11px; }
+    .rd-footer { gap: 9px; font-size: 9px; flex-wrap: wrap; padding: 5px 0; }
+    .rd-antenna-status { flex: 1 1 100%; order: 2; }
+    .rd-meter { display: none; }
+    .rd-clock { margin-left: auto; }
+}
+
+/* RIG Dock: hide chat */
+body.rig-dock-active #openwebrx-panel-log,
+body.rig-dock-active [data-toggle-panel='openwebrx-panel-log'] {
+    display: none !important;
+}

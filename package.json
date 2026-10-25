@@ -1,0 +1,11 @@
+{
+  "name": "openwebrx-k2aam-receiver-tests",
+  "private": true,
+  "scripts": {
+    "test:receiver": "node test/browser/receiver.cjs",
+    "test:startup:webkit": "node test/browser/receiver.cjs --startup-only --webkit"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
