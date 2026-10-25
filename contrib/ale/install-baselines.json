@@ -1,0 +1,13 @@
+{
+  "owrx/modes.py": "44430fbf4388abd0ac6be4e46025528b8f685aee",
+  "owrx/feature.py": "48ae9084e6a2c011eb78ce79fa6b1a281ae6ab57",
+  "owrx/dsp.py": "3dbabfb50dcc5208a76ff63dd1d3feae6757f284",
+  "htdocs/lib/MessagePanel.js": "67f472feec001f7148039ca7176ba2e2e9293345",
+  "htdocs/index.html": "f60996461131d253579efd62b17b4e63c5b0bd89",
+  "htdocs/openwebrx.js": "9327aff9e1d8423ae54a86aae33ebbb2b8e84fe6",
+  "htdocs/lib/DemodulatorPanel.js": "d592de0a1be6db464c1068aaca57dbb6ccd9b648",
+  "owrx/ale.py": null,
+  "owrx/ale_protocol.py": null,
+  "csdr/module/ale.py": null,
+  "csdr/chain/ale.py": null
+}

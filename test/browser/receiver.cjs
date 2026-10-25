@@ -292,7 +292,7 @@ const server=http.createServer((req,res)=>{
             ft8:'wsjt-message',ft4:'wsjt-message',wspr:'wsjt-message',js8:'js8-message',
             packet:'packet-message',ais:'packet-message',pocsag:'pocsag-message',page:'page-message',
             hfdl:'hfdl-message',vdl2:'hfdl-message',acars:'hfdl-message',uat:'hfdl-message',
-            adsb:'adsb-message',ism:'ism-message',wmbus:'ism-message',dsc:'dsc-message',
+            adsb:'adsb-message',ism:'ism-message',wmbus:'ism-message',dsc:'dsc-message',ale2g:'ale2g-message',
             sstv:'sstv-message',fax:'fax-message',cwskimmer:'skimmer-message',meshtastic:'meshtastic-message',
             rtty:'digimodes',dmr:'metadata-dmr',m17:'metadata-m17',ysf:'metadata-ysf',
             dstar:'metadata-dstar',nxdn:'metadata-nxdn',p25:'metadata-p25',tetra:'metadata-tetra',
@@ -312,6 +312,16 @@ const server=http.createServer((req,res)=>{
             });
             check(await page.locator('#openwebrx-panel-'+suffix).isVisible(),`${mode} output is in the decoder tray`);
         }
+        await page.evaluate(()=>{
+            UI.setModulation('ale2g');
+            const panel=$('#openwebrx-panel-ale2g-message').ale2gMessagePanel();
+            window.alePanel=panel;
+            panel.pushMessage({mode:'ALE2G',timestamp:Date.now(),freq:7102000,source:'BAS',destination:'',event:'amd',message:'AMD: <img src=x onerror=alert(1)>'});
+        });
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody').innerText().then(s=>s.includes('BAS')&&s.includes('7102.0')),'ALE output preserves station and exact channel');
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody img').count()===0,'radio text cannot inject HTML into ALE output');
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
         await page.evaluate(()=>UI.setModulation('ft8'));
         await page.waitForFunction(()=>!document.getElementById('rig-decoder-tray').hidden);
         await page.evaluate(()=>{

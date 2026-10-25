@@ -15,7 +15,7 @@ Verify the branch against both the SDRplay remote receiver and the Optiplex Airs
 
 ## Next project: ALE decoder
 
-Adam requested an ALE decoder after this UI work. The ALE generation is not yet confirmed (possibly 3G). Before implementation, identify the intended waveform and use case, find authoritative specifications and any reusable decoder with a compatible license, obtain known test recordings, and decide how to integrate the decoder with OWRX's native mode and message-panel APIs. A new native decoder panel will be adopted by the shared tray without an FT8-specific UI change.
+An experimental receive-only 2G ALE prototype is in contrib/ale: a standalone decoder adapted from KiwiSDR/gr-ale, reference-audio tests, native USB mode/DSP integration, a message panel adopted by the shared tray, and a backed-up installer for stock 1.2.126. The 45-channel catalog contains HFN, HFL and optional COTHEN/HFGCS candidates. Live receiver validation, automatic bank scanning and 3G decoding remain pending. See contrib/ale/decoder/README.md for scope and limitations.
 
 ## Upstream maintenance
 

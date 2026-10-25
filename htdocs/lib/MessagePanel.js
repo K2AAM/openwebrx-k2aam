@@ -56,6 +56,33 @@ MessagePanel.prototype.scrollToBottom = function() {
     $t.scrollTop($t[0].scrollHeight);
 };
 
+function Ale2gMessagePanel(el) {
+    MessagePanel.call(this, el);
+}
+Ale2gMessagePanel.prototype = Object.create(MessagePanel.prototype);
+Ale2gMessagePanel.prototype.supportsMessage = function(message) {
+    return message.mode === 'ALE2G';
+};
+Ale2gMessagePanel.prototype.render = function() {
+    this.el.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Message</th></tr></thead><tbody></tbody></table>'));
+};
+Ale2gMessagePanel.prototype.pushMessage = function(message) {
+    const row = $('<tr>');
+    const values = [Utils.HHMMSS(message.timestamp), (message.freq / 1000).toFixed(1),
+        message.source || '—', message.destination || '—', message.message];
+    values.forEach(function(value, index) {
+        // Decoder output is untrusted radio text, never HTML.
+        $('<td>').addClass(index === 4 ? 'message' : '').text(String(value)).appendTo(row);
+    });
+    this.el.find('tbody').append(row);
+    this.clearMessages(250);
+    this.scrollToBottom();
+};
+$.fn.ale2gMessagePanel = function() {
+    if (!this.data('panel')) this.data('panel', new Ale2gMessagePanel(this));
+    return this.data('panel');
+};
+
 function WsjtMessagePanel(el) {
     MessagePanel.call(this, el);
     this.initClearTimer();
@@ -1182,3 +1209,4 @@ $.fn.meshtasticMessagePanel = function() {
     }
     return this.data('panel');
 };
+

@@ -1,6 +1,27 @@
-# ALE receive channel banks
+# Experimental ALE 2G receiver and channel banks
 
-This is a prepared channel catalog for the proposed OWRX ALE scanner: 45 entries in four banks, provided as JSON and CSV. It does not install a decoder, start scanning, change receiver profiles, or modify the RIG UI.
+This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one selected channel. Automatic scan-bank control is still future work. Receiver profiles and RIG Dock assets are not changed by the ALE installer.
+
+## Receiver trial on stock OWRX+ 1.2.126
+
+Build on the receiver so the binary matches its CPU architecture. In this fork's `ale-scanlists` branch:
+
+```bash
+make -C contrib/ale/decoder
+sudo /usr/bin/python3 contrib/ale/install.py --check
+sudo /usr/bin/python3 contrib/ale/install.py --install
+sudo systemctl restart openwebrx
+```
+
+The check is read-only and requires unmodified versions of the seven native files it patches. The installer refuses edited/unsupported files and existing decoder assets, saves backups, preserves file modes and rolls back failed writes. It does not restart the service. This backend change requires the explicit restart shown above. A versioned receiver bundle URL makes the updated native UI available after reloading the page.
+
+If necessary, supply `--owrx-root /usr/lib/python3/dist-packages/owrx` and `--htdocs /usr/lib/python3/dist-packages/htdocs`. The Python root must have sibling `owrx` and `csdr` packages. Backups/state are in `/var/lib/openwebrx/ale2g` and the executable installs to `/usr/local/bin/owrx-ale`.
+
+After restarting, select **ALE 2G (experimental)** from Modes and tune a USB dial frequency below. The message panel uses the existing shared decoder tray. Start with one channel and confirm recognizable output before attempting any scanning. Recordings are useful for repeatable comparisons.
+
+To restore stock native files, run `sudo /usr/bin/python3 contrib/ale/install.py --uninstall`, then restart openwebrx and reload the page. Later edits stop restoration before any writes. When running the fork itself, its native source already has the integration: build/install the executable and restart the fork; do not run this patch installer against its own checkout.
+
+See [decoder/README.md](decoder/README.md) for file decoding, tests, provenance and limitations.
 
 The JSON is a project catalog, not an OWRX bookmark-import file. The CSV is a portable reference. JSON frequencies are integer hertz; CSV also includes kilohertz. Every entry uses a USB dial/carrier frequency, with no extra audio-frequency offset.
 

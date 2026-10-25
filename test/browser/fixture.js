@@ -49,6 +49,7 @@ window.setupFixture = function () {
         {modulation:'wfm',name:'WFM',type:'analog',squelch:true}, {modulation:'cw',name:'CW',type:'analog',squelch:true},
         {modulation:'dmr',name:'DMR',type:'analog',squelch:false},
         ...['ft8','ft4','wspr','js8','packet','ais','pocsag','page','hfdl','vdl2','acars','uat','adsb','ism','wmbus','dsc','sstv','fax','cwskimmer','meshtastic'].map(modulation=>({modulation,name:modulation.toUpperCase(),type:'digimode',squelch:false,underlying:['usb'],secondaryFft:true})),
+        {modulation:'ale2g',name:'ALE 2G',type:'digimode',squelch:false,underlying:['usb'],secondaryFft:false},
         {modulation:'rtty',name:'RTTY',type:'digimode',squelch:false,underlying:['usb','lsb'],secondaryFft:true},
         ...['m17','ysf','dstar','nxdn','p25','tetra','dab','hdr','drm'].map(modulation=>({modulation,name:modulation.toUpperCase(),type:'analog',squelch:false}))
     ].map(x=>new Mode(x));
