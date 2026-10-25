@@ -1,4 +1,4 @@
-# K2AAM receiver UI — RIG Dock 0.3.0
+# K2AAM receiver UI — RIG Dock 0.3.1
 
 This fork adds a compact receiver dock and a shared decoder tray to OpenWebRX+ 1.2.126. The receiver page loads the dock before station plugins. Map pages retain their existing loader.
 
@@ -24,7 +24,7 @@ The dock retains native frequency/digit tuning, profiles, supported mode selecti
 
 Click the frequency readout or **Tune** to enter a frequency. Choose Hz, kHz, or MHz in the units selector (default MHz); an explicitly typed suffix overrides it. Without a typed suffix the selected scale is used. Native mouse-wheel digit tuning is retained. Outside the current capture window it sends the native `setfrequency` request with the current magic key, waits for the server's new center frequency and delayed demodulator restart, then restores the selected mode and listening frequency. The server must permit center-frequency changes. Moving the shared SDR affects everyone using it. A profile change or Stop waiting cancels the pending client update, but cannot recall a receiver request already sent.
 
-Record and More controls now sit together in the first row, keeping the toolbar compact. Record uses OWRX's native recording control marker and mirrors its visibility. This fixes the native visibility gate rejecting the former dock button and retains the server's recording permission. Stop downloads the native MP3 recording.
+Record, the optional Screenshot control, and More controls sit together in the first row, keeping the toolbar compact. The dock adopts the Screenshot plugin's original PIC node and handler, removes its unbound duplicate inside the dock, and unwraps the narrow Record container. Labels retain their full width; stock-control fallback restores PIC to its original position. Screenshot is available independently of the server's audio-recording permission. Record uses OWRX's native recording control marker and mirrors its visibility. This fixes the native visibility gate rejecting the former dock button and retains the server's recording permission. Stop downloads the native MP3 recording.
 
 The optional browser audio filter is bypassed on every page load and loaded only on explicit enable/settings. Its MIT-licensed upstream attribution is retained in the source. It does not replace `AudioNode.prototype.connect`. OWRX's native recording path is retained.
 
@@ -41,7 +41,7 @@ git clone --branch ale-scanlists https://github.com/K2AAM/openwebrx-k2aam.git
 cd openwebrx-k2aam
 ```
 
-For an already installed RIG Dock 0.1.0–0.2.1 (run `git pull --ff-only` first when updating an existing clone):
+For an already installed RIG Dock 0.1.0–0.3.0 (run `git pull --ff-only` first when updating an existing clone):
 
 ```bash
 sudo /usr/bin/python3 contrib/rig_dock/update.py --check

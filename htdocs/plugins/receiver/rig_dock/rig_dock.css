@@ -203,3 +203,11 @@ body.rig-dock-active [data-toggle-panel='openwebrx-panel-log'] {
 .rd-tune-form select { flex: 0 0 70px; width: 70px; }
 #rig-dock .rd-ale-status { border: 0; background: transparent; color: #9de2c3; padding: 0; min-height: 24px; font-size: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
 @media(max-width:620px){.rd-actions{margin-left:0}.rd-ale-status{max-width:100%!important;flex:1 1 100%;order:3}.rd-decoder-title{max-width:none;flex:1 1 90px}}
+
+/* Keep legacy Screenshot plugin sizing out of the dock action row. */
+#rig-dock .rd-actions { flex-wrap: wrap; flex: 0 1 auto; max-width: 100%; }
+#rig-dock .rd-actions > .rd-button {
+    flex: 0 0 auto; float: none !important; position: static !important;
+    width: auto !important; height: auto !important; min-width: max-content;
+    margin: 0 !important; padding: 5px 10px !important; line-height: normal;
+}

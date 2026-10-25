@@ -52,6 +52,13 @@ const server=http.createServer((req,res)=>{
     const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];
     page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message);});
     let checks=0;const check=(v,msg)=>{assert.ok(v,msg);checks++;if(process.env.RECEIVER_TEST_PROGRESS)console.log(checks+': '+msg);};
+    async function loadScreenshotPlugin(target) {
+        await target.route('**/html2canvas.min.js',route=>route.fulfill({contentType:'application/javascript',body:
+            'window.html2canvas=(node,options)=>{window.screenshotCalls=(window.screenshotCalls||0)+1;options.canvas.getContext("2d").fillRect(0,0,8,8);return Promise.resolve(options.canvas);};'}));
+        await target.evaluate(()=>{Plugins.screenshot={};});
+        await target.addScriptTag({path:path.join(root,'test/browser/fixtures/screenshot.js')});
+        await target.evaluate(async()=>{await Plugins.screenshot.init();window.originalScreenshot=document.getElementById('screenshot-btn');});
+    }
     try{
         const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:3});
         const cold=await mobileContext.newPage(),coldErrors=[];
@@ -138,10 +145,58 @@ const server=http.createServer((req,res)=>{
         check(await page.locator('#openwebrx-panel-log').isHidden(),'chat stays hidden when OWRX tries to reopen it');
         check(await page.locator('[data-toggle-panel="openwebrx-panel-log"]').isHidden(),'header chat button is hidden');
         check(await page.evaluate(()=>document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().top+1),'waterfall space reserved');
+        await loadScreenshotPlugin(page);
+        await page.waitForTimeout(600);
         const record=page.locator('#rig-dock .openwebrx-record-button');
+        check(await record.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'Screenshot plugin cannot clip the RIG Record label');
+        check(await page.locator('#screenshot-btn').count()===1,'Screenshot plugin keeps one working PIC control');
+        await page.locator('#rig-dock #screenshot-btn').waitFor({state:'visible'});
+        const screenshotDownload=page.waitForEvent('download');await page.locator('#rig-dock #screenshot-btn').click();
+        const shot=await screenshotDownload,shotBytes=fs.readFileSync(await shot.path());
+        check(shotBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&await page.evaluate(()=>screenshotCalls===1),'the retained upstream PIC handler downloads one PNG');
+        await page.evaluate(()=>{ws.antennaSupported=false;ws.send(JSON.stringify({type:'getantenna'}));});
+        await page.waitForFunction(()=>document.querySelector('.rd-antennas').hidden);
+        for(const [width,height] of [[1918,900],[1024,768],[390,844],[375,667]]) {
+            await page.setViewportSize({width,height});
+            await page.waitForTimeout(550);
+            check(await page.evaluate(()=>{
+                const nodes=[document.querySelector('#rig-dock .openwebrx-record-button'),document.querySelector('#rig-dock #screenshot-btn'),document.querySelector('[aria-controls="rd-popover-more"]')];
+                const rects=nodes.map(n=>n.getBoundingClientRect());
+                return nodes.every((n,i)=>n.scrollWidth<=n.clientWidth+1&&rects[i].left>=0&&rects[i].right<=innerWidth+1)&&rects.every((r,i)=>!i||r.left>=rects[i-1].right+4);
+            }),`Record, Screenshot and More fit without overlap without antenna controls ${width}×${height}`);
+            if(width===1918)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-desktop.png')});
+            if(width===390)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-mobile.png')});
+        }
+        await page.setViewportSize({width:1440,height:900});
+        await page.evaluate(()=>{ws.antennaSupported=true;ws.send(JSON.stringify({type:'getantenna'}));});
+        await page.waitForFunction(()=>!document.querySelector('.rd-antennas').hidden);
+        const keyboardScreenshot=page.waitForEvent('download');
+        await page.locator('#rig-dock #screenshot-btn').focus();await page.locator('#rig-dock #screenshot-btn').press('Enter');
+        await keyboardScreenshot;
+        check(await page.evaluate(()=>screenshotCalls===2),'Screenshot remains keyboard accessible without duplicate downloads');
+        const early=await browser.newPage({viewport:{width:1024,height:768}});
+        let releaseEarlyStyle,styleQueued;
+        const earlyStyleRequest=new Promise(resolve=>{styleQueued=resolve;});
+        await early.route('**/rig_dock.css?*',async route=>{await new Promise(resolve=>{releaseEarlyStyle=resolve;styleQueued();});await route.continue();});
+        await early.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
+        await earlyStyleRequest;await loadScreenshotPlugin(early);
+        check(await early.evaluate(()=>!document.getElementById('rig-dock')&&!!originalScreenshot),'Screenshot can initialize before the dock mounts');
+        releaseEarlyStyle();await early.waitForSelector('#rig-dock #screenshot-btn');
+        check(await early.evaluate(()=>document.querySelector('#rig-dock #screenshot-btn')===originalScreenshot),'early PIC initialization retains the original handler node');
+        const earlyDownload=early.waitForEvent('download');await early.locator('#rig-dock #screenshot-btn').click();await earlyDownload;
+        check(await early.evaluate(()=>screenshotCalls===1),'an early-loaded Screenshot plugin works after adoption');
+        await early.evaluate(()=>Plugins.rig_dock.destroy(false));
+        check(await early.evaluate(()=>document.getElementById('screenshot-btn')===originalScreenshot&&!originalScreenshot.closest('#rig-dock')&&originalScreenshot.textContent==='PIC'),'stock fallback restores the original PIC node and label');
+        const stockShot=early.waitForEvent('download');await early.locator('#screenshot-btn').click();await stockShot;
+        check(await early.evaluate(()=>screenshotCalls===2),'stock PIC handler still works after dock teardown');
+        // Keep this auxiliary page until browser teardown for single-process Chromium.
+        await page.bringToFront();
+        if(process.argv.includes('--screenshot-only')) { console.log(`${checks} Screenshot compatibility checks passed.`); return; }
+
         await record.click();
         check(await page.evaluate(()=>audioEngine.recording),'dock starts native recording through the visible recording control');
         check(await record.getAttribute('aria-pressed')==='true','recording state is shown immediately');
+        check(await record.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'active recording label fits with Screenshot loaded');
         await page.evaluate(()=>{
             const samples=new Int16Array(24000);
             for(let i=0;i<samples.length;i++)samples[i]=Math.round(6000*Math.sin(2*Math.PI*1000*i/12000));
@@ -154,6 +209,7 @@ const server=http.createServer((req,res)=>{
         check(await page.evaluate(()=>!audioEngine.recording),'stop clears native recording state');
         await page.evaluate(()=>{ws.reply({type:'config',value:{allow_audio_recording:false}});UI.toggleRecording(true);});
         check(await record.isHidden()&&await page.evaluate(()=>!audioEngine.recording),'server recording permission still applies');
+        check(await page.locator('#rig-dock #screenshot-btn').isVisible(),'Screenshot remains available when audio recording is disabled');
         await page.evaluate(()=>ws.reply({type:'config',value:{allow_audio_recording:true}}));
         await page.locator('#openwebrx-sdr-profiles-listbox').selectOption('sdrplay|20m');
         check(await page.evaluate(()=>profilesChanged===1),'native profile handler works after move');

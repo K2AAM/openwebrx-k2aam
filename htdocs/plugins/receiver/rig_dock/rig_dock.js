@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.rig_dock;
-    plugin._version = '0.3.0';
+    plugin._version = '0.3.1';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
@@ -398,7 +398,7 @@
         pop.node.append(settings);
     }
     function buildMore(toolbar) {
-        const pop = popover('more', 'More controls'); toolbar.append(pop.trigger); refs.more = pop.node;
+        const pop = popover('more', 'More controls'); toolbar.append(pop.trigger); refs.more = pop.node; refs.moreTrigger = pop.trigger;
         const actions = group(pop.node);
         actions.append(button('Zoom −', () => zoomOutOneStep()), button('Zoom +', () => zoomInOneStep()));
         native('#openwebrx-panel-plugins', pop.node, 'Plugins');
@@ -519,6 +519,7 @@
     }
     function syncDecoders() {
         if (!mounted || !refs.decoderBody) return;
+        adoptScreenshot();
         const adopted = adoptDecoders();
         settleDecoderPanels();
         const active = decoderNodes.filter(decoderActive);
@@ -588,7 +589,42 @@
             subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class', 'data-mode']
         });
     }
+    function adoptScreenshot() {
+        if (!refs.actions || !refs.record) return;
+        const screenshots = all('#screenshot-btn',panel);
+        if (!screenshots.length) return;
+        // The upstream plugin wraps every .openwebrx-record-button, including
+        // our permission marker. Its first native PIC node owns the handler;
+        // a second id created beside our Record button has no handler.
+        const pic = screenshots.includes(refs.screenshot) ? refs.screenshot :
+            screenshots.find(node => !dock.contains(node)) || screenshots[0];
+        screenshots.filter(node => node !== pic && dock.contains(node)).forEach(node => node.remove());
+        const wrapper = refs.record.parentElement;
+        if (wrapper !== refs.actions && wrapper.parentElement === refs.actions &&
+            wrapper.matches('.openwebrx-button.openwebrx-square-button')) {
+            refs.actions.prepend(refs.record);
+            if (!wrapper.children.length) wrapper.remove();
+        }
+        if (pic !== refs.screenshot) {
+            const attributes = ['class','role','tabindex','title','aria-label'].map(name => [name,pic.getAttribute(name)]);
+            const text = pic.textContent;
+            listeners.push(() => {
+                attributes.forEach(([name,value]) => value === null ? pic.removeAttribute(name) : pic.setAttribute(name,value));
+                pic.textContent = text;
+            });
+            pic.classList.add('rd-button','rd-screenshot'); pic.textContent = 'Screenshot';
+            pic.setAttribute('role','button'); pic.tabIndex = 0;
+            pic.title = 'Save a waterfall screenshot'; pic.setAttribute('aria-label','Save waterfall screenshot');
+            on(pic,'keydown',event => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pic.click(); }
+            });
+            move(pic,refs.actions); refs.screenshot = pic;
+        }
+        if (pic.parentElement === refs.actions && pic.nextElementSibling !== refs.moreTrigger)
+            refs.actions.insertBefore(pic,refs.moreTrigger);
+    }
     function adoptPlugins() {
+        adoptScreenshot();
         const antenna = $('.rsp-antenna', panel);
         if (antenna && !refs.antennas.contains(antenna)) move(antenna, refs.antennas);
         const sectionIds = new Set(['openwebrx-section-modes', 'openwebrx-section-controls',
@@ -726,7 +762,7 @@
         refs.record.classList.add('openwebrx-record-button');
         refs.record.style.display = nativeRecord ? nativeRecord.style.display : 'none';
         refs.record.title = 'Record receiver audio; stop to download the MP3';
-        const actions = group(main); actions.classList.add('rd-actions'); actions.append(refs.record);
+        const actions = refs.actions = group(main); refs.screenshot = null; actions.classList.add('rd-actions'); actions.append(refs.record);
         buildMore(actions);
         toolbar.append(button('Scan', () => safely(() => manualControl(() => UI.toggleScanner()))));
         refs.connection = el('span', 'rd-connection', 'Connecting');
@@ -810,6 +846,7 @@
         document.body.classList.remove('rig-dock-active');
         document.documentElement.style.removeProperty('--rig-dock-height');
         document.documentElement.style.removeProperty('--rig-decoder-height');
+        refs.screenshot = null; refs.actions = null;
         mounted = false; modeSignature = '';
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', true);
         if (typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done && typeof scale_canvas !== 'undefined' && scale_canvas && typeof scale_ctx !== 'undefined' && scale_ctx && typeof openwebrx_resize === 'function') openwebrx_resize();

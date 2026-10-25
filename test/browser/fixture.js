@@ -77,6 +77,7 @@ window.setupFixture = function () {
     class Socket extends EventTarget {
         readyState=1;
         selected='Antenna C';
+        antennaSupported=true;
         sent=[];
         allowTune=true;
         requiredKey=null;
@@ -96,7 +97,7 @@ window.setupFixture = function () {
                 const frequency=packet.params.frequency;
                 setTimeout(()=>this.reply({type:'config',value:{center_freq:frequency,start_offset_freq:0,start_mod:'nfm'}}),this.tuneDelay);
             }
-            if(['getantenna','setantenna'].includes(packet.type))setTimeout(()=>this.reply({type:'rsp_antenna_state',value:{supported:true,ready:true,sdr_id:'sdrplay',selected:this.selected,held:true,antennas:[{value:'Antenna A',label:'A - VHF'},{value:'Antenna B',label:'B - Experimental'},{value:'Antenna C',label:'C - HF'}]}}),10);
+            if(['getantenna','setantenna'].includes(packet.type))setTimeout(()=>this.reply({type:'rsp_antenna_state',value:{supported:this.antennaSupported,ready:true,sdr_id:'sdrplay',selected:this.selected,held:true,antennas:[{value:'Antenna A',label:'A - VHF'},{value:'Antenna B',label:'B - Experimental'},{value:'Antenna C',label:'C - HF'}]}}),10);
         }
         reply(data){
             if(data.type==='config') {
