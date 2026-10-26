@@ -107,7 +107,10 @@ class AleBackgroundScan:
 
     def getClientClass(self):
         from owrx.source import SdrClientClass
-        return SdrClientClass.BACKGROUND
+        # An explicitly started scan owns active RF use even with no browser.
+        # BACKGROUND keeps the hardware on but leaves it IDLE to the native
+        # service scheduler, which can otherwise replace the scan's profile.
+        return SdrClientClass.USER
 
     def onStateChange(self, state):
         if getattr(state, 'name', '') in ('STOPPING', 'STOPPED') and self.chain is not None:
@@ -158,6 +161,8 @@ class AleBackgroundScan:
             self.running = True
             self.reason = 'Stopped'
             self.status = 'Server scanner starting…'
+            logger.info('ALE server scanner starting: receiver=%s bank=%s dwell=%s across=%s',
+                        self.source.getId(), self.options['bank'], self.options['dwell'], self.options['across'])
             self.thread = threading.Thread(target=self.run, name='ALE-scan-'+self.source.getId(), daemon=True)
             self.thread.start()
 
@@ -289,10 +294,12 @@ class AleBackgroundScan:
                 with self.lock:
                     self.running = False
                     self.status = self.reason
+                logger.info('ALE server scanner stopped: receiver=%s reason=%s', self.source.getId(), self.reason)
 
     def snapshot(self, after=0):
         with self.lock:
             return {'available':True, 'session':self.session, 'running':self.running,
+                    'stopping':self.running and self.cancel.is_set(),
                     'status':self.status, 'frequency':self.frequency, 'bank':self.options['bank'] if self.options else None,
                     'sequence':self.sequence, 'events':[e.copy() for e in self.history if e['scan_seq'] > after],
                     'options':self.options, 'source_id':self.source.getId(), 'log_error':self.log_error}

@@ -92,6 +92,15 @@ class InstallerTests(unittest.TestCase):
     def test_server_upgrade_adds_verified_native_backup(self):
         self.server_upgrade_roundtrip()
 
+    def test_050_mobile_fix_upgrade_preserves_uninstall(self):
+        original=self.snapshot()
+        installer.apply(self.plan(),self.state)
+        record=json.loads((self.state/'install.json').read_text());record['version']='0.5.0'
+        (self.state/'install.json').write_text(json.dumps(record))
+        installer.upgrade(self.package,self.web,self.binary,self.state,write=True,baselines=self.baselines)
+        self.assertEqual(json.loads((self.state/'install.json').read_text())['version'],'0.5.1')
+        installer.undo(self.state);self.assertEqual(self.snapshot(),original)
+
     def test_040_upgrade_adds_log_module_without_removing_reception_database(self):
         original=self.snapshot()
         installer.apply(self.plan(),self.state)

@@ -211,6 +211,8 @@ Ale2gMessagePanel.prototype.render = function() {
         this.serverScanner.destroy();
     });
     window.addEventListener('pageshow', () => this.serverScanner.resume());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.serverScanner.resume(); });
+    window.addEventListener('online', () => this.serverScanner.resume());
     const logTools = $('<div class="ale-log-tools">').appendTo(layout);
     const exportLog = $('<button type="button">').text('Export CSV').appendTo(logTools);
     const refreshLog = $('<button type="button">').text('Refresh log').appendTo(logTools);

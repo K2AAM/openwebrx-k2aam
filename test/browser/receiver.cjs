@@ -506,13 +506,24 @@ const server=http.createServer((req,res)=>{
         await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
         check(await page.evaluate(()=>ws.scanState.running),'closing/hiding a tab does not stop the server worker');
         check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length)===stopsBefore,'pagehide sends no server stop request');
-        // Reconnect the observer without creating a second backend worker.
-        await page.evaluate(()=>{alePanel.serverScanner.poll();});
+        // A discarded mobile document loses its in-memory following flag.
+        // Recreate the controller with AM selected, retaining only tab storage.
+        const startsBefore=await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='start').length);
+        await page.evaluate(()=>{
+            const old=alePanel.serverScanner;
+            UI.setModulation('am');
+            alePanel.serverScanner=new AleServerScanClient(old.status,old.event,old.reset);
+            window.dispatchEvent(new Event('pageshow'));
+        });
+        await page.waitForFunction(()=>UI.getModulation()==='ale2g'&&alePanel.serverScanner.running);
+        check(await page.evaluate(()=>UI.getFrequency()===5250000),'a fresh mobile observer rejoins the running ALE scan after the profile defaults to AM');
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='start').length)===startsBefore,'mobile return observes the existing worker without starting another scan');
         await page.locator('[aria-controls="rd-popover-mode"]').click();
         await page.getByLabel('Search modes',{exact:true}).fill('');
         await page.locator('#rd-popover-mode [data-mode="usb"]').click();
         await page.waitForFunction(()=>!alePanel.serverScanner.running&&UI.getModulation()==='usb');
         check(await page.evaluate(()=>!ws.scanState.running),'choosing a RIG mode waits for server scanner Stop');
+        check(await page.evaluate(()=>sessionStorage.getItem('owrx_ale_observer_v1:sdrplay')===null),'manual mode takeover clears mobile scan-following intent');
         await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
         check(await page.evaluate(()=>UI.getModulation()==='usb'),'later scanner status does not pull manual mode back to ALE');
         const savedScan = await page.evaluate(()=>JSON.parse(localStorage.getItem('owrx_ale_scan_preferences_v1')).sdrplay);

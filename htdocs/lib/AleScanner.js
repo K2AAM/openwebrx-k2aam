@@ -221,9 +221,22 @@ class AleServerScanClient {
         this.status = status; this.event = event; this.running = false;
         this.reset = reset;
         this.socket = null; this.session = null; this.sequence = 0; this.pending = false;
+        this.requestedStart = false;
         this.logRequests = new Map(); this.logSerial = 0;
         this.receive = this.receive.bind(this);
         this.timer = setInterval(() => this.poll(), 2000);
+    }
+    sourceId() {
+        return String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0];
+    }
+    observerIntent(source, session, save) {
+        if (!source) return false;
+        try {
+            const key = 'owrx_ale_observer_v1:' + source;
+            if (save === true && typeof session === 'string') sessionStorage.setItem(key, session);
+            else if (save === false) sessionStorage.removeItem(key);
+            return typeof session === 'string' && sessionStorage.getItem(key) === session;
+        } catch (_) { return false; } // Storage denial must not break live controls.
     }
     send(action, options = {}) {
         this.bind();
@@ -240,7 +253,8 @@ class AleServerScanClient {
     }
     poll() {
         if (this.pending && performance.now()-this.pendingSince > 12000) {
-            this.pending = false; this.status('No server scanner response: restart OWRX after upgrading');
+            this.pending = false; this.requestedStart = false;
+            this.status('No server scanner response: restart OWRX after upgrading');
         }
         this.bind();
         if (this.socket && this.socket.readyState === 1) {
@@ -249,11 +263,16 @@ class AleServerScanClient {
     }
     start(options) {
         this.following = true; this.manualTakeover = false;
+        this.requestedStart = true;
+        this.followingSource = this.sourceId();
         this.pending = true; this.pendingSince = performance.now(); this.status('Starting server scanner…');
         try { this.send('start', options); }
-        catch (error) { this.pending = false; this.status(error.message); }
+        catch (error) { this.pending = false; this.requestedStart = false; this.status(error.message); }
     }
     stop() {
+        this.following = false; this.manualTakeover = true; this.requestedStart = false;
+        this.followingSource = this.sourceId() || this.followingSource;
+        this.observerIntent(this.followingSource, null, false);
         this.pending = true; this.pendingSince = performance.now(); this.status('Stopping server scanner…');
         try { this.send('stop'); }
         catch (error) { this.pending = false; this.status(error.message); }
@@ -304,11 +323,15 @@ class AleServerScanClient {
             else request.resolve(state);
             return;
         }
-        this.pending = false;
-        if (state.error) { this.handoffError = state.error; this.status(state.error); return; }
+        if (state.error) { this.pending = false; this.requestedStart = false; this.handoffError = state.error; this.status(state.error); return; }
         if (!state.available) return;
         const selectedSource = String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0];
         if (state.source_id !== selectedSource) return;
+        this.pending = this.requestedStart && !state.running;
+        if (state.running || state.stopping) this.requestedStart = false;
+        if (this.followingSource !== selectedSource) {
+            this.followingSource = selectedSource; this.following = false; this.manualTakeover = false; this.requestedStart = false; this.pending = false;
+        }
         if (state.session !== this.session) {
             if (this.session !== null || (Array.isArray(state.events) && state.events.length)) this.reset();
             this.session = state.session; this.sequence = 0;
@@ -321,7 +344,15 @@ class AleServerScanClient {
                 this.event(message);
             }
         }
-        if (UI.getModulation() === 'ale2g') this.following = true;
+        if (!this.running || state.stopping) {
+            if (!this.requestedStart) {
+                this.following = false; this.observerIntent(selectedSource, null, false);
+            }
+        } else if (!this.manualTakeover && (this.following || UI.getModulation() === 'ale2g' ||
+                   this.observerIntent(selectedSource, state.session))) {
+            this.following = true;
+            this.observerIntent(selectedSource, state.session, true);
+        }
         if (this.running && this.following && !this.manualTakeover && Number.isSafeInteger(state.frequency)) {
             // Follow inside the hardware capture only; never send a hardware retune from polling.
             const panel = UI.getDemodulatorPanel();
