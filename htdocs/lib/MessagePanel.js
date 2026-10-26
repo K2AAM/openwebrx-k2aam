@@ -56,6 +56,273 @@ MessagePanel.prototype.scrollToBottom = function() {
     $t.scrollTop($t[0].scrollHeight);
 };
 
+function Ale2gMessagePanel(el) {
+    MessagePanel.call(this, el);
+}
+Ale2gMessagePanel.prototype = Object.create(MessagePanel.prototype);
+Ale2gMessagePanel.prototype.supportsMessage = function(message) {
+    return message.mode === 'ALE2G';
+};
+Ale2gMessagePanel.prototype.render = function() {
+    const me = this;
+    if (!document.getElementById('ale-scan-style')) {
+        $('<style id="ale-scan-style">').text(
+            '.ale-layout{display:flex;flex-direction:column;min-height:0;height:100%}' +
+            '.ale-layout>table{display:flex;flex-direction:column;width:100%;flex:1 1 0;min-height:24px;height:auto!important}' +
+            '.ale-layout thead{flex:0 0 auto}.ale-layout tbody{scrollbar-gutter:stable}' +
+            '#openwebrx-panel-ale2g-message .ale-layout tr{display:grid;grid-template-columns:76px 94px 88px 88px 160px minmax(0,1fr);width:100%;box-sizing:border-box}' +
+            '#openwebrx-panel-ale2g-message .ale-layout th,#openwebrx-panel-ale2g-message .ale-layout td{text-align:left;min-width:0;width:auto!important;padding:5px 7px;overflow-wrap:anywhere;white-space:normal;box-sizing:border-box}' +
+            '#openwebrx-panel-ale2g-message .ale-layout th{color:#a7bad0;font-size:11px}' +
+            '.ale-layout tbody tr{border-top:1px solid #ffffff0a;font-variant-numeric:tabular-nums}' +
+            '.ale-event{color:#9de2c3}.ale-raw{display:inline-block;margin-left:10px;vertical-align:top;font-size:11px;color:#a7bad0}' +
+            '.ale-raw summary{cursor:pointer}.ale-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0}' +
+            '@media(max-width:620px){#openwebrx-panel-ale2g-message .ale-layout tr{grid-template-columns:68px 84px minmax(0,1fr) minmax(0,1fr)}' +
+            '#openwebrx-panel-ale2g-message .ale-layout thead th:nth-child(n+5){display:none}' +
+            '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(5){grid-column:1/3;padding-top:0}' +
+            '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(6){grid-column:3/5;padding-top:0}}' +
+            '.ale-layout tbody{flex:1 1 0;min-height:0;height:auto!important;overflow:auto}' +
+            '.ale-scan-controls{flex:0 1 auto;overflow:auto;padding:6px 55px 6px 6px;box-sizing:border-box;font:12px system-ui}' +
+            '.ale-scan-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px}' +
+            '.ale-scan-controls button,.ale-scan-controls select,.ale-scan-controls input{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
+            '.ale-scan-controls select option{color:#111;background:#fff}' +
+            '.ale-scan-controls input[type=number]{width:48px}.ale-scan-channels{max-height:90px;overflow:auto}' +
+            '.ale-scan-channels label{display:inline-block;margin:3px 8px 3px 0}.ale-scan-status{overflow-wrap:anywhere}' +
+            '.ale-log-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:4px 6px;font:12px system-ui;flex:0 0 auto}' +
+            '.ale-log-tools button{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
+            '.ale-log-status{overflow-wrap:anywhere;color:#a7bad0}.ale-heard{flex:0 1 auto;max-height:160px;overflow:auto;padding:4px 6px;font:12px system-ui}' +
+            '.ale-heard-list{list-style:none;padding:0;margin:5px 0}.ale-heard-list li{display:grid;grid-template-columns:90px 160px minmax(0,1fr) 80px;gap:8px;padding:4px 0;border-top:1px solid #ffffff12;overflow-wrap:anywhere}' +
+            '@media(max-width:620px){.ale-heard-list li{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ale-heard-list li span:nth-child(3){grid-column:1/2}}'
+        ).appendTo('head');
+    }
+    const layout = $('<div class="ale-layout">').appendTo(this.el);
+    const controls = $('<details class="ale-scan-controls">').appendTo(layout);
+    const summary = $('<summary>').text('ALE scanner · ').appendTo(controls);
+    const status = $('<span class="ale-scan-status" role="status">').text('Stopped · current capture only').appendTo(summary);
+    const row = $('<div class="ale-scan-row">').appendTo(controls);
+    const bank = $('<select aria-label="ALE scan bank">').appendTo(row);
+    ALE_SCAN_BANKS.forEach(b => $('<option>').val(b.id).text(b.name).appendTo(bank));
+    const dwellLabel = $('<label>').text('Dwell (s) ').appendTo(row);
+    const dwell = $('<input type="number" min="3" max="60" value="10" aria-label="ALE dwell seconds">').appendTo(dwellLabel);
+    const start = $('<button type="button">').text('Start ALE scan').appendTo(row);
+    const stop = $('<button type="button">').text('Stop').prop('disabled',true).appendTo(row);
+    const engineRow = $('<div class="ale-scan-row">').appendTo(controls);
+    const engineLabel = $('<label>').appendTo(engineRow);
+    const server = $('<input type="checkbox" checked aria-label="Run scanner on server">').appendTo(engineLabel);
+    engineLabel.append(document.createTextNode(' Run on server — continues with tab closed'));
+    const scopeRow = $('<div class="ale-scan-row">').appendTo(controls);
+    const scopeLabel = $('<label>').appendTo(scopeRow);
+    const shared = $('<input type="checkbox" aria-label="Scan across HF bands">').appendTo(scopeLabel);
+    scopeLabel.append(document.createTextNode(' Scan across HF bands (retunes SDR)'));
+    const details = $('<details>').appendTo(controls);
+    $('<summary>').text('Channels / skip · published plans and monitoring candidates').appendTo(details);
+    const channels = $('<div class="ale-scan-channels">').appendTo(details);
+    function renderChannels() {
+        channels.empty();
+        ALE_SCAN_BANKS.find(b => b.id === bank.val()).channels.forEach(frequency => {
+            const label = $('<label>').appendTo(channels);
+            $('<input type="checkbox" checked>').val(frequency).appendTo(label);
+            label.append(document.createTextNode(' ' + (frequency/1000).toFixed(1) + ' kHz'));
+        });
+    }
+    function updateControls(text) {
+        const busy = !!(me.scanner && me.scanner.running) || !!(me.serverScanner && (me.serverScanner.running || me.serverScanner.pending));
+        status.text(text); start.prop('disabled', busy); stop.prop('disabled', !busy);
+        bank.add(dwell).add(shared).add(server).add(channels.find('input')).prop('disabled',busy);
+    }
+    this.scanner = new AleScanController(aleNativeScanApi(updateControls));
+    this.serverScanner = new AleServerScanClient(text => {
+        const state = me.serverScanner.state;
+        if (me.serverScanner.running && state && state.options) {
+            server.prop('checked',true);
+            if (bank.val() !== state.bank) { bank.val(state.bank); renderChannels(); }
+            dwell.val(state.options.dwell); shared.prop('checked',state.options.across);
+            channels.find('input').each(function(){this.checked=state.options.channels.includes(Number(this.value));});
+        }
+        if (!me.serverScanner.running && me.serverWasRunning) restoreChannels();
+        me.serverWasRunning = me.serverScanner.running;
+        if (me.serverScanner.running && me.scanner.running) me.scanner.stop('Server scanner owns this SDR');
+        if (server.prop('checked') || me.serverScanner.running) updateControls(text);
+        if (state && state.log_error && me.logWarning) me.logWarning(state.log_error);
+    }, event => me.pushMessage(event), () => me.el.find('tbody').empty());
+    let loadedSource = null, preferences = {enabled:{}};
+    const preferenceKey = 'owrx_ale_scan_preferences_v1';
+    function currentSource() { return String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0]; }
+    function savePreferences() {
+        const source = currentSource(); if (!source) return;
+        preferences.bank = bank.val(); preferences.dwell = Number(dwell.val());
+        preferences.across = shared.prop('checked'); preferences.server = server.prop('checked');
+        preferences.enabled[bank.val()] = channels.find('input:checked').map(function(){return Number(this.value);}).get();
+        try {
+            const stored = JSON.parse(localStorage.getItem(preferenceKey) || '{}');
+            stored[source] = preferences; localStorage.setItem(preferenceKey,JSON.stringify(stored));
+        } catch (_) { /* Scanning remains usable with unavailable storage. */ }
+    }
+    function restoreChannels() {
+        renderChannels();
+        const selected = preferences.enabled[bank.val()];
+        if (Array.isArray(selected)) channels.find('input').each(function(){ this.checked=selected.includes(Number(this.value)); });
+    }
+    function loadPreferences() {
+        const source = currentSource(); if (!source || source === loadedSource) return;
+        loadedSource = source; preferences = {enabled:{}};
+        me.el.find('tbody').empty(); me.el.find('.ale-heard-list').empty();
+        if (me.refreshLog) me.refreshLog();
+        try {
+            const saved = JSON.parse(localStorage.getItem(preferenceKey) || '{}')[source];
+            if (saved && typeof saved === 'object') preferences = {...saved,enabled:saved.enabled && typeof saved.enabled === 'object' ? saved.enabled : {}};
+        } catch (_) { /* Ignore damaged preferences. */ }
+        const savedBank = ALE_SCAN_BANKS.find(item => item.id === preferences.bank);
+        bank.val(savedBank ? savedBank.id : ALE_SCAN_BANKS[0].id);
+        dwell.val(Number.isFinite(preferences.dwell) && preferences.dwell >= 3 && preferences.dwell <= 60 ? preferences.dwell : 10);
+        shared.prop('checked',preferences.across === true); server.prop('checked',preferences.server !== false);
+        restoreChannels();
+    }
+    window.owrxAleScanner = {
+        isRunning: () => me.scanner.running || me.serverScanner.running || me.serverScanner.pending,
+        status: () => status.text(),
+        takeControl: () => {
+            me.scanner.stop('Stopped: manual receiver control');
+            return me.serverScanner.running || me.serverScanner.pending ? me.serverScanner.takeControl() : Promise.resolve();
+        }
+    };
+    renderChannels(); loadPreferences();
+    bank.on('change', () => { restoreChannels(); savePreferences(); });
+    channels.on('change','input',savePreferences);
+    dwell.add(shared).add(server).on('change',savePreferences);
+    server.on('change', () => updateControls('Stopped · '+(server.prop('checked') ? 'server' : 'browser')));
+    start.on('click', async () => {
+        try {
+            savePreferences();
+            const selected = channels.find('input:checked').map(function(){return Number(this.value);}).get();
+            if (server.prop('checked')) {
+                UI.toggleScanner(false);
+                me.scanner.stop();
+                me.serverScanner.start({bank:bank.val(), channels:selected, dwell:Number(dwell.val()), across:shared.prop('checked')});
+            } else await me.scanner.start(selected, {dwell:Number(dwell.val()), shared:shared.prop('checked')});
+        } catch(error) { updateControls(error.message); }
+    });
+    stop.on('click', () => {
+        if (me.serverScanner.running || me.serverScanner.pending) me.serverScanner.stop();
+        else me.scanner.stop();
+    });
+    this.scanTimer = setInterval(() => { this.scanner.tick(); if (!window.owrxAleScanner.isRunning()) loadPreferences(); }, 200);
+    window.addEventListener('pagehide', () => {
+        this.scanner.stop('Stopped: page closed');
+        this.serverScanner.destroy();
+    });
+    window.addEventListener('pageshow', () => this.serverScanner.resume());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.serverScanner.resume(); });
+    window.addEventListener('online', () => this.serverScanner.resume());
+    const logTools = $('<div class="ale-log-tools">').appendTo(layout);
+    const exportLog = $('<button type="button">').text('Export CSV').appendTo(logTools);
+    const refreshLog = $('<button type="button">').text('Refresh log').appendTo(logTools);
+    const logStatus = $('<span class="ale-log-status" role="status">').text('Server scan log · loading…').appendTo(logTools);
+    const heard = $('<details class="ale-heard">').appendTo(layout);
+    const heardSummary = $('<summary>').text('Stations heard').appendTo(heard);
+    const heardList = $('<ul class="ale-heard-list" aria-label="Stations heard from server scans">').appendTo(heard);
+    let logBusy = false, lastLogSource = '', exportBusy = false;
+    async function updateLog() {
+        if (logBusy) return;
+        logBusy = true;
+        const source = currentSource();
+        if (source !== lastLogSource) { heardList.empty(); lastLogSource = source; }
+        try {
+            const state = await me.serverScanner.requestLog();
+            if (source !== currentSource()) return;
+            logStatus.text(me.serverScanner.state && me.serverScanner.state.log_error || state.total.toLocaleString()+' saved decodes');
+            logStatus.attr('title','Server scan log; newest '+state.retention.toLocaleString()+' receptions retained across receivers');
+            heardSummary.text('Stations heard · '+state.stations.length+(state.stations.length === state.station_limit ? ' most recent' : ''));
+            heardList.empty();
+            if (!state.stations.length) $('<li>').text('No source addresses logged yet.').appendTo(heardList);
+            for (const station of state.stations) {
+                const item = $('<li>').appendTo(heardList);
+                $('<strong>').text(station.address).appendTo(item);
+                $('<span>').text(new Date(station.timestamp).toISOString().replace('T',' ').slice(0,19)+' UTC').appendTo(item);
+                $('<span>').text(station.frequencies.map(f => (f/1000).toFixed(1)).join(', ')+' kHz').appendTo(item);
+                $('<span>').text(station.count+(station.count === 1 ? ' decode' : ' decodes')).appendTo(item);
+            }
+        } catch (error) { if (source === currentSource()) logStatus.text(error.message); }
+        finally { logBusy = false; if (source !== currentSource()) updateLog(); }
+    }
+    this.refreshLog = updateLog;
+    this.logWarning = text => logStatus.text(text);
+    refreshLog.on('click',updateLog);
+    heard.on('toggle', () => { if (heard.prop('open')) updateLog(); });
+    exportLog.on('click', async () => {
+        if (exportBusy) return;
+        exportBusy = true; exportLog.prop('disabled',true);
+        const source = currentSource();
+        try {
+            const chunks = ['UTC,Receiver,Frequency_Hz,From,To,Event,Message,Bank\r\n'];
+            let after = 0, through, count = 0, expected;
+            do {
+                if (source !== currentSource()) throw new Error('Receiver changed; export cancelled');
+                const page = await me.serverScanner.requestLog('export',{log_after:after,log_through:through});
+                if (expected === undefined) expected = page.total;
+                through = page.through;
+                for (const event of page.events) { chunks.push(aleLogCsvRow(event)); count++; }
+                if (count > 50000 || (page.more && page.after <= after)) throw new Error('Invalid log export response');
+                after = page.after;
+                logStatus.text('Exporting '+count.toLocaleString()+' decodes…');
+                if (!page.more) break;
+            } while (true);
+            if (count !== expected) throw new Error('Log retention changed during export; please retry');
+            if (source !== currentSource()) throw new Error('Receiver changed; export cancelled');
+            const url = URL.createObjectURL(new Blob(chunks,{type:'text/csv;charset=utf-8'}));
+            const link = document.createElement('a');
+            link.href = url; link.download = 'ALE-'+source.replace(/[^a-z0-9_-]/gi,'_')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+            document.body.append(link); link.click(); link.remove();
+            setTimeout(() => URL.revokeObjectURL(url),1000);
+            logStatus.text('Exported '+count.toLocaleString()+' retained decodes');
+        } catch (error) { logStatus.text(error.message); }
+        finally { exportBusy = false; exportLog.prop('disabled',false); }
+    });
+    this.logTimer = setInterval(() => { if (!document.hidden) updateLog(); },15000);
+    window.addEventListener('pagehide', () => { clearInterval(this.logTimer); this.logTimer = null; });
+    window.addEventListener('pageshow', () => {
+        if (!this.logTimer) this.logTimer = setInterval(() => { if (!document.hidden) updateLog(); },15000);
+        updateLog();
+    });
+    updateLog();
+    layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Event</th><th>Message / details</th></tr></thead><tbody></tbody></table>'));
+};
+Ale2gMessagePanel.prototype.pushMessage = function(message) {
+    if (message.test_audio && this.serverScanner.running) this.serverScanner.stop();
+    if (this.serverScanner.running && !message.server_scan && !message.test_audio) return;
+    if (!message.restored) this.scanner.event(message);
+    if (message.event === 'activity') return;
+    const row = $('<tr>');
+    const events = {
+        sounding_this_was:['Sounding · TWS','Station identification'],
+        sounding_this_is:['Sounding · TIS','Station identification'],
+        destination:['Address','Destination received'], call:['Call','Call received'],
+        call_ack:['Call ACK','Acknowledgment'], call_established:['Call EST','Link established'],
+        amd:['AMD text',null], dtm:['DTM text',null], command:['Command',null]
+    };
+    const event = events[message.event] || ['Decode',null];
+    const values = [Utils.HHMMSS(message.timestamp), (message.freq / 1000).toFixed(1),
+        message.source || '—', message.destination || '—', event[0]];
+    values.forEach(function(value, index) {
+        // Decoder output is untrusted radio text, never HTML.
+        $('<td>').addClass(index === 4 ? 'ale-event' : '').text(String(value)).appendTo(row);
+    });
+    const body = $('<td class="message">').appendTo(row);
+    if (event[1] === null) body.text(String(message.message || ''));
+    else {
+        $('<span>').text((message.test_audio ? '[TEST AUDIO] ' : '')+event[1]).appendTo(body);
+        const details = $('<details class="ale-raw">').appendTo(body);
+        $('<summary>').text('Raw decode').appendTo(details);
+        $('<pre>').text(String(message.message || '')).appendTo(details);
+    }
+    this.el.find('tbody').append(row);
+    this.clearMessages(250);
+    this.scrollToBottom();
+};
+$.fn.ale2gMessagePanel = function() {
+    if (!this.data('panel')) this.data('panel', new Ale2gMessagePanel(this));
+    return this.data('panel');
+};
+
 function WsjtMessagePanel(el) {
     MessagePanel.call(this, el);
     this.initClearTimer();
@@ -1182,3 +1449,4 @@ $.fn.meshtasticMessagePanel = function() {
     }
     return this.data('panel');
 };
+

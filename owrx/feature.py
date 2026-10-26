@@ -98,6 +98,7 @@ class FeatureDetector(object):
         "uat": ["dump978"],
         "ism": ["rtl_433"],
         "hfdl": ["dumphfdl"],
+        "ale2g": ["owrx_ale"],
         "vdl2": ["dumpvdl2"],
         "acars": ["acarsdec"],
         "tetra": ["tetrarx"],
@@ -773,6 +774,10 @@ class FeatureDetector(object):
         distributions.
         """
         return self.command_is_runnable("rtl_433 -h")
+
+    def has_owrx_ale(self):
+        """Experimental receive-only 2G ALE decoder built from contrib/ale/decoder."""
+        return self.command_is_runnable("owrx-ale --version")
 
     def has_dumphfdl(self):
         """

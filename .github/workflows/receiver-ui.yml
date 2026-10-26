@@ -2,15 +2,33 @@ name: Receiver UI
 
 on:
   push:
-    branches: [k2aam-ui]
+    branches: [k2aam-ui, ale-scanlists]
   pull_request:
-    branches: [master]
+    branches: [master, k2aam-ui]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  ale-decoder:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Build receive-only decoder
+        run: make -C contrib/ale/decoder
+      - name: Download verified upstream reference audio
+        run: python3 contrib/ale/decoder/fetch_test_audio.py
+      - name: Reference audio, parser and installer tests
+        run: python3 -m unittest discover -s contrib/ale/tests -v
+      - name: Address and undefined-behavior sanitizer tests
+        run: |
+          make -C contrib/ale/decoder TARGET=/tmp/owrx-ale-sanitize CXXFLAGS='-O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer'
+          ASAN_OPTIONS=detect_leaks=0 ALE_BINARY=/tmp/owrx-ale-sanitize python3 -m unittest discover -s contrib/ale/tests -v
   receiver-ui:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -29,12 +47,23 @@ jobs:
           npx playwright install --with-deps chromium webkit
       - name: Validate JavaScript syntax
         run: |
+          node --check htdocs/lib/AleScanner.js
+          node --check htdocs/lib/MessagePanel.js
           node --check htdocs/plugins.js
           node --check htdocs/plugins/receiver/rig_dock/bootstrap.js
           node --check htdocs/plugins/receiver/rig_dock/rig_dock.js
           node --check htdocs/plugins/receiver/rig_audio/rig_audio.js
       - name: Installer and update tests
         run: python3 -m unittest discover -s contrib/rig_dock/tests -v
+      - name: ALE scanner state and catalog tests
+        run: |
+          node contrib/ale/tests/scanner.cjs
+          node contrib/ale/tests/observer.cjs
+      - name: Studio DSP and real RNNoise WASM tests
+        run: |
+          for script in contrib/rig_dock/tests/audio/*.cjs; do
+            node "$script"
+          done
       - name: Receiver browser tests
         run: npm run test:receiver
       - name: Mobile WebKit startup tests

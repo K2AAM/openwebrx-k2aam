@@ -1,2920 +1,1097 @@
-/**
- * audio_filter.js
- * A plugin concept for OpenWebRX+ to improve audio quality (SSB, AM & Digital).
- * Features: EQ, Noise Blanker, Hang-AGC/Compressor, Auto-Notch.
- *
- * License: MIT
- * Copyright (c) 2025 DL1HQH
- * RIG Dock modifications: native audio routing, explicit session master bypass.
- * Upstream blob f8dcad72e4e2feca23e621caaea554500a8e9f4e
+/* Audio Filter Studio 2.3 beta.2 adapted for RIG Dock 0.4.0.
+ * Original concept: Copyright (c) 2025 DL1HQH / joer123.
+ * Enhancements: Copyright (c) 2026 Audio Filter Studio contributors. MIT.
+ * Source: K2AAM/openwebrxplus-audio-filter-studio @ 83765f6e92bd22279847fac92d8758d9e36d4285.
+ * RIG adapter uses explicit native audio attachment, session master bypass,
+ * and no AudioNode/BaseAudioContext prototype interception.
+ * RNNoise bundle and licenses are served locally; see PROVENANCE.md.
  */
+(function () {
+  'use strict';
+  const ID = 'rig_audio';
+  // RIG integration: explicit native receiver attachment; no global audio hooks.
+  // Studio source: K2AAM/openwebrxplus-audio-filter-studio @ 83765f6e92bd22279847fac92d8758d9e36d4285.
+  const BUILD = 'studio-2.0.0'; // retain compatibility with existing init.js
+  const REVISION = '2.3.0-beta.2';
+  const STORAGE = 'openwebrx-audio-filter-';
+  if (window.RigAudioStudio && window.RigAudioStudio.build === BUILD) return;
 
-(function() {
-    'use strict';
-
-    const PLUGIN_ID = "rig_audio";
-    console.log(`[${PLUGIN_ID}] Optional filter loaded; master bypass is ON.`);
-
-    // Configuration for different modulations
-    const CONFIG = {
-        ssb: {
-            highpassFreq: null,
-            lowpassFreq: 13500,  // Treble optimized for SSB
-            peakingFreq: 521.8739192045387,  // Shifted to 2000Hz for more presence
-            peakingQ: 0.5,
-            peakingGain: 12.87,
-            gain: 0.9,
-            agcTarget: 0.50,
-            maxBoost: 35.0,
-            notchQ: 30,
-            maxNotches: 4,
-            compHPF: 325,
-            compLPF: 1475,
-            nr_gain: 5,         // dB
-            nr_alpha: 0.95,
-            nr_snr: 24,         // dB
-            nr_comb: 0.0,
-            nr_speech_mode: true,
-            airGain: 9.0,
-            airFreq: 1475
-        },
-        am: {
-            highpassFreq: 219,   // (Full warmth for tube sound)
-            lowpassFreq: 13500,  // Treble rolled off (Vintage radio style)
-            peakingFreq: 675.6313495618042,   // Boost low-mids for body/warmth
-            peakingQ: 0.5,
-            peakingGain: 18.48,
-            gain: 0.9,
-            agcTarget: 0.50,
-            maxBoost: 19,
-            notchQ: 30,
-            maxNotches: 4,
-            compHPF: 175,
-            compLPF: 1325,
-            nr_gain: 10,
-            nr_alpha: 0.9723,     // Very slow/smooth tracking (Liquid background)
-            nr_snr: 26,         // Higher threshold to kill background noise completely
-            nr_comb: 0.1,       // Low comb factor for smooth, non-robotic sound
-            nr_speech_mode: false,
-            airFreq: 1325
-        },
-        cw: {
-            highpassFreq: 300,
-            lowpassFreq: 900,   // Narrow bandwidth for CW
-            peakingFreq: 600,   // Center around typical pitch
-            peakingQ: 3.0,
-            peakingGain: 3.3,
-            gain: 0.9,
-            agcTarget: 0.40,
-            maxBoost: 20.0,
-            notchQ: 40,
-            maxNotches: 4,
-            compHPF: 400,
-            compLPF: 1500,
-            nr_gain: 0,
-            nr_alpha: 0.9800,
-            nr_snr: 30,
-            nr_comb: 0.5,
-            nr_speech_mode: false,
-            airFreq: 1500
-        },
-        nfm: {
-            highpassFreq: 50,
-            lowpassFreq: 11100,
-            peakingFreq: 2500,
-            peakingQ: 0.7,
-            peakingGain: 3.3,
-            gain: 0.9,
-            agcTarget: 0.50,
-            maxBoost: 20.0,
-            notchQ: 30,
-            maxNotches: 4,
-            compHPF: 250,
-            compLPF: 5000,
-            nr_gain: 0,
-            nr_alpha: 0.9800,
-            nr_snr: 30,
-            nr_comb: 0.5,
-            nr_speech_mode: true,
-            airFreq: 5000
-        },
-        wfm: {
-            highpassFreq: 50,
-            lowpassFreq: 11100,
-            peakingFreq: 8000,
-            peakingQ: 0.5,
-            peakingGain: 3.3,
-            gain: 0.9,
-            agcTarget: 0.50,
-            maxBoost: 6.0,      // Low boost for WFM
-            notchQ: 30,
-            maxNotches: 4,
-            compHPF: 100,
-            compLPF: 8000,
-            nr_gain: 0,
-            nr_alpha: 0.95,
-            nr_snr: 10,
-            nr_comb: 0.5,
-            nr_speech_mode: false,
-            airFreq: 8000
-        },
-        digital: {
-            highpassFreq: 50,
-            lowpassFreq: 11100,
-            peakingFreq: 2500,
-            peakingQ: 0.7,
-            peakingGain: 3.3,
-            gain: 0.9,
-            agcTarget: 0.50,
-            maxBoost: 20.0,
-            notchQ: 30,
-            maxNotches: 4,
-            compHPF: 50,
-            compLPF: 8000,
-            nr_gain: 0,
-            nr_alpha: 0.95,
-            nr_snr: 10,
-            nr_comb: 0.5,
-            nr_speech_mode: false,
-            airFreq: 8000
+  // Pure, dependency-free processing core. The very same function is serialized
+  // into an AudioWorklet module and called in the ScriptProcessor fallback.
+  function createDSPCore() {
+    // Canonical values shared by the AudioWorklet, fallback and Studio UI.
+    // Keep inside the factory: it is serialized into the Worklet module.
+    const defaults=Object.freeze({mode:'ssb',nb:false,nr:false,notch:false,eq:false,comp:false,
+      highpassFreq:150,lowpassFreq:2800,peakingFreq:1450,peakingQ:0.85,peakingGain:0,
+      gain:1,airFreq:3600,airGain:0,loudness:false,loudnessGain:0,
+      nr_alpha:0.975,nr_snr:8,nr_gain:0,nr_comb:0.2,nr_speech_mode:true,nr_character:0.35,
+      nr_body:0,nr_ab_reference:false,nr_ab_gain:1,nr_engine:'classic',
+      agcTarget:0.32,maxBoost:8,gateThresh:0.008,hangTime:0.18,recoveryTime:0.45,
+      compGain:1,compHPF:150,compLPF:3000,notchQ:35,maxNotches:2});
+    class Biquad {
+      constructor(rate) { this.rate=rate; this.b0=1;this.b1=0;this.b2=0;this.a1=0;this.a2=0;this.z1=0;this.z2=0; }
+      set(type, freq, q=0.707, gain=0) {
+        if (type === 'none' || !freq) { this.b0=1;this.b1=this.b2=this.a1=this.a2=0;return; }
+        const f = Math.max(5,Math.min(freq,this.rate*0.49));
+        const w = 2*Math.PI*f/this.rate, c=Math.cos(w), s=Math.sin(w);
+        const A=Math.pow(10,gain/40), alpha=s/(2*Math.max(q,0.1));
+        let b0,b1,b2,a0,a1,a2;
+        if(type==='highpass') { b0=(1+c)/2;b1=-(1+c);b2=b0;a0=1+alpha;a1=-2*c;a2=1-alpha; }
+        else if(type==='lowpass') {b0=(1-c)/2;b1=1-c;b2=b0;a0=1+alpha;a1=-2*c;a2=1-alpha;}
+        else if(type==='notch') {b0=1;b1=-2*c;b2=1;a0=1+alpha;a1=-2*c;a2=1-alpha;}
+        else if(type==='peaking') {b0=1+alpha*A;b1=-2*c;b2=1-alpha*A;a0=1+alpha/A;a1=-2*c;a2=1-alpha/A;}
+        else {
+          const beta=2*Math.sqrt(A)*alpha;
+          if(type==='lowshelf') {b0=A*((A+1)-(A-1)*c+beta);b1=2*A*((A-1)-(A+1)*c);b2=A*((A+1)-(A-1)*c-beta);a0=(A+1)+(A-1)*c+beta;a1=-2*((A-1)+(A+1)*c);a2=(A+1)+(A-1)*c-beta;}
+          else if(type==='highshelf') {b0=A*((A+1)+(A-1)*c+beta);b1=-2*A*((A-1)+(A+1)*c);b2=A*((A+1)+(A-1)*c-beta);a0=(A+1)-(A-1)*c+beta;a1=2*((A-1)-(A+1)*c);a2=(A+1)-(A-1)*c-beta;}
+          else {this.set('none');return;}
         }
+        this.b0=b0/a0;this.b1=b1/a0;this.b2=b2/a0;this.a1=a1/a0;this.a2=a2/a0;
+      }
+      process(x) { const y=this.b0*x+this.z1;this.z1=this.b1*x-this.a1*y+this.z2;this.z2=this.b2*x-this.a2*y;return y; }
+      reset() {this.z1=this.z2=0;}
+    }
+
+    class DSPCore {
+      constructor(rate) {
+        this.rate=rate;
+        this.N=rate>=32000?512:256;
+        this.H=this.N>>1;
+        this.Nmask=this.N-1;
+        this.ringSize=16384;this.mask=this.ringSize-1;
+        this.input=new Float32Array(this.ringSize);
+        this.ola=new Float32Array(this.ringSize);
+        this.weight=new Float32Array(this.ringSize);
+        this.real=new Float32Array(this.N);
+        this.imag=new Float32Array(this.N);
+        this.window=new Float32Array(this.N);
+        this.noise=new Float32Array(this.N/2+1);
+        this.gains=new Float32Array(this.N/2+1);
+        // Sliding minimum-statistics estimator; all arrays allocated once.
+        this.nrBins=this.N/2+1;
+        this.nrHistorySize=6;
+        this.nrWindowFrames=Math.max(4,Math.round(0.12*rate/this.H));
+        this.nrWindow=new Float32Array(this.nrBins);
+        this.nrSmooth=new Float32Array(this.nrBins);
+        this.nrPrevGamma=new Float32Array(this.nrBins);
+        this.nrSpeechProb=new Float32Array(this.nrBins);
+        this.nrPriorSNR=new Float32Array(this.nrBins);
+        this.nrSpeechHold=new Uint16Array(this.nrBins);
+        this.nrHistory=new Float32Array(this.nrBins*this.nrHistorySize);
+        this.nrHistoryCount=0;this.nrHistoryIndex=0;this.nrWindowAge=0;
+        this.mag=new Float32Array(this.N/2+1);
+        this.reverse=new Uint16Array(this.N);
+        this.cos=new Float32Array(this.N>>1);
+        this.sin=new Float32Array(this.N>>1);
+        const bits=Math.round(Math.log2(this.N));
+        for(let i=0;i<this.N;i++) {
+          let v=i,r=0;for(let j=0;j<bits;j++) {r=(r<<1)|(v&1);v>>=1;}
+          this.reverse[i]=r;
+          this.window[i]=Math.sin(Math.PI*(i+0.5)/this.N);
+        }
+        for(let k=0;k<this.N/2;k++) {const a=-2*Math.PI*k/this.N;this.cos[k]=Math.cos(a);this.sin[k]=Math.sin(a);}
+        this.hp=new Biquad(rate);this.lp=new Biquad(rate);this.compHp=new Biquad(rate);this.compLp=new Biquad(rate);
+        this.bass=new Biquad(rate);this.peak=new Biquad(rate);this.air=new Biquad(rate);
+        this.notches=[new Biquad(rate),new Biquad(rate)];
+        this.auto=[0,0];this.candidate=0;this.candidateAge=0;this.candidateMiss=0;
+        this.index=0;this.avg=0.005;this.blank=0;this.compEnvelope=0;this.compGain=1;this.compHang=0;
+        this.noiseReady=false;this.rms=0;this.frameCount=0;this.enabled=false;
+        this.setSettings({});
+      }
+      fft(inverse) {
+        const n=this.N,r=this.real,im=this.imag;
+        for(let i=0;i<n;i++){const j=this.reverse[i];if(i<j){let t=r[i];r[i]=r[j];r[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+        for(let len=2;len<=n;len*=2){const half=len>>1,step=n/len;for(let off=0;off<n;off+=len){for(let j=0;j<half;j++){
+          const ix=j*step,wr=this.cos[ix],wi=inverse?-this.sin[ix]:this.sin[ix],a=off+j,b=a+half;
+          const tr=wr*r[b]-wi*im[b],ti=wr*im[b]+wi*r[b];
+          r[b]=r[a]-tr;im[b]=im[a]-ti;r[a]+=tr;im[a]+=ti;
+        }}}
+        if(inverse){for(let i=0;i<n;i++){r[i]/=n;im[i]/=n;}}
+      }
+      setSettings(s) {
+        const prev=this.settings || defaults;
+        this.settings=Object.assign({},defaults,prev,s);
+        const p=this.settings;
+        if((p.nr&&!prev.nr)||(p.nr&&p.mode!==prev.mode)||(p.nr&&p.nr_snr>0&&prev.nr_snr<=0))this.resetNoiseState();
+        this.hp.set(p.eq?'highpass':'none',p.highpassFreq);
+        this.lp.set(p.eq?'lowpass':'none',p.lowpassFreq);
+        this.bass.set(p.eq&&p.loudness?'lowshelf':'none',160,0.707,p.loudnessGain||0);
+        this.peak.set(p.eq?'peaking':'none',p.peakingFreq,p.peakingQ,p.peakingGain);
+        this.air.set(p.eq?'highshelf':'none',p.airFreq,0.707,p.airGain);
+        this.compHp.set(p.comp?'highpass':'none',p.compHPF||150);
+        this.compLp.set(p.comp?'lowpass':'none',p.compLPF||3000);
+        if(!p.notch||p.mode==='cw'){this.auto[0]=this.auto[1]=0;}
+        this.updateNotches();
+      }
+      updateNotches(){const s=this.settings;for(let i=0;i<2;i++)this.notches[i].set(s.notch&&s.mode!=='cw'&&i<Math.min(2,s.maxNotches)?'notch':'none',this.auto[i],s.notchQ||35);}
+      resetNoiseState(){
+        this.noise.fill(0);this.gains.fill(1);this.nrWindow.fill(Infinity);this.nrSmooth.fill(0);
+        this.nrPrevGamma.fill(1);this.nrSpeechProb.fill(0);this.nrPriorSNR.fill(0);
+        this.nrSpeechHold.fill(0);
+        this.nrHistory.fill(0);this.nrHistoryCount=0;this.nrHistoryIndex=0;this.nrWindowAge=0;
+        this.noiseReady=false;
+      }
+      reset(){
+        this.input.fill(0);this.ola.fill(0);this.weight.fill(0);this.resetNoiseState();
+        this.hp.reset();this.lp.reset();this.compHp.reset();this.compLp.reset();this.bass.reset();this.peak.reset();this.air.reset();this.notches.forEach(n=>n.reset());
+        this.index=0;this.blank=0;this.compEnvelope=0;this.compGain=1;this.compHang=0;this.noiseReady=false;
+        this.candidate=0;this.candidateAge=0;this.auto=[0,0];this.frameCount=0;
+      }
+      analyzeNotch() {
+        const p=this.settings;if(!p.notch||p.mode==='cw')return;
+        let best=0,bestScore=0;
+        const max=Math.min(this.N/2-3,Math.floor(3800*this.N/this.rate));
+        const min=Math.max(2,Math.ceil(180*this.N/this.rate));
+        for(let k=min;k<max;k++){
+          const local=(this.mag[k-2]+this.mag[k-1]+this.mag[k+1]+this.mag[k+2])*0.25+1e-9;
+          const ratio=this.mag[k]/local;
+          if(ratio>5.5&&ratio>bestScore){best=k;bestScore=ratio;}
+        }
+        if(best){if(Math.abs(best-this.candidate)<=1){this.candidateAge++;}else{this.candidate=best;this.candidateAge=1;}
+          this.candidateMiss=0;
+          if(this.candidateAge>=Math.ceil(0.20*this.rate/this.H)) {
+            const f=best*this.rate/this.N;
+            if(Math.abs(f-this.auto[0])>this.rate/this.N*1.2){this.auto[1]=this.auto[0];this.auto[0]=f;this.updateNotches();}
+          }
+        }else if(++this.candidateMiss>Math.ceil(0.7*this.rate/this.H)){
+          this.candidateAge=0;this.candidate=0;this.candidateMiss=0;
+          if(this.auto[0]||this.auto[1]){this.auto[0]=this.auto[1]=0;this.updateNotches();}
+        }
+      }
+      processFrame(start){
+        const p=this.settings,n=this.N;
+        for(let j=0;j<n;j++){this.real[j]=this.input[(start+j)&this.mask]*this.window[j];this.imag[j]=0;}
+        this.fft(false);
+        for(let k=0;k<=n/2;k++){this.mag[k]=Math.hypot(this.real[k],this.imag[k]);}
+        if(p.notch && (this.frameCount++%4===0))this.analyzeNotch();
+        // Strength zero is a *true* bypass, even when NR output gain != 0.
+        if(p.nr && p.nr_snr>0){
+          const bins=this.nrBins;
+          const strength=Math.max(0,Math.min(1,p.nr_snr/30));
+          const character=Math.max(0,Math.min(1,p.nr_character));
+          const alpha=Math.max(0.8,Math.min(0.999,p.nr_alpha));
+          const speech=!!p.nr_speech_mode;
+          const hopSeconds=this.H/this.rate;
+
+          // Character=0: natural; Character=1: more suppression.
+          const floor=0.28-0.19*character;
+          const protection=speech?0.65-0.35*character:0.22-0.14*character;
+          const oversub=1+6*strength*(0.9+0.2*character);
+          const speechOpen=1-Math.exp(-hopSeconds/0.012);
+          const noiseClose=1-Math.exp(-hopSeconds/(0.115-0.070*character));
+          const pRise=1-Math.exp(-hopSeconds/0.025);
+          const pFall=1-Math.exp(-hopSeconds/0.160);
+          const maxSpeechHold=Math.ceil(0.65/hopSeconds);
+
+          // Pass 1: decision-directed a-priori SNR, evaluated against the
+          // PREVIOUS noise estimate. Compute ALL probabilities before using
+          // neighboring bins in the gain/tonality protection pass.
+          for(let k=0;k<bins;k++){
+            const mag=this.mag[k];
+            const noise=Math.max(1e-7,this.noise[k]);
+            const gamma=this.noiseReady?
+              Math.min(100,(mag*mag)/(noise*noise+1e-12)):1;
+            const xi=this.noiseReady?
+              Math.max(0,0.92*this.gains[k]*this.gains[k]*this.nrPrevGamma[k]
+                +0.08*Math.max(0,gamma-1)):0;
+            this.nrPriorSNR[k]=xi;
+            this.nrPrevGamma[k]=gamma;
+            // Lightweight speech-likelihood heuristic (not a trained VAD).
+            // A high xi must persist to build high speech probability.
+            const instant=Math.max(0,Math.min(1,(xi-0.65)/4.0));
+            const previous=this.nrSpeechProb[k];
+            const smoothing=instant>previous?pRise:pFall;
+            this.nrSpeechProb[k]=previous+smoothing*(instant-previous);
+          }
+
+          // Pass 2: speech-aware noise estimation and softened Wiener gain.
+          for(let k=0;k<bins;k++){
+            const mag=this.mag[k],candidate=Math.max(1e-7,mag);
+            const smooth=this.nrSmooth[k]?
+              0.84*this.nrSmooth[k]+0.16*candidate:candidate;
+            this.nrSmooth[k]=smooth;
+            const oldNoise=Math.max(1e-7,this.noise[k]||smooth);
+            const protectedSpeech=this.noiseReady&&this.nrSpeechProb[k]>=0.68;
+            this.nrSpeechHold[k]=protectedSpeech?
+              Math.min(65535,this.nrSpeechHold[k]+1):0;
+
+            // Preserve syllables; after 650ms, allow a new estimate even
+            // if the probability remains high (e.g. broadband QRM jumps).
+            // This avoids infinite speech holds that permanently freeze NR.
+            if(!protectedSpeech||smooth<oldNoise||this.nrSpeechHold[k]>=maxSpeechHold){
+              if(smooth<this.nrWindow[k])this.nrWindow[k]=smooth;
+            }
+            let minimum=Number.isFinite(this.nrWindow[k])?
+              this.nrWindow[k]:oldNoise;
+            for(let w=0;w<this.nrHistoryCount;w++){
+              const saved=this.nrHistory[w*bins+k];
+              if(saved>0&&saved<minimum)minimum=saved;
+            }
+            if(!this.noiseReady)this.noise[k]=Math.max(1e-7,minimum);
+            else {
+              const prev=this.noise[k];
+              const blend=minimum<prev?0.18:(1-alpha);
+              this.noise[k]=Math.max(1e-7,prev+blend*(minimum-prev));
+            }
+
+            const noise=this.noise[k];
+            const ratio=mag*mag/(noise*noise+1e-12);
+            const wiener=Math.sqrt(Math.max(0,1-oversub/Math.max(ratio,1e-9)));
+            let target=1-strength*(1-Math.max(floor,wiener));
+
+            const near1=Math.max(this.nrSpeechProb[Math.max(0,k-1)],
+              this.nrSpeechProb[Math.min(bins-1,k+1)]);
+            const near2=Math.max(this.nrSpeechProb[Math.max(0,k-2)],
+              this.nrSpeechProb[Math.min(bins-1,k+2)]);
+            const region=Math.max(this.nrSpeechProb[k],0.72*near1,0.42*near2);
+            target+=(1-target)*protection*region;
+
+            // SSB voice body: preserve detected 200-950 Hz speech regions
+            // rather than boosting the low-frequency noise floor. Unlike
+            // EQ, this only reduces NR attenuation when speech is likely.
+            if(p.mode==='ssb'&&p.nr_body>0){
+              const hz=k*this.rate/this.N;
+              const shape=Math.max(0,1-Math.abs(hz-575)/375);
+              const body=Math.min(1,Math.max(0,p.nr_body));
+              target+=(1-target)*0.40*body*shape*region;
+            }
+
+            // Keep the original tonal guard; region protection also
+            // helps broader formants spanning adjacent FFT bins.
+            if(p.nr_comb>0&&k>0&&k<bins-1){
+              const neighbors=0.5*(this.mag[k-1]+this.mag[k+1])+1e-8;
+              if(mag>2.2*neighbors)
+                target=Math.max(target,(1-strength)+strength*(0.42+0.4*p.nr_comb));
+            }
+
+            const previous=this.gains[k];
+            const coefficient=target>previous?speechOpen:noiseClose;
+            this.gains[k]=previous+coefficient*(target-previous);
+          }
+          this.noiseReady=true;
+          if(++this.nrWindowAge>=this.nrWindowFrames){
+            // A fully speech-protected window can remain +Infinity.
+            // Reuse the prior finite estimate, never poison history.
+            for(let k=0;k<bins;k++){
+              let sample=this.nrWindow[k];
+              if(!Number.isFinite(sample)||sample<=0)
+                sample=Math.max(1e-7,this.noise[k]||this.nrSmooth[k]);
+              this.nrHistory[this.nrHistoryIndex*bins+k]=sample;
+              this.nrWindow[k]=Infinity;
+            }
+            this.nrHistoryIndex=(this.nrHistoryIndex+1)%this.nrHistorySize;
+            if(this.nrHistoryCount<this.nrHistorySize)this.nrHistoryCount++;
+            this.nrWindowAge=0;
+          }
+          // A/B reference keeps the SAME estimator running, but does not
+          // attenuate FFT bins. No reset or new processor/audio route.
+          if(!p.nr_ab_reference){
+          const amp=Math.pow(10,Math.max(-12,Math.min(12,p.nr_gain))/20);
+          for(let k=0;k<bins;k++){
+            let gain=this.gains[k];
+            if(k>0&&k<bins-1)
+              gain=0.2*this.gains[k-1]+0.6*gain+0.2*this.gains[k+1];
+            gain*=amp;
+            this.real[k]*=gain;this.imag[k]*=gain;
+            if(k>0&&k<bins-1){
+              this.real[n-k]*=gain;this.imag[n-k]*=gain;
+            }
+          }
+          }
+        }
+        this.fft(true);
+        for(let i=0;i<n;i++){
+          const pos=(start+i)&this.mask,w=this.window[i];
+          this.ola[pos]+=this.real[i]*w;
+          this.weight[pos]+=w*w;
+        }
+      }
+      process(x){
+        const p=this.settings;
+        x=Number.isFinite(x)?Math.max(-4,Math.min(4,x)):0;
+        this.rms=0.997*this.rms+0.003*x*x;
+        if(p.nb){
+          const amp=Math.abs(x);this.avg=0.999*this.avg+0.001*Math.min(amp,Math.max(0.006,this.avg*4));
+          if(this.blank>0){x*=0.12;this.blank--;}
+          else if(this.index>1000&&amp>Math.max(0.025,this.avg*8))this.blank=Math.max(2,Math.floor(this.rate*0.00035));
+        }
+        const idx=this.index++;
+        this.input[idx&this.mask]=x;
+        if(idx+1>=this.N&&(idx+1-this.N)%this.H===0)this.processFrame(idx+1-this.N);
+        const outIdx=idx-(this.N-1);
+        let y=0;
+        if(outIdx>=0){const i=outIdx&this.mask;const wt=this.weight[i];y=wt>1e-7?this.ola[i]/wt:0;this.ola[i]=0;this.weight[i]=0;}
+        if(p.notch&&p.mode!=='cw'){y=this.notches[0].process(y);y=this.notches[1].process(y);}
+        if(p.eq){y=this.hp.process(y);y=this.bass.process(y);y=this.peak.process(y);y=this.air.process(y);y=this.lp.process(y);}
+        if(p.comp){
+          const side=this.compLp.process(this.compHp.process(y));
+          const v=Math.abs(side),coeff=v>this.compEnvelope?Math.exp(-1/(0.008*this.rate)):Math.exp(-1/(0.13*this.rate));
+          this.compEnvelope=coeff*this.compEnvelope+(1-coeff)*v;
+          const gate=Math.max(0.0001,p.gateThresh);
+          let desired=Math.min(Math.max(1,p.maxBoost),Math.max(0.05,p.agcTarget)/(this.compEnvelope+1e-7));
+          if(this.compEnvelope<gate){const r=this.compEnvelope/gate;desired*=r*r;}
+          if(desired<this.compGain)this.compHang=Math.floor(Math.max(0,p.hangTime||0)*this.rate);
+          else if(this.compHang>0){this.compHang--;desired=this.compGain;}
+          const k=desired<this.compGain?0.002:1/(Math.max(0.08,p.recoveryTime)*this.rate);
+          this.compGain+=(desired-this.compGain)*k;
+          y=Math.tanh(y*this.compGain)*(p.compGain||1);
+        }
+        // Transient calibrated NR A/B gain applies only to the processed
+        // side. Ordinary playback and strength-zero bypass remain unchanged.
+        const compareGain=p.nr&&p.nr_snr>0&&!p.nr_ab_reference?
+          Math.max(0.5,Math.min(2,p.nr_ab_gain||1)):1;
+        const out=y*Math.max(0,Math.min(3,p.gain))*compareGain;
+        return Math.max(-1,Math.min(1,Number.isFinite(out)?out:0));
+      }
+    }
+    DSPCore.defaults=defaults;
+    return DSPCore;
+  }
+
+  const DSPCore=createDSPCore();
+  const presets={
+    ssb:{highpassFreq:150,lowpassFreq:2800,peakingFreq:1500,peakingQ:0.85,peakingGain:1.5,gateThresh:0.008,nr_alpha:0.975,nr_snr:8,maxNotches:2,compGain:1},
+    am:{highpassFreq:55,lowpassFreq:8000,peakingFreq:950,peakingQ:0.8,peakingGain:0,gateThresh:0.005,nr_alpha:0.982,nr_snr:5,maxNotches:2,compGain:1},
+    cw:{highpassFreq:350,lowpassFreq:950,peakingFreq:650,peakingQ:2,peakingGain:0,gateThresh:0.005,nr_alpha:0.98,nr_snr:4,maxNotches:0,compGain:1},
+    nfm:{highpassFreq:120,lowpassFreq:4400,nr_snr:4,maxNotches:2},
+    wfm:{highpassFreq:35,lowpassFreq:15000,nr_snr:3,maxNotches:0},
+    digital:{highpassFreq:60,lowpassFreq:8000,nr_snr:2,maxNotches:0}
+  };
+  // Named profiles apply only to their own modulation. Module enable flags
+  // change on explicit selection, never on automatic modulation switching.
+  const listeningPresets={
+    ssb:[
+      {id:'weak-dx',label:'Weak SSB / DX',params:{highpassFreq:130,lowpassFreq:2950,peakingFreq:1450,peakingGain:1.5,nr_snr:26,nr_alpha:0.970,nr_comb:0.25,nr_speech_mode:true,nr_character:0.80,nr_body:0.65},flags:{eq:true,nr:true,comp:false}},
+      {id:'weak-dx-neural',label:'Weak SSB / DX · Neural',params:{highpassFreq:130,lowpassFreq:2950,peakingFreq:1450,peakingGain:1.5,nr_snr:27,nr_gain:0,nr_engine:'rnnoise'},flags:{eq:true,nr:true,comp:false}},
+      {id:'wide-ssb',label:'Wide SSB',params:{highpassFreq:85,lowpassFreq:4000,peakingFreq:1500,peakingGain:0,nr_snr:6},flags:{eq:true,nr:false}}
+    ],
+    am:[
+      {id:'hifi-am',label:'Hi-Fi AM',params:{highpassFreq:45,lowpassFreq:11000,peakingFreq:1100,peakingGain:0,airGain:0,nr_snr:5},flags:{eq:true,nr:false,comp:false}},
+      {id:'warm-am',label:'Warm AM',params:{highpassFreq:55,lowpassFreq:7500,peakingFreq:1200,peakingGain:-1.5,airFreq:4600,airGain:-2,nr_snr:9,nr_character:0.25},flags:{eq:true,nr:true,comp:false}},
+      {id:'am-comms',label:'AM Communications',params:{highpassFreq:180,lowpassFreq:3800,peakingFreq:1600,peakingGain:2,nr_snr:15,nr_alpha:0.97},flags:{eq:true,nr:true,comp:false}}
+    ],
+    cw:[
+      {id:'cw-narrow',label:'CW Narrow',params:{highpassFreq:470,lowpassFreq:780,peakingFreq:625,peakingGain:2,nr_snr:9,nr_speech_mode:false},flags:{eq:true,nr:false,notch:false}},
+      {id:'cw-wide',label:'CW Wide',params:{highpassFreq:300,lowpassFreq:1200,peakingFreq:650,peakingGain:0,nr_snr:7},flags:{eq:true,nr:false,notch:false}}
+    ]
+  };
+  const persistentKeys={eq:'enabled',nr:'nr',notch:'autonotch',nb:'declick',comp:'compressor',loudness:'loudness'};
+  const enabled={eq:false,nb:false,nr:false,notch:false,comp:false,loudness:false};
+  let settingsStore={};
+  let mode='ssb', settings={}, initialized=false, destroyed=false, userDisabled=true;
+  let compareReference=false,compareGain=1,compareCalibrating=false;
+  let windowNode=null, panel=null, statusEl=null, ledEl=null, canvas=null, canvasCtx=null;
+  const routes=new Set(), errors=[], observedSources=new Set();
+  let interceptCount=0, animationId=0, pollingId=0, watchdogId=0, workletUrl=null;
+  const workletLoads=new WeakMap();
+  const rnnoiseWorkletLoads=new WeakMap();
+  let rnnoiseSourcePromise=null, rnnoiseError='';
+  const RNNOISE_ASSET=new URL('rnnoise-sync.js',document.currentScript?.src||new URL('static/plugins/receiver/rig_audio/rig_audio.js',location.href)).href;
+  const listeners=[];
+  const originals={connect:AudioNode.prototype.connect};
+  let audio_enabled=false, nativeSource=null;
+  function errorLog(e,context){const msg=context+': '+String(e&&e.message||e);errors.push({at:new Date().toISOString(),message:msg});if(errors.length>16)errors.shift();console.warn('[audio_filter]',msg);}
+  function listen(target,event,fn,opts){target.addEventListener(event,fn,opts);listeners.push(()=>target.removeEventListener(event,fn,opts));}
+  function safeStorageGet(k){try{return localStorage.getItem(k);}catch(_){return null;}}
+  function safeStorageSet(k,v){try{localStorage.setItem(k,v);}catch(e){errorLog(e,'localStorage');}}
+  function normalizeMode(m){m=String(m||'ssb').toLowerCase();if(m==='lsb'||m==='usb')return 'ssb';if(m==='fm')return 'nfm';if(['dmr','ysf','dstar','nxdn','m17','p25','freedv'].includes(m))return 'digital';return presets[m]?m:'digital';}
+  function cleanProfile(obj){return Object.fromEntries(Object.entries(obj||{}).filter(([,value])=>value!==null&&value!==undefined));}
+  function choicesForMode(m=mode){
+    return [{id:'default',label:'Factory '+String(m).toUpperCase(),params:{},flags:null},...(listeningPresets[m]||[])];
+  }
+  function selectedListeningPreset(){
+    const entries=Object.entries(cleanProfile(settings));
+    for(const preset of choicesForMode()){
+      const params=Object.entries(preset.params);
+      if(entries.length===params.length&&params.every(([key,value])=>settings[key]===value))return preset.id;
+    }
+    return 'custom';
+  }
+  function refreshPresetSelector(){
+    const selector=panel&&panel.querySelector('#af2-preset');
+    if(!selector)return;
+    selector.replaceChildren();
+    const manual=document.createElement('option');manual.value='custom';manual.textContent='Custom (manual)';selector.appendChild(manual);
+    for(const preset of choicesForMode()){
+      const option=document.createElement('option');option.value=preset.id;option.textContent=preset.label;selector.appendChild(option);
+    }
+    selector.value=selectedListeningPreset();
+  }
+  function applyListeningPreset(id){
+    const preset=choicesForMode().find(p=>p.id===id);
+    if(!preset)return false;
+    compareReference=false;compareGain=1;
+    settings=cleanProfile(preset.params);saveSettings();
+    if(preset.flags)for(const [key,value] of Object.entries(preset.flags)){
+      if(!Object.prototype.hasOwnProperty.call(enabled,key))continue;
+      enabled[key]=!!value;safeStorageSet(STORAGE+persistentKeys[key],String(!!value));
+    }
+    syncSettings();refreshSliders();return true;
+  }
+  // Store only user overrides, not copied defaults: future versions can revise
+  // presets without silently freezing old values into localStorage.
+  function resolveModeSettings(currentMode=mode, overrides=settings){
+    // The mode is runtime state, never a factory or saved-profile default.
+    return Object.assign({},DSPCore.defaults,presets[currentMode],cleanProfile(overrides),{mode:currentMode});
+  }
+  function currentDSPSettings(){
+    // Keep the public settings() API identical to the parameters actually
+    // sent to both DSP engines, including live modulation and global toggles.
+    return Object.assign({},resolveModeSettings(),{
+      mode,eq:enabled.eq,nb:enabled.nb,nr:enabled.nr,notch:enabled.notch,
+      comp:enabled.comp,loudness:enabled.loudness,
+      nr_ab_reference:compareReference&&enabled.nr,nr_ab_gain:compareGain
+    });
+  }
+  function readReceiverMode(){
+    if(window.UI&&typeof UI.getModulation==='function'){
+      const raw=UI.getModulation();
+      if(raw)return normalizeMode(raw);
+    }
+    // OpenWebRX+ stores its active DemodulatorPanel on the jQuery receiver
+    // element (see htdocs/lib/DemodulatorPanel.js). Never call
+    // .demodulatorPanel() here: the getter lazily creates a panel and our
+    // plugin runs before receiver initialization.
+    try{
+      const jq=window.jQuery||window.$;
+      if(typeof jq==='function'){
+        const receiver=jq('#openwebrx-panel-receiver');
+        const panel=receiver&&receiver.length&&typeof receiver.data==='function'?receiver.data('panel'):null;
+        const demod=panel&&typeof panel.getDemodulator==='function'?panel.getDemodulator():null;
+        if(demod&&typeof demod.get_modulation==='function'){
+          const raw=demod.get_modulation();
+          if(raw)return normalizeMode(raw);
+        }
+      }
+    }catch(e){errorLog(e,'read receiver demodulator');}
+    // Secondary compatibility paths for alternate receiver builds.
+    try{
+      if(window.UI&&typeof window.UI.getDemodulator==='function'){
+        const d=window.UI.getDemodulator();
+        if(d&&typeof d.get_modulation==='function'){
+          const raw=d.get_modulation();if(raw)return normalizeMode(raw);
+        }
+      }
+      if(typeof window.get_demodulator==='function'){
+        const raw=window.get_demodulator();if(raw)return normalizeMode(raw);
+      }
+      if(typeof window.demodulator==='string'&&window.demodulator)return normalizeMode(window.demodulator);
+    }catch(e){errorLog(e,'read alternate demodulator');}
+    try{
+      // Native OpenWebRX+ mode buttons use .highlighted and data-modulation.
+      // Rig skins may hide these buttons but leave the receiver panel intact.
+      const active=document.querySelector(
+        '#openwebrx-panel-receiver .openwebrx-demodulator-button.highlighted[data-modulation]'
+      );
+      if(active){
+        const raw=active.getAttribute('data-modulation');
+        if(raw)return normalizeMode(raw);
+      }
+    }catch(e){errorLog(e,'read receiver mode button');}
+    return mode;
+  }
+  function loadSettings(){
+    for(const [k,v] of Object.entries(persistentKeys))enabled[k]=safeStorageGet(STORAGE+v)==='true';
+    try{const obj=JSON.parse(safeStorageGet(STORAGE+'settings')||'{}');
+      if(obj&&typeof obj==='object'){
+        if(Object.keys(obj).some(k=>presets[k]))settingsStore=obj;
+        else if(Object.keys(obj).length)settingsStore.ssb=obj;
+      }
+    }catch(e){errorLog(e,'restore profiles');}
+    mode=readReceiverMode();settings=cleanProfile(settingsStore[mode]);
+  }
+  function saveSettings(){settingsStore[mode]=Object.assign({},settings);safeStorageSet(STORAGE+'settings',JSON.stringify(settingsStore));}
+  function updateParameter(key,value){settings[key]=value;compareGain=1;saveSettings();syncSettings();refreshPresetSelector();}
+  function syncSettings(){
+    const p=currentDSPSettings();
+    for(const r of routes){
+      if(r.engine){r.engine.setSettings(p);}
+      if(r.processor&&r.processor.port)try{r.processor.port.postMessage({type:'settings',value:p});}catch(e){errorLog(e,'send settings');}
+    }
+    updateToggles();
+    if(p.nr&&p.nr_engine==='rnnoise')void ensureRnnoise();
+  }
+  function setFlag(flag,on){enabled[flag]=!!on;compareGain=1;if(flag==='nr')compareReference=false;
+    safeStorageSet(STORAGE+persistentKeys[flag],String(!!on));syncSettings();}
+
+  function makeWorkletSource(){
+    return `"use strict";\nconst DSPCore=(${createDSPCore.toString()})();\n`+
+      "\nclass RNNoiseBridge {\n  constructor(module){\n    this.module=module;\n    this.frameSize=480;\n    this.input=new Float32Array(480);\n    this.output=new Float32Array(480);\n    this.dryOutput=new Float32Array(480);\n    this.write=0;this.read=480;\n    this.state=module._rnnoise_create();\n    this.inputPtr=module._malloc(480*4);\n    this.outputPtr=module._malloc(480*4);\n    if(!this.state||!this.inputPtr||!this.outputPtr){\n      this.destroy();throw Error('RNNoise state allocation failed');\n    }\n  }\n  sample(x,mix){\n    // Both dry and neural audio are delayed by the same 480 samples, so\n    // mixing does not create comb filtering. Strength 0 bypasses the\n    // neural path entirely in setSettings().\n    let out=0;\n    if(this.read<480){\n      out=((1-mix)*this.dryOutput[this.read]+mix*this.output[this.read])/32768;\n      this.read++;\n    }\n    this.input[this.write++]=Math.max(-1,Math.min(1,x))*32768;\n    if(this.write===480){\n      const mod=this.module;\n      mod.HEAPF32.set(this.input,this.inputPtr/4);\n      const vad=mod._rnnoise_process_frame(this.state,this.outputPtr,this.inputPtr);\n      if(!Number.isFinite(vad))throw Error('RNNoise returned invalid frame');\n      this.output.set(mod.HEAPF32.subarray(this.outputPtr/4,this.outputPtr/4+480));\n      this.dryOutput.set(this.input);\n      this.write=0;this.read=0;\n    }\n    return out;\n  }\n  reset(){\n    this.input.fill(0);this.output.fill(0);this.dryOutput.fill(0);\n    this.write=0;this.read=480;\n  }\n  destroy(){\n    if(this.module){\n      if(this.state)this.module._rnnoise_destroy(this.state);\n      if(this.inputPtr)this.module._free(this.inputPtr);\n      if(this.outputPtr)this.module._free(this.outputPtr);\n    }\n    this.state=0;this.inputPtr=0;this.outputPtr=0;\n  }\n}\nclass AudioFilterStudioProcessor extends AudioWorkletProcessor {\n  constructor(){\n    super();\n    this.engine=new DSPCore(sampleRate);\n    this.samples=0;this.nonzero=0;\n    this.params={};\n    this.requestedRnnoise=false;\n    this.activeRnnoise=false;\n    this.rnLoading=false;\n    this.rnFailed=false;\n    this.bridge=null;\n    this.port.onmessage=e=>{\n      try {\n        const msg=e.data||{};\n        if(msg.type==='shutdown'){this.stopped=true;if(this.bridge){this.bridge.destroy();this.bridge=null;}return;}\n        if(msg.type==='settings')this.setSettings(msg.value||{});\n        else if(msg.type==='reset'){this.engine.reset();if(this.bridge)this.bridge.reset();}\n        else if(msg.type==='rnnoise-init')this.initRnnoise();\n        else if(msg.type==='rnnoise-retry'){\n          // Explicit user retry; never auto-loop after inference failure.\n          if(this.bridge){this.bridge.destroy();this.bridge=null;}\n          this.rnFailed=false;this.rnLoading=false;\n          this.setSettings(this.params);this.initRnnoise();\n        }\n      }catch(err){this.port.postMessage({type:'error',message:String(err)});}\n    };\n  }\n  setSettings(p){\n    this.params=p;\n    this.requestedRnnoise=!!p.nr&&p.nr_snr>0&&p.nr_engine==='rnnoise'&&\n      (p.mode==='ssb'||p.mode==='am')&&sampleRate===48000;\n    const active=this.requestedRnnoise&&!!this.bridge&&!this.rnFailed;\n    if(active!==this.activeRnnoise&&this.bridge)this.bridge.reset();\n    this.activeRnnoise=active;\n    this.engine.setSettings(active?Object.assign({},p,{nr:false}):p);\n    if(this.requestedRnnoise&&!this.bridge&&!this.rnLoading&&!this.rnFailed)this.initRnnoise();\n  }\n  initRnnoise(){\n    if(!this.requestedRnnoise||this.rnLoading||this.bridge||this.rnFailed)return;\n    const factory=globalThis.__afStudioRNNoiseFactory;\n    if(typeof factory!=='function')return;\n    this.rnLoading=true;\n    Promise.resolve().then(()=>factory()).then(module=>{\n      const bridge=new RNNoiseBridge(module);\n      this.bridge=bridge;this.rnLoading=false;\n      this.setSettings(this.params);\n      this.port.postMessage({type:'rnnoise-state',state:'ready'});\n    }).catch(e=>{\n      this.rnLoading=false;this.rnFailed=true;\n      this.port.postMessage({type:'rnnoise-state',state:'error',message:String(e)});\n    });\n  }\n  process(inputs,outputs){\n    if(this.stopped)return false;\n    const input=inputs[0],output=outputs[0];\n    if(!output||!output[0])return true;\n    try{\n      const n=output[0].length;\n      for(let i=0;i<n;i++){\n        let x=0;\n        if(input&&input.length){\n          for(let c=0;c<input.length;c++)x+=input[c][i]||0;\n          x/=input.length;\n        }\n        if(Math.abs(x)>1e-5)this.nonzero++;\n        if(this.activeRnnoise){\n          try{x=this.bridge.sample(x,Math.max(0,Math.min(1,this.params.nr_snr/30)));}\n          catch(e){\n            this.bridge.destroy();this.bridge=null;this.rnFailed=true;\n            this.activeRnnoise=false;\n            this.engine.setSettings(this.params);\n            this.port.postMessage({type:'rnnoise-state',state:'error',message:String(e)});\n          }\n        }\n        const y=this.engine.process(x);\n        for(let c=0;c<output.length;c++)output[c][i]=y;\n      }\n      this.samples+=n;\n      if(this.samples>=sampleRate/3){\n        this.port.postMessage({\n          type:'heartbeat',samples:this.samples,nonzero:this.nonzero,\n          rate:sampleRate,latency:this.engine.N-1+(this.activeRnnoise?480:0)\n        });\n        this.samples=0;this.nonzero=0;\n      }\n    }catch(e){\n      for(let c=0;c<output.length;c++)output[c].fill(0);\n      this.port.postMessage({type:'error',message:String(e)});\n    }\n    return true;\n  }\n}\nregisterProcessor('af-studio-2',AudioFilterStudioProcessor);\n";
+  }
+  async function createWorklet(context){
+    if(!window.isSecureContext||!context.audioWorklet||typeof AudioWorkletNode==='undefined')throw Error('AudioWorklet unsupported or insecure context');
+    if(!workletUrl)workletUrl=URL.createObjectURL(new Blob([makeWorkletSource()],{type:'text/javascript'}));
+    if(!workletLoads.has(context))workletLoads.set(context,context.audioWorklet.addModule(workletUrl));
+    await workletLoads.get(context);
+    return new AudioWorkletNode(context,'af-studio-2',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+  }
+
+  // Load the optional, locally hosted RNNoise WASM wrapper only on demand.
+  // The single existing AudioWorklet processor remains registered as before.
+  function fetchRnnoiseSource(){
+    if(!rnnoiseSourcePromise){
+      rnnoiseSourcePromise=(async()=>{
+        const response=await fetch(RNNOISE_ASSET,{credentials:'same-origin'});
+        if(!response.ok)throw Error('RNNoise asset missing (HTTP '+response.status+')');
+        const source=await response.text();
+        if(source.length<1000000||source.length>2800000||
+           !source.includes('createRNNWasmModuleSync')||
+           !source.includes('_rnnoise_process_frame'))
+          throw Error('Unexpected RNNoise WASM bundle; check installed version');
+        // The upstream ESM export stays intact. Only expose its factory
+        // to the EXISTING AudioWorklet processor's shared global scope.
+        return source+'\n;globalThis.__afStudioRNNoiseFactory=createRNNWasmModuleSync;\n';
+      })().catch(e=>{rnnoiseSourcePromise=null;throw e;});
+    }
+    return rnnoiseSourcePromise;
+  }
+  async function ensureRnnoise(){
+    const p=currentDSPSettings();
+    if(destroyed||!p.nr||p.nr_engine!=='rnnoise'||p.nr_snr<=0)return;
+    // Never start RNNoise for CW/digital/music or at an unsupported clock.
+    if(mode!=='ssb'&&mode!=='am'){updateRNNoiseUI();return;}
+    const candidates=[...routes].filter(r=>r.worklet&&r.processor&&!r.destroyed);
+    const pending=candidates.filter(r=>r.context.sampleRate===48000&&
+      !['ready','loading','error'].includes(r.rnnoiseState));
+    if(!pending.length){updateRNNoiseUI();return;}
+    // Mark loading BEFORE awaiting the asset/module. This prevents repeated
+    // settings broadcasts from racing addModule and sending duplicate init.
+    for(const r of pending)r.rnnoiseState='loading';
+    rnnoiseError='';updateRNNoiseUI();
+    try{
+      const source=await fetchRnnoiseSource();
+      for(const r of pending){
+        if(destroyed||r.destroyed||r.rnnoiseState!=='loading')continue;
+        if(!rnnoiseWorkletLoads.has(r.context)){
+          const moduleUrl=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+          const load=r.context.audioWorklet.addModule(moduleUrl)
+            .catch(e=>{rnnoiseWorkletLoads.delete(r.context);throw e;})
+            .finally(()=>URL.revokeObjectURL(moduleUrl));
+          rnnoiseWorkletLoads.set(r.context,load);
+        }
+        await rnnoiseWorkletLoads.get(r.context);
+        const latest=currentDSPSettings();
+        if(latest.nr_engine!=='rnnoise'||!latest.nr||latest.nr_snr<=0||
+           (latest.mode!=='ssb'&&latest.mode!=='am')){
+          if(!r.destroyed&&r.rnnoiseState==='loading')r.rnnoiseState='not-loaded';
+          continue; // user changed their mind during async load
+        }
+        if(!r.destroyed&&r.processor&&r.processor.port&&r.rnnoiseState==='loading')
+          r.processor.port.postMessage({type:'rnnoise-init'});
+      }
+    }catch(e){
+      rnnoiseError='RNNoise unavailable: '+String(e&&e.message||e);
+      for(const r of pending)if(!r.destroyed&&r.rnnoiseState==='loading'){
+        r.rnnoiseState='error';r.rnnoiseFailure=rnnoiseError;
+      }
+      errorLog(e,'optional RNNoise');
+      updateRNNoiseUI();
+    }
+  }
+  function retryRnnoise(){
+    const p=currentDSPSettings();
+    if(destroyed||!p.nr||p.nr_engine!=='rnnoise'||p.nr_snr<=0)return;
+    const failed=[...routes].filter(r=>r.rnnoiseState==='error'&&r.worklet&&!r.destroyed);
+    if(!failed.length)return;
+    rnnoiseError='';
+    for(const r of failed){
+      r.rnnoiseState='not-loaded';r.rnnoiseFailure='';
+      // The Worklet already has the WASM wrapper loaded, but its own error
+      // latch intentionally prevents automatic retry. Explicitly clear it.
+      if(rnnoiseWorkletLoads.has(r.context)&&r.processor?.port){
+        r.rnnoiseState='loading';
+        r.processor.port.postMessage({type:'rnnoise-retry'});
+      }
+    }
+    updateRNNoiseUI();
+    void ensureRnnoise(); // missing/failed asset can be fetched again
+  }
+  function updateRNNoiseUI(){
+    if(!panel)return;
+    const select=panel.querySelector('#af2-nr-engine');
+    const note=panel.querySelector('#af2-rnnoise-note');
+    const retry=panel.querySelector('#af2-rnnoise-retry');
+    const p=currentDSPSettings();
+    if(select)select.value=p.nr_engine==='rnnoise'?'rnnoise':'classic';
+    const route=[...routes].find(r=>r.working&&r.processor)||
+      [...routes].find(r=>r.processor);
+    const possible=p.nr&&p.nr_snr>0&&p.nr_engine==='rnnoise'&&
+      (p.mode==='ssb'||p.mode==='am');
+    const fallback=!!route&&route.rnnoiseState==='error';
+    if(retry){
+      retry.hidden=!(possible&&fallback&&route.worklet&&route.context.sampleRate===48000);
+      retry.disabled=!possible||!fallback;
+    }
+    if(!note)return;
+    if(p.nr_engine!=='rnnoise')
+      note.textContent='Classical spectral NR selected · RNNoise available for speech.';
+    else if(!p.nr)note.textContent='NR OFF · enable NR to start the neural engine.';
+    else if(p.nr_snr<=0)note.textContent='Strength 0 · RNNoise bypassed.';
+    else if(p.mode!=='ssb'&&p.mode!=='am')
+      note.textContent='Classical fallback · RNNoise supports spoken AM/SSB only.';
+    else if(!route)note.textContent='Waiting for receiver audio route; classical NR remains available.';
+    else if(!route.worklet)note.textContent='Classical fallback · RNNoise needs AudioWorklet.';
+    else if(route.context.sampleRate!==48000)
+      note.textContent='Classical fallback · RNNoise needs a 48 kHz audio context.';
+    else if(fallback)
+      note.textContent='Classical fallback · '+(route.rnnoiseFailure||rnnoiseError||'RNNoise failed')+' · Retry available.';
+    else if(route.rnnoiseState==='ready')
+      note.textContent='RNNoise ACTIVE · 48 kHz · speech-only · Strength = dry/wet mix.';
+    else note.textContent='RNNoise loading · classical NR remains active until ready.';
+  }
+  function originalConnect(source,dest,args=[]){return originals.connect.call(source,dest,...args);}
+  function bypass(r,reason){
+    if(r.destroyed)return;
+    r.working=false;r.mode=reason||'BYPASS';
+    try{r.dry.gain.setTargetAtTime(1,r.context.currentTime,0.006);r.wet.gain.setTargetAtTime(0,r.context.currentTime,0.006);}catch(e){r.dry.gain.value=1;r.wet.gain.value=0;}
+    renderStatus();
+  }
+  function chooseWet(r){
+    if(r.destroyed||r.working||userDisabled)return;
+    if(r.heartbeat<=0||!r.processor)return;
+    try{const t=r.context.currentTime;r.wet.gain.setTargetAtTime(1,t,0.006);r.dry.gain.setTargetAtTime(0,t,0.006);r.working=true;r.mode=r.worklet?'DSP ACTIVE':'FALLBACK';renderStatus();}
+    catch(e){errorLog(e,'activate wet path');bypass(r,'BYPASS');}
+  }
+  function handleHeartbeat(r,data){if(r.destroyed)return;r.lastHeartbeat=Date.now();r.heartbeat++;r.samples+=data.samples||0;r.nonzero+=data.nonzero||0;
+    // A silent stream still exercises DSP; incoming signal above -100 dBFS
+    // is tracked independently, so DSP ACTIVE means hooked + exercised.
+    chooseWet(r);}
+  async function beginProcessor(r){
+    if(r.destroyed)return;
+    try{
+      let worklet=false,node;
+      try{node=await createWorklet(r.context);worklet=true;}
+      catch(e){errorLog(e,'AudioWorklet unavailable; fallback');
+        if(!r.context.createScriptProcessor)throw Error('No supported processor path');
+        node=r.context.createScriptProcessor(1024,1,1);
+        const engine=new DSPCore(r.context.sampleRate);r.engine=engine;
+        node.onaudioprocess=e=>{
+          try{
+            const inp=e.inputBuffer.getChannelData(0),out=e.outputBuffer.getChannelData(0);
+            for(let i=0;i<out.length;i++){out[i]=engine.process(inp[i]);if(Math.abs(inp[i])>1e-5)r.fallbackNonzero=(r.fallbackNonzero||0)+1;}
+            r.fallbackFrames=(r.fallbackFrames||0)+out.length;
+            if(r.fallbackFrames>=r.context.sampleRate/3){const count=r.fallbackFrames,nz=r.fallbackNonzero||0;r.fallbackFrames=0;r.fallbackNonzero=0;handleHeartbeat(r,{samples:count,nonzero:nz});}
+          }catch(ex){errorLog(ex,'fallback process');bypass(r,'ERROR');e.outputBuffer.getChannelData(0).fill(0);}
+        };
+      }
+      if(r.destroyed){try{node.disconnect();}catch(_){}return;}
+      r.processor=node;r.worklet=worklet;
+      // Connect all wet nodes while gain is still zero. Original dry audio is
+      // always present until DSP confirms it is actually receiving samples.
+      originalConnect(r.source,r.input,typeof r.args[0]==='number'?[r.args[0]]:[]);
+      originalConnect(r.input,node);
+      originalConnect(node,r.output);
+      originalConnect(r.output,r.wet);
+      if(worklet){
+        node.port.onmessage=e=>{
+          if(e.data.type==='heartbeat')handleHeartbeat(r,e.data);
+          else if(e.data.type==='rnnoise-state'){
+            r.rnnoiseState=e.data.state;
+            r.rnnoiseFailure=e.data.state==='error'?'RNNoise model failed: '+String(e.data.message||'unknown'):'';
+            rnnoiseError=r.rnnoiseFailure;
+            updateRNNoiseUI();
+          }
+          else if(e.data.type==='error'){errorLog(e.data.message,'worklet');bypass(r,'ERROR');}
+        };
+        const onerror=()=>{errorLog('AudioWorklet processorerror','worklet');bypass(r,'ERROR');};
+        node.addEventListener('processorerror',onerror);r.unlisten=()=>node.removeEventListener('processorerror',onerror);
+      }
+      syncSettings();r.mode=worklet?'CONNECTING':'FALLBACK INIT';renderStatus();
+    }catch(e){errorLog(e,'create processor');bypass(r,'BYPASS');}
+  }
+  function buildRoute(source,destination,args,kind='intercept'){
+    if(destroyed||!source||!destination||source.__afStudioInternal)return null;
+    const context=source.context;
+    if(!context||context.destination!==destination||typeof context.createGain!=='function')return null;
+    let dry,wet,input,output;
+    try{
+      dry=context.createGain();wet=context.createGain();input=context.createAnalyser();output=context.createAnalyser();
+      dry.__afStudioInternal=wet.__afStudioInternal=input.__afStudioInternal=output.__afStudioInternal=true;
+      dry.gain.value=1;wet.gain.value=0;
+      input.fftSize=2048;output.fftSize=2048;
+      originalConnect(dry,destination);originalConnect(wet,destination);
+      originalConnect(source,dry,args);
+    }catch(e){errorLog(e,'fail-open dry route');try{dry&&dry.disconnect();wet&&wet.disconnect();}catch(_){}return null;}
+    const r={source,destination,args,context,dry,wet,input,output,kind,mode:'CONNECTING',working:false,heartbeat:0,
+      samples:0,nonzero:0,lastHeartbeat:0,worklet:false,engine:null,processor:null,destroyed:false};
+    routes.add(r);interceptCount++;beginProcessor(r);renderStatus();return r;
+  }
+  function detachRoute(r){if(r.destroyed)return;r.destroyed=true;
+    // Restore unprocessed direct connection FIRST so teardown cannot mute sound.
+    try{originalConnect(r.source,r.destination,r.args);}catch(e){errorLog(e,'restore direct audio');}
+    for(const node of [r.input,r.processor,r.output,r.dry,r.wet]){
+      if(!node)continue;try{node.disconnect();}catch(_){}
+    }
+    for(const target of [r.dry,r.input]){try{r.source.disconnect(target);}catch(_){}}
+    try{if(r.processor&&r.processor.port){r.processor.port.postMessage({type:'shutdown'});r.processor.port.onmessage=null;r.processor.port.close();}}catch(_){}
+    try{if(r.processor&&'onaudioprocess' in r.processor)r.processor.onaudioprocess=null;}catch(_){}
+    try{r.unlisten&&r.unlisten();}catch(_){}
+    routes.delete(r);
+  }
+  function attach(source,options={}){
+    if(!source||!source.context||typeof source.connect!=='function')throw TypeError('attach(source): expected AudioNode');
+    const dest=options.destination||source.context.destination;
+    if(dest!==source.context.destination)throw Error('attach supports receiver destination only');
+    // With an established direct connection, an integrator may explicitly
+    // opt into disconnect(destination). NEVER do that on automatic discovery.
+    const route=buildRoute(source,dest,[], 'explicit');
+    if(!route)throw Error('Unable to attach; original audio left unchanged');
+    if(options.replaceDirect){
+      try{source.disconnect(dest);}catch(e){detachRoute(route);throw e;}
+    }
+    return {detach:()=>detachRoute(route),status:()=>routeStatus(route)};
+  }
+  function routeStatus(r){return {kind:r.kind,live:r.working,mode:r.mode,contextState:r.context.state,
+    sampleRate:r.context.sampleRate,rnnoiseState:r.rnnoiseState||'not-loaded',rnnoiseFailure:r.rnnoiseFailure||null,worklet:r.worklet,processor:r.processor?(r.worklet?'AudioWorklet':'ScriptProcessor'):'none',
+    interceptedConnections:interceptCount,heartbeats:r.heartbeat,processedSamples:r.samples,nonzeroInputSamples:r.nonzero,
+    lastHeartbeatMs:r.lastHeartbeat?Date.now()-r.lastHeartbeat:null,latencyMs:1000*((r.context.sampleRate>=32000?512:256)-1)/r.context.sampleRate};}
+  function status(){const all=[...routes].map(routeStatus);const active=all.some(r=>r.live&&r.lastHeartbeatMs!==null&&r.lastHeartbeatMs<2200);
+    return {build:BUILD,revision:REVISION,initialized,disabled:userDisabled,dspLive:active,routeCount:routes.size,
+      nrEngine:currentDSPSettings().nr_engine,
+      nrEngineEffective:active&&currentDSPSettings().nr_engine==='rnnoise'&&enabled.nr&&
+        currentDSPSettings().nr_snr>0&&['ssb','am'].includes(mode)&&
+        all.some(r=>r.live&&r.rnnoiseState==='ready'&&r.sampleRate===48000)?'rnnoise':'classic',rnnoiseError,
+      interceptedConnections:interceptCount,mode,engine:all.some(r=>r.worklet)?'AudioWorklet':all.some(r=>r.processor)?'ScriptProcessor':'none',
+      sampleRate:all[0]?.sampleRate||null,contextState:all[0]?.contextState||'none',routes:all,errors:errors.slice()};}
+  function renderStatus(){if(!statusEl)return;const s=status(),a=s.routes.find(r=>r.live),r=s.routes[0];
+    let label='NOT ROUTED',color='#efad58';
+    if(s.disabled){label='BYPASS';color='#a0aaba';}
+    else if(a){label=a.worklet?'DSP ACTIVE':'FALLBACK';color=a.worklet?'#48daaa':'#e1b85c';}
+    else if(r){label=r.mode==='ERROR'?'DSP ERROR · BYPASS':r.mode==='BYPASS'?'BYPASS':'CONNECTING';color='#e1b85c';}
+    statusEl.textContent=label;if(ledEl)ledEl.style.background=color;
+    const sub=document.getElementById('af-studio-meta');if(sub)sub.textContent=r?`${Math.round(r.sampleRate)} Hz · ${r.processor}`:'Awaiting receiver audio route';
+  }
+  function poll(){
+    if(destroyed)return;
+    if(audio_enabled&&(typeof audioEngine==='undefined'||!audioEngine.isStarted()||audioEngine.gainNode!==nativeSource))set_enabled(false);
+    const next=readReceiverMode();if(next!==mode){saveSettings();mode=next;compareReference=false;compareGain=1;settings=cleanProfile(settingsStore[mode]);syncSettings();refreshSliders();}
+    for(const r of routes){if(r.working&&Date.now()-r.lastHeartbeat>2500)bypass(r,'WATCHDOG');}
+    renderStatus();
+  }
+  const sliders=[
+    ['nr_snr','NR strength',0,30,1,''],['nr_alpha','NR smoothing',0.9,0.999,0.001,''],
+    ['maxBoost','Comp boost',1,25,1,'×'],['gain','Output',0,2,0.05,'×'],
+    ['highpassFreq','High-pass',20,800,10,' Hz'],['lowpassFreq','Low-pass',400,16000,100,' Hz'],
+    ['peakingFreq','EQ presence',200,6000,50,' Hz'],['peakingGain','EQ gain',-18,18,0.5,' dB'],
+    ['peakingQ','EQ Q',0.3,8,0.1,''],['loudnessGain','Bass shelf',-12,12,0.5,' dB'],
+    ['airFreq','Treble shelf freq',900,16000,100,' Hz'],['airGain','Treble shelf gain',-12,12,0.5,' dB'],
+    ['gateThresh','Noise gate',0.001,0.05,0.001,''],['compHPF','Comp sidechain HPF',30,1200,10,' Hz'],['compLPF','Comp sidechain LPF',500,8000,100,' Hz'],['hangTime','Comp hang',0,1,0.05,' s'],['agcTarget','AGC target',0.1,0.8,0.01,''],
+    ['recoveryTime','AGC recovery',0.08,2,0.02,' s'],['compGain','Comp output',0.1,2,0.05,'×'],
+    ['notchQ','Notch Q',10,80,1,''],['maxNotches','Max notches',0,2,1,''],
+    ['nr_gain','NR output gain',-12,12,1,' dB'],['nr_comb','NR tonal guard',0,1,0.05,''],
+    ['nr_character','NR Character',0,1,0.05,''],
+    ['nr_body','SSB voice body',0,1,0.05,'']
+  ];
+  const css=`
+    .af2{font:12px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#dfe6ee;background:linear-gradient(160deg,#1b242e,#111923);padding:12px;border-radius:9px;max-width:660px;min-width:330px;box-sizing:border-box;}
+    .af2 *{box-sizing:border-box}.af2-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+    .af2-brand{letter-spacing:.08em;font-size:11px;font-weight:800;color:#c3d2e1}.af2-status{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.075em;color:#adbece;font-weight:700}
+    .af2-led{width:9px;height:9px;border-radius:50%;background:#e1b85c;box-shadow:0 0 7px #455}
+    .af2-presets{display:flex;align-items:center;gap:9px;margin:0 0 11px;background:#162330;border:1px solid #304050;border-radius:7px;padding:8px 10px}
+    .af2-presets label{flex:none;font-size:11px;font-weight:700;color:#b2c6d8}
+    .af2-presets select{flex:1;min-width:0;font:inherit;color:#e7f5fa;background:#101c27;border:1px solid #40566a;border-radius:5px;padding:6px}
+    .af2-presets-hint{font-size:10px;color:#819aaf;margin:-6px 0 10px}
+    .af2-buttons{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:6px}.af2 button{background:#202d3a;color:#bdccdc;border:1px solid #3b4a5b;border-radius:6px;padding:8px 6px;cursor:pointer;font:inherit;font-weight:650}
+    .af2 button.on{background:linear-gradient(#176d73,#12505b);color:#dffffb;border-color:#45b8bd;box-shadow:inset 0 1px 0 #438589}.af2 button:focus-visible{outline:2px solid #54bdf1}
+    .af2 canvas{display:block;width:100%;height:185px;border-radius:6px;background:#090e15;border:1px solid #2d3948;margin-top:11px}
+    .af2-line{display:flex;justify-content:space-between;color:#819aaf;font-size:10px;margin-top:5px}
+    .af2-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:12px 0 4px}
+    .af2-control{background:#151e28;border:1px solid #304050;border-radius:7px;padding:9px 7px}
+    .af2-control label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#a9bcce}
+    .af2-control output{color:#7ee2f4;font-size:11px;font-weight:700}.af2-knob{position:relative;width:62px;height:62px;border-radius:50%;border:4px solid #3a5365;background:radial-gradient(circle at 35% 25%,#425565,#182631 70%);box-shadow:inset 0 2px 5px #000b,0 2px 5px #0007;margin:9px auto;cursor:ns-resize;touch-action:none}.af2-knob:focus-visible{outline:2px solid #5ed9f2}.af2-needle{position:absolute;left:calc(50% - 2px);top:8px;width:4px;height:17px;background:#67daf1;border-radius:3px;transform-origin:2px 19px;transform:rotate(var(--angle,-120deg));box-shadow:0 0 4px #6cd8ef}.af2-control input[type=range]{display:none}.af2 input[type=range]{width:100%;margin:0;accent-color:#4a9cc5;cursor:pointer}
+    .af2-advanced{display:none;margin-top:12px;padding:9px;border:1px solid #304050;border-radius:6px;background:#111920;max-height:340px;overflow:auto}
+    .af2-advanced.open{display:block}.af2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .af2-adv label{display:block;color:#9db0c3;font-size:11px}.af2-adv input{width:100%}
+    .af2-bottom{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:11px;color:#8095a7;font-size:11px}
+    .af2-bottom button{padding:4px 8px;font-size:10px}.af2 .af2-fail{color:#e6bc62}
+    .af2-compare{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px}.af2-compare button{padding:6px 10px}
+    .af2-compare-info{font-size:10px;color:#91a7b9;min-width:210px}
+    .af2-rnnoise{display:flex;flex-direction:column;gap:5px;margin:8px 0;color:#aebfd1;font-size:11px}
+    .af2-rnnoise select{background:#1b2938;color:#e2edf4;border:1px solid #41566b;padding:6px;border-radius:5px}
+    .af2-rnnoise-note{font-size:10px;color:#91a7b9;line-height:1.4}
+    .af2-rnnoise button[hidden]{display:none}.af2-rnnoise button{align-self:flex-start;padding:5px 9px}
+    @media(max-width:470px){.af2-controls{grid-template-columns:repeat(2,1fr)}.af2{min-width:280px}.af2-buttons{grid-template-columns:repeat(3,1fr)}}
+  `;
+  function formatValue(v,unit){return (v<1?Number(v).toFixed(3):v<10?Number(v).toFixed(2):Math.round(v))+unit;}
+  function setKnobRotation(key, value, min, max){
+    const knob=document.getElementById('af2-knob-'+key);if(!knob)return;
+    const a=-125+(Math.max(0,Math.min(1,(value-min)/(max-min)))*250);
+    knob.style.setProperty('--angle',a+'deg');knob.setAttribute('aria-valuenow',String(value));
+  }
+  function makeSlider([key,label,min,max,step,unit],advanced=false){
+    const root=document.createElement('div');root.className=advanced?'af2-adv':'af2-control';
+    const lbl=document.createElement('label');lbl.textContent=label;lbl.setAttribute('for','af2-'+key);
+    const out=document.createElement('output');out.id='af2-'+key+'-value';
+    const inp=document.createElement('input');inp.id='af2-'+key;inp.type='range';inp.min=min;inp.max=max;inp.step=step;
+    const v=resolveModeSettings()[key]??min;inp.value=Number(v);
+    out.textContent=formatValue(Number(inp.value),unit);
+    listen(inp,'input',()=>{out.textContent=formatValue(Number(inp.value),unit);setKnobRotation(key,Number(inp.value),min,max);updateParameter(key,Number(inp.value));});
+    if(advanced){root.append(lbl,inp,out);return root;}
+    const knob=document.createElement('div');knob.className='af2-knob';knob.id='af2-knob-'+key;
+    knob.setAttribute('role','slider');knob.setAttribute('tabindex','0');knob.setAttribute('aria-label',label);
+    knob.setAttribute('aria-valuemin',String(min));knob.setAttribute('aria-valuemax',String(max));
+    const needle=document.createElement('span');needle.className='af2-needle';knob.appendChild(needle);
+    let startY=0,startValue=0,dragging=false;
+    const commit=value=>{inp.value=String(Math.max(min,Math.min(max,Math.round(value/step)*step)));inp.dispatchEvent(new Event('input',{bubbles:true}));};
+    listen(knob,'pointerdown',e=>{if(e.button!==0)return;dragging=true;startY=e.clientY;startValue=Number(inp.value);knob.setPointerCapture(e.pointerId);});
+    listen(knob,'pointermove',e=>{if(dragging)commit(startValue+(startY-e.clientY)*step*0.5);});
+    listen(knob,'pointerup',e=>{dragging=false;try{knob.releasePointerCapture(e.pointerId);}catch(_){}});
+    listen(knob,'pointercancel',()=>{dragging=false;});
+    listen(knob,'keydown',e=>{if(['ArrowUp','ArrowRight','ArrowDown','ArrowLeft','Home','End'].includes(e.key)){
+      e.preventDefault();const d=e.key==='ArrowDown'||e.key==='ArrowLeft'?-step:step;
+      commit(e.key==='Home'?min:e.key==='End'?max:Number(inp.value)+d);
+    }});
+    listen(knob,'wheel',e=>{e.preventDefault();commit(Number(inp.value)+(e.deltaY<0?step:-step));},{passive:false});
+    root.append(lbl,knob,inp,out);
+    knob.style.setProperty('--angle',(-125+(Number(inp.value)-min)/(max-min)*250)+'deg');
+    knob.setAttribute('aria-valuenow',String(inp.value));return root;
+  }
+  function refreshSliders(){const resolved=resolveModeSettings();for(const [key,,min,max,,unit] of sliders){
+    const el=document.getElementById('af2-'+key);if(!el)continue;
+    el.value=Number(resolved[key]??min);
+    const out=document.getElementById('af2-'+key+'-value');if(out)out.textContent=formatValue(Number(el.value),unit||'');
+    setKnobRotation(key,Number(el.value),min,max);
+  }
+    const speech=panel&&panel.querySelector('#af2-speech-preservation');
+    if(speech)speech.checked=resolved.nr_speech_mode!==false;
+    refreshPresetSelector();updateRNNoiseUI();
+  }
+
+  function updateToggles(){if(!panel)return;for(const flag of Object.keys(enabled)){
+    const el=panel.querySelector(`[data-af-flag="${flag}"]`);if(el){el.classList.toggle('on',enabled[flag]);el.setAttribute('aria-pressed',String(enabled[flag]));}
+  }updateCompareUI();updateRNNoiseUI();}
+  // Temporary A/B state: never saved and never changes the audio graph.
+  function updateCompareUI(message){
+    if(!panel)return;
+    const button=panel.querySelector('#af2-compare');
+    const match=panel.querySelector('#af2-match');
+    const hint=panel.querySelector('#af2-compare-info');
+    if(button){
+      button.disabled=!enabled.nr||compareCalibrating||currentDSPSettings().nr_engine==='rnnoise';
+      button.textContent=compareReference?'A/B: REFERENCE':'A/B: PROCESSED';
+      button.setAttribute('aria-pressed',String(compareReference));
+    }
+    if(match){
+      match.disabled=!enabled.nr||compareCalibrating||currentDSPSettings().nr_engine==='rnnoise';
+      match.textContent=compareCalibrating?'Measuring…':'Match levels';
+    }
+    if(hint){
+      const db=20*Math.log10(compareGain);
+      hint.textContent=message||(enabled.nr?
+        (compareReference?'Reference · NR off; other DSP unchanged':
+          'Processed · NR on')+
+        ' · level match '+(db>=0?'+':'')+db.toFixed(1)+' dB':
+        'Enable NR to compare; other DSP stays unchanged');
+    }
+  }
+  function toggleCompare(){
+    if(!enabled.nr||compareCalibrating||currentDSPSettings().nr_engine==='rnnoise')return;
+    compareReference=!compareReference;syncSettings();
+  }
+  function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+  async function calibrateCompare(){
+    if(!enabled.nr||compareCalibrating||currentDSPSettings().nr_engine==='rnnoise')return;
+    const r=[...routes].find(x=>x.working&&x.output&&
+      typeof x.output.getFloatTimeDomainData==='function');
+    if(!r){updateCompareUI('Level match requires an active DSP route');return;}
+    const savedReference=compareReference,savedGain=compareGain;
+    const modeAtStart=mode,settingsAtStart=currentDSPSettings();
+    compareCalibrating=true;compareGain=1;
+    const buffer=new Float32Array(r.output.fftSize);
+    const power=async()=>{
+      let sum=0,count=0;
+      await delay(200); // worklet message and overlap-add settle
+      for(let j=0;j<12;j++){
+        if(destroyed||!routes.has(r)||!r.working||mode!==modeAtStart||
+           !enabled.nr||settingsAtStart.nr_snr!==currentDSPSettings().nr_snr)
+          throw Error('Receiver settings or audio route changed during level match');
+        r.output.getFloatTimeDomainData(buffer);
+        for(let i=0;i<buffer.length;i++)sum+=buffer[i]*buffer[i];
+        count+=buffer.length;
+        await delay(75);
+      }
+      return sum/count;
     };
-
-    // References to filter nodes for updating
-    let activeFilters = {
-        highpass: null,
-        lowpass: null,
-        nbProcessor: null,
-        nrProcessor: null,
-        compProcessor: null,
-        loudness: null,
-        air: null,
-        compHighpass: null,
-        compLowpass: null,
-        peaking: null,
-        gain: null,
-        analyser: null,
-        outputAnalyser: null,
-        notches: []
-    };
-    let analysisBuffer = null;
-    let last_modulation = '';
-    let is_filter_enabled = false;
-    let is_nb_enabled = false;
-    let is_nr_enabled = false;
-    let is_compressor_enabled = false;
-    let is_autonotch_enabled = false;
-    let is_loudness_enabled = false;
-    let show_input_spectrum = localStorage.getItem('openwebrx-audio-filter-show-in-spec') !== 'false';
-    let show_output_spectrum = localStorage.getItem('openwebrx-audio-filter-show-out-spec') !== 'false';
-    let is_initialized = false;
-
-    const SETTING_KEYS = [
-        'highpassFreq', 'lowpassFreq', 'peakingGain', 'peakingFreq', 'peakingQ', 'gain',
-        'agcTarget', 'maxBoost', 'gateThresh', 'hangTime', 'recoveryTime', 'compGain',
-        'notchQ', 'maxNotches', 'notchRange', 'notchCenter', 'compHPF', 'compLPF',
-        'airGain', 'airFreq', 'nr_gain', 'nr_alpha', 'nr_snr', 'nr_comb', 'nr_speech_mode'
-    ];
-
-    function create_empty_settings() {
-        return SETTING_KEYS.reduce((acc, key) => { acc[key] = null; return acc; }, {});
+    try{
+      compareReference=true;syncSettings();
+      updateCompareUI('Measuring reference (no NR)…');
+      const referencePower=await power();
+      compareReference=false;syncSettings();
+      updateCompareUI('Measuring processed NR…');
+      const processedPower=await power();
+      if(!(referencePower>1e-10&&processedPower>1e-10))
+        throw Error('Audio too quiet for level match');
+      // Fixed, bounded RMS adjustment; not a true speech-loudness model.
+      // Reference and processed samples are gathered sequentially.
+      compareGain=Math.max(0.5,Math.min(2,Math.sqrt(referencePower/processedPower)));
+    }catch(e){
+      compareGain=savedGain;
+      errorLog(e,'NR level match');
+    }finally{
+      compareReference=savedReference;compareCalibrating=false;syncSettings();
     }
-
-    let override_settings = create_empty_settings();
-
-    let settings_store = {
-        ssb: create_empty_settings(),
-        am: create_empty_settings(),
-        cw: create_empty_settings(),
-        nfm: create_empty_settings(),
-        wfm: create_empty_settings(),
-        digital: create_empty_settings()
-    };
-
-    function get_config_mode(mod) {
-        if (!mod) return 'ssb';
-        mod = String(mod).toLowerCase();
-        if (mod === 'am') return 'am';
-        if (mod === 'cw') return 'cw';
-        if (mod === 'nfm' || mod === 'fm') return 'nfm';
-        if (mod === 'wfm') return 'wfm';
-        if (['dmr', 'ysf', 'dstar', 'nxdn', 'm17', 'p25', 'freedv'].includes(mod)) return 'digital';
-        return 'ssb'; // lsb, usb, etc.
+  }
+  function renderSpectrum(){
+    if(!canvas||destroyed||!panel||panel.offsetWidth===0)return;
+    const width=Math.max(200,Math.floor(canvas.clientWidth*devicePixelRatio)),height=Math.max(100,Math.floor(185*devicePixelRatio));
+    if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
+    const ctx=canvasCtx;ctx.clearRect(0,0,width,height);ctx.fillStyle='#090e15';ctx.fillRect(0,0,width,height);
+    ctx.lineWidth=1;ctx.strokeStyle='#1c2a36';
+    for(let i=1;i<8;i++){ctx.beginPath();ctx.moveTo(width*i/8,0);ctx.lineTo(width*i/8,height);ctx.stroke();}
+    for(let i=1;i<5;i++){ctx.beginPath();ctx.moveTo(0,height*i/5);ctx.lineTo(width,height*i/5);ctx.stroke();}
+    const live=[...routes].find(r=>r.working&&r.input&&r.output);
+    if(!live){ctx.fillStyle='#91a2b4';ctx.textAlign='center';ctx.font=`${Math.round(12*devicePixelRatio)}px system-ui`;ctx.fillText('Awaiting routed receiver audio',width/2,height/2);return;}
+    const traces=[[live.input,'#8595a5'],[live.output,'#48bfe8']];
+    for(const [analyser,color] of traces){
+      const arr=new Float32Array(analyser.frequencyBinCount);analyser.getFloatFrequencyData(arr);
+      ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,1.3*devicePixelRatio);ctx.beginPath();
+      const minFreq=70,maxFreq=Math.min(10000,live.context.sampleRate/2);
+      for(let px=0;px<width;px+=Math.max(1,Math.floor(devicePixelRatio))){
+        const freq=minFreq*Math.pow(maxFreq/minFreq,px/width);
+        const k=Math.max(0,Math.min(arr.length-1,Math.floor(freq*analyser.fftSize/live.context.sampleRate)));
+        const db=Number.isFinite(arr[k])?arr[k]:-100;
+        const y=Math.max(0,Math.min(height,height*(1-(db+100)/100)));
+        if(px===0)ctx.moveTo(px,y);else ctx.lineTo(px,y);
+      }ctx.stroke();
     }
-
-    function saveSettings() {
-        let modKey = get_config_mode(last_modulation);
-        settings_store[modKey] = JSON.parse(JSON.stringify(override_settings));
-        localStorage.setItem('openwebrx-audio-filter-settings', JSON.stringify(settings_store));
+  }
+  let lastDraw=0;
+  function renderLoop(t){if(destroyed)return;if(t-lastDraw>=40){lastDraw=t;renderSpectrum();}animationId=requestAnimationFrame(renderLoop);}
+  function openPanel(){if(!panel)return;const node=windowNode;
+    if(node){ // Native window toggling differs between OWRX+ releases.
+      if(typeof window.$==='function'){
+        try{window.$(node).toggle();}catch(_){node.style.display=node.style.display==='none'?'block':'none';}
+      }else node.style.display=node.style.display==='none'?'block':'none';
+    }else panel.parentElement.style.display=panel.parentElement.style.display==='none'?'block':'none';
+    renderStatus();
+  }
+  function createUI(){
+    if(panel)return true;
+    const style=document.createElement('style');style.id='af-studio-2-css';style.textContent=css;document.head.appendChild(style);
+    const markup=`<div class="af2" id="af-studio-2"><div class="af2-top"><span class="af2-brand">◈ AUDIO FILTER STUDIO</span><div class="af2-status"><i class="af2-led" id="af2-led"></i><span id="af2-status">NOT ROUTED</span></div></div>
+      <div class="af2-presets"><label for="af2-preset">Listening preset</label><select id="af2-preset" aria-label="Listening preset"></select></div>
+      <div class="af2-presets-hint">Current modulation only. Applying a preset may switch EQ/NR on or off.</div>
+      <div class="af2-buttons">${[['nb','NB'],['notch','Notch'],['nr','NR'],['eq','EQ'],['comp','Comp']].map(([k,t])=>`<button type="button" data-af-flag="${k}">${t}</button>`).join('')}<button type="button" id="af2-settings" aria-expanded="false" title="Advanced DSP settings">⋯</button></div>
+      <canvas id="af2-spectrum" aria-label="Input and output audio spectrum"></canvas>
+      <div class="af2-line"><span>● Input &nbsp; <span style="color:#48bfe8">● Output</span></span><span id="af-studio-meta">Awaiting receiver audio route</span></div>
+      <div class="af2-compare"><button type="button" id="af2-compare" aria-pressed="false">A/B: PROCESSED</button><button type="button" id="af2-match">Match levels</button><span id="af2-compare-info" class="af2-compare-info">Enable NR to compare</span></div>
+      <div class="af2-controls" id="af2-quick"></div><section class="af2-advanced" id="af2-advanced"><div class="af2-grid" id="af2-advanced-grid"></div></section>
+      <div class="af2-bottom"><span>Studio 2.3 beta.2 · Experimental RNNoise</span><span><button type="button" id="af2-export">Export</button> <button type="button" id="af2-import">Import</button> <button type="button" id="af2-bypass">Bypass</button> <button type="button" id="af2-reset">Reset mode</button></span></div></div>`;
+    if(typeof window.Plugins!=='undefined'&&typeof Plugins.addWindow==='function'){
+      try{windowNode=Plugins.addWindow(ID,'Audio Filter Studio',markup);}catch(e){errorLog(e,'Plugins.addWindow');}
     }
-
-    const originalConnect = AudioNode.prototype.connect;
-
-    // RIG Dock: the audio engine keeps its direct output until explicitly enabled.
-    // Do not modify AudioNode.prototype.connect or intercept other audio sources.
-    let audio_enabled = false;
-    let routed_source = null;
-    let routed_destination = null;
-    const control_updates = [];
-
-    function set_enabled(on) {
-        on = !!on;
-        if (on === audio_enabled) return on;
-        if (!on) {
-            // Restore the native connection before detaching the filter branch.
-            if (routed_source && routed_destination) {
-                originalConnect.call(routed_source, routed_destination);
-                try { routed_source.disconnect(activeFilters.inputProxy); } catch (error) { }
-            }
-            if (activeFilters.outputAnalyser && routed_destination) {
-                try { activeFilters.outputAnalyser.disconnect(routed_destination); } catch (error) { }
-            }
-            audio_enabled = false;
-            routed_source = routed_destination = null;
-            update_master_state();
-            return false;
-        }
-        if (typeof audioEngine === 'undefined' || !audioEngine || !audioEngine.isStarted() ||
-                !audioEngine.gainNode || !audioEngine.audioContext)
-            throw new Error('Start receiver audio before enabling the audio filter.');
-        const source = audioEngine.gainNode;
-        const destination = audioEngine.audioContext.destination;
-        try {
-            if (!activeFilters.highpass || activeFilters.highpass.context !== audioEngine.audioContext)
-                setupFilters(audioEngine.audioContext);
-            originalConnect.call(activeFilters.outputAnalyser, destination);
-            source.disconnect(destination);
-            originalConnect.call(source, activeFilters.inputProxy);
-            routed_source = source;
-            routed_destination = destination;
-            audio_enabled = true;
-            apply_filter_settings();
-            update_master_state();
-            return true;
-        } catch (error) {
-            originalConnect.call(source, destination);
-            if (activeFilters.inputProxy) {
-                try { source.disconnect(activeFilters.inputProxy); } catch (ignored) { }
-            }
-            if (activeFilters.outputAnalyser) {
-                try { activeFilters.outputAnalyser.disconnect(destination); } catch (ignored) { }
-            }
-            audio_enabled = false;
-            update_master_state();
-            throw error;
-        }
+    panel=document.getElementById('af-studio-2');
+    if(!panel&&windowNode){const body=windowNode.querySelector('.openwebrx-plugin-body');if(body){body.innerHTML=markup;panel=body.querySelector('#af-studio-2');}}
+    if(!panel){const shell=document.createElement('div');shell.style.cssText='position:fixed;top:15%;left:3%;z-index:10000;display:none;box-shadow:0 12px 40px #0009;max-width:94vw';shell.innerHTML=markup;document.body.appendChild(shell);panel=shell.querySelector('#af-studio-2');}
+    statusEl=panel.querySelector('#af2-status');ledEl=panel.querySelector('#af2-led');canvas=panel.querySelector('#af2-spectrum');canvasCtx=canvas.getContext('2d');
+    const quick=panel.querySelector('#af2-quick'),adv=panel.querySelector('#af2-advanced-grid');
+    const engineControl=document.createElement('label');engineControl.className='af2-rnnoise';
+    engineControl.textContent='NR engine (voice experiment)';
+    const engineSelect=document.createElement('select');engineSelect.id='af2-nr-engine';
+    engineSelect.setAttribute('aria-label','Noise reduction engine');
+    for(const [value,label] of [['classic','Classical spectral (recommended)'],['rnnoise','RNNoise WASM · experimental speech only']]){
+      const option=document.createElement('option');option.value=value;option.textContent=label;engineSelect.appendChild(option);
     }
-
-    function update_master_state() {
-        const label = document.getElementById('rig-audio-master-state');
-        if (label) label.textContent = audio_enabled ? 'Audio filter: ON' : 'Audio filter: BYPASSED';
-        const button = document.getElementById('rig-audio-master-toggle');
-        if (button) { button.textContent = audio_enabled ? 'Bypass' : 'Enable'; button.setAttribute('aria-pressed', String(audio_enabled)); }
-        control_updates.forEach(update => update());
+    const engineNote=document.createElement('span');engineNote.id='af2-rnnoise-note';engineNote.className='af2-rnnoise-note';
+    const retryBtn=document.createElement('button');retryBtn.type='button';retryBtn.id='af2-rnnoise-retry';
+    retryBtn.textContent='Retry RNNoise';retryBtn.hidden=true;
+    engineControl.append(engineSelect,engineNote,retryBtn);
+    panel.querySelector('#af2-advanced').prepend(engineControl);
+    listen(retryBtn,'click',retryRnnoise);
+    listen(engineSelect,'change',()=>{
+      compareReference=false;compareGain=1;rnnoiseError='';
+      if(engineSelect.value==='rnnoise'&&!enabled.nr){enabled.nr=true;safeStorageSet(STORAGE+persistentKeys.nr,'true');}
+      updateParameter('nr_engine',engineSelect.value);
+    });
+    for(let i=0;i<sliders.length;i++){(i<4?quick:adv).appendChild(makeSlider(sliders[i],i>=4));}
+    listen(panel.querySelector('#af2-preset'),'change',e=>applyListeningPreset(e.currentTarget.value));
+    listen(panel.querySelector('#af2-compare'),'click',toggleCompare);
+    listen(panel.querySelector('#af2-match'),'click',calibrateCompare);
+    for(const b of panel.querySelectorAll('[data-af-flag]'))listen(b,'click',()=>setFlag(b.dataset.afFlag,!enabled[b.dataset.afFlag]));
+    listen(panel.querySelector('#af2-settings'),'click',e=>{const a=panel.querySelector('#af2-advanced');a.classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(a.classList.contains('open')));});
+    listen(panel.querySelector('#af2-bypass'),'click',()=>{try{set_enabled(!audio_enabled);}catch(e){errorLog(e,'enable filter');statusEl.textContent=String(e.message||e);}});
+    panel.querySelector('#af2-bypass').textContent='Enable';
+    listen(panel.querySelector('#af2-export'),'click',()=>{
+      const blob=new Blob([JSON.stringify({version:2,profiles:settingsStore,enabled},null,2)],{type:'application/json'});
+      const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='openwebrx-audio-filter-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+    });
+    listen(panel.querySelector('#af2-import'),'click',()=>{
+      const input=document.createElement('input');input.type='file';input.accept='.json,application/json';
+      input.onchange=async()=>{try{const file=input.files&&input.files[0];if(!file)return;const obj=JSON.parse(await file.text());
+        const incoming=obj.profiles||obj;if(!incoming||typeof incoming!=='object')throw Error('Invalid settings file');
+        for(const [key,value] of Object.entries(incoming)){if(!presets[key]||!value||typeof value!=='object')continue;
+          const profile={};for(const [param,val] of Object.entries(value)){
+            if(param==='nr_engine'&&(val==='classic'||val==='rnnoise'))profile[param]=val;
+            else if(typeof val==='number'&&Number.isFinite(val)||typeof val==='boolean')profile[param]=val;
+          }
+          settingsStore[key]=profile;
+        }
+        if(obj.enabled&&typeof obj.enabled==='object')for(const flag of Object.keys(enabled)){if(typeof obj.enabled[flag]==='boolean'){enabled[flag]=obj.enabled[flag];safeStorageSet(STORAGE+persistentKeys[flag],String(enabled[flag]));}}
+        compareReference=false;compareGain=1;settings=cleanProfile(settingsStore[mode]);saveSettings();syncSettings();refreshSliders();
+      }catch(e){errorLog(e,'import settings');renderStatus();}};input.click();
+    });
+    listen(panel.querySelector('#af2-reset'),'click',()=>{settingsStore[mode]={};settings={};compareReference=false;compareGain=1;saveSettings();syncSettings();refreshSliders();});
+    // Keep original optional loudness switch, without taking space in the top row.
+    const loud=document.createElement('label');loud.style.cssText='display:flex;gap:7px;margin-top:9px';
+    const loudCheck=document.createElement('input');loudCheck.type='checkbox';loudCheck.checked=enabled.loudness;
+    listen(loudCheck,'change',()=>setFlag('loudness',loudCheck.checked));
+    loud.append(loudCheck,document.createTextNode('Enable bass loudness shelf (requires EQ)'));
+    panel.querySelector('#af2-advanced').appendChild(loud);
+    const speech=document.createElement('label');speech.style.marginTop='10px';speech.style.display='flex';speech.style.gap='7px';
+    const check=document.createElement('input');check.id='af2-speech-preservation';check.type='checkbox';check.checked=resolveModeSettings().nr_speech_mode!==false;
+    listen(check,'change',()=>updateParameter('nr_speech_mode',check.checked));speech.append(check,document.createTextNode('Speech preservation'));panel.querySelector('#af2-advanced').appendChild(speech);
+    if(typeof window.Plugins!=='undefined'&&typeof Plugins.addButton==='function'){
+      try{Plugins.addButton(ID,'AF',openPanel);}catch(e){errorLog(e,'Plugins.addButton');}
+    }else{
+      const b=document.createElement('button');b.id='af2-floating-toggle';b.textContent='AF';b.style.cssText='position:fixed;bottom:10px;left:10px;z-index:10001;background:#163d49;color:white;padding:8px';document.body.appendChild(b);listen(b,'click',openPanel);
     }
-
-    // FFT Optimization: Precompute tables
-    const FFT_SIZE = 1024;
-    const bitRev = new Uint16Array(FFT_SIZE);
-    const cosTable = new Float32Array(FFT_SIZE / 2);
-    const sinTable = new Float32Array(FFT_SIZE / 2);
-    const fft_win = new Float32Array(FFT_SIZE);
-
-    (function initFFT() {
-        let m = 0, temp = FFT_SIZE;
-        while (temp > 1) { temp >>= 1; m++; }
-        for (let i = 0; i < FFT_SIZE; i++) {
-            let j = 0, k = i;
-            for (let l = 0; l < m; l++) { j = (j << 1) | (k & 1); k >>= 1; }
-            bitRev[i] = j;
-        }
-        for (let i = 0; i < FFT_SIZE / 2; i++) {
-            const theta = -2 * Math.PI * i / FFT_SIZE;
-            cosTable[i] = Math.cos(theta);
-            sinTable[i] = Math.sin(theta);
-        }
-        for(let i=0; i<FFT_SIZE; i++) fft_win[i] = Math.sin(Math.PI * i / FFT_SIZE);
-    })();
-
-    function performFFT(real, imag, inverse) {
-        for (let i = 0; i < FFT_SIZE; i++) {
-            const j = bitRev[i];
-            if (i < j) {
-                const tr = real[i]; real[i] = real[j]; real[j] = tr;
-                const ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
-            }
-        }
-        let halfSize = 1;
-        while (halfSize < FFT_SIZE) {
-            const step = FFT_SIZE / (2 * halfSize);
-            for (let i = 0; i < FFT_SIZE; i += 2 * halfSize) {
-                for (let k = 0, tIdx = 0; k < halfSize; k++, tIdx += step) {
-                    const t_cos = cosTable[tIdx];
-                    const t_sin = inverse ? -sinTable[tIdx] : sinTable[tIdx];
-                    const j = i + k + halfSize;
-                    const tr = t_cos * real[j] - t_sin * imag[j];
-                    const ti = t_cos * imag[j] + t_sin * real[j];
-                    real[j] = real[i + k] - tr;
-                    imag[j] = imag[i + k] - ti;
-                    real[i + k] += tr;
-                    imag[i + k] += ti;
-                }
-            }
-            halfSize <<= 1;
-        }
-        if (inverse) {
-            const invSize = 1.0 / FFT_SIZE;
-            for (let i = 0; i < FFT_SIZE; i++) { real[i] *= invSize; imag[i] *= invSize; }
-        }
+    updateToggles();refreshPresetSelector();renderStatus();return true;
+  }
+  function init(){if(initialized)return true;if(destroyed)return false;
+    loadSettings();
+    function whenDOM(){if(destroyed)return;try{createUI();}catch(e){errorLog(e,'UI init');}}
+    if(document.readyState==='loading')listen(document,'DOMContentLoaded',whenDOM,{once:true});else whenDOM();
+    pollingId=setInterval(poll,600);
+    renderLoop();initialized=true;return true;
+  }
+  function disable(){if(destroyed)return;destroyed=true;userDisabled=true;
+    // Restore audio before removing DSP nodes, then unpatch safely.
+    for(const r of [...routes])detachRoute(r);
+    clearInterval(pollingId);clearInterval(watchdogId);cancelAnimationFrame(animationId);
+    listeners.splice(0).forEach(fn=>{try{fn();}catch(_){}});
+    if(workletUrl){URL.revokeObjectURL(workletUrl);workletUrl=null;}
+    const btn=document.getElementById('plugin-button-'+ID);if(btn)btn.remove();
+    const fallback=document.getElementById('af2-floating-toggle');if(fallback)fallback.remove();
+    if(windowNode)windowNode.remove();else if(panel&&panel.parentElement)panel.parentElement.remove();
+    const style=document.getElementById('af-studio-2-css');if(style)style.remove();
+    initialized=false;
+  }
+  function set_enabled(on){
+    on=!!on;
+    if(on===audio_enabled)return on;
+    if(!on){
+      userDisabled=true;audio_enabled=false;nativeSource=null;
+      for(const r of [...routes])detachRoute(r);
+    }else{
+      if(destroyed||typeof audioEngine==='undefined'||!audioEngine.isStarted()||!audioEngine.gainNode||!audioEngine.audioContext)throw Error('Start receiver audio before enabling the audio filter.');
+      poll(); // Synchronize a just-changed native mode before choosing its saved settings.
+      userDisabled=false;
+      try{attach(audioEngine.gainNode,{destination:audioEngine.audioContext.destination,replaceDirect:true});audio_enabled=true;nativeSource=audioEngine.gainNode;}
+      catch(e){userDisabled=true;for(const r of [...routes])detachRoute(r);throw e;}
     }
-
-    function createAudioWorkletModule(ctx) {
-        if (!ctx.audioWorklet || typeof AudioWorkletNode === 'undefined') return Promise.reject(new Error('AudioWorklet is unavailable'));
-        const source = `
-            const FFT_SIZE = 1024;
-            const HOP_SIZE = FFT_SIZE / 2;
-            const fftBitRev = new Uint16Array(FFT_SIZE);
-            const fftCos = new Float32Array(FFT_SIZE / 2);
-            const fftSin = new Float32Array(FFT_SIZE / 2);
-            const fftWindow = new Float32Array(FFT_SIZE);
-            for (let i = 0; i < FFT_SIZE; i++) {
-                let j = 0;
-                let value = i;
-                for (let bit = 0; bit < 10; bit++) {
-                    j = (j << 1) | (value & 1);
-                    value >>= 1;
-                }
-                fftBitRev[i] = j;
-                fftWindow[i] = Math.sin(Math.PI * i / FFT_SIZE);
-            }
-            for (let i = 0; i < FFT_SIZE / 2; i++) {
-                const angle = -2 * Math.PI * i / FFT_SIZE;
-                fftCos[i] = Math.cos(angle);
-                fftSin[i] = Math.sin(angle);
-            }
-            function workletFft(real, imag, inverse) {
-                for (let i = 0; i < FFT_SIZE; i++) {
-                    const j = fftBitRev[i];
-                    if (i < j) {
-                        let temp = real[i]; real[i] = real[j]; real[j] = temp;
-                        temp = imag[i]; imag[i] = imag[j]; imag[j] = temp;
-                    }
-                }
-                for (let half = 1; half < FFT_SIZE; half <<= 1) {
-                    const step = FFT_SIZE / (half << 1);
-                    for (let start = 0; start < FFT_SIZE; start += half << 1) {
-                        for (let k = 0, table = 0; k < half; k++, table += step) {
-                            const sine = inverse ? -fftSin[table] : fftSin[table];
-                            const index = start + k + half;
-                            const tr = fftCos[table] * real[index] - sine * imag[index];
-                            const ti = fftCos[table] * imag[index] + sine * real[index];
-                            real[index] = real[start + k] - tr;
-                            imag[index] = imag[start + k] - ti;
-                            real[start + k] += tr;
-                            imag[start + k] += ti;
-                        }
-                    }
-                }
-                if (inverse) {
-                    for (let i = 0; i < FFT_SIZE; i++) {
-                        real[i] /= FFT_SIZE;
-                        imag[i] /= FFT_SIZE;
-                    }
-                }
-            }
-            class AudioFilterProcessor extends AudioWorkletProcessor {
-                constructor(options) {
-                    super();
-                    this.stage = options.processorOptions.stage;
-                    this.settings = {};
-                    this.average = 0.1;
-                    this.blankCounter = 0;
-                    this.nbEnvelope = 0;
-                    this.nbPreviousAbs = 0;
-                    this.nbCooldown = 0;
-                    this.nbSampleCounter = 0;
-                    this.nbLastImpulse = -1;
-                    this.nbImpulseRate = 0;
-                    this.envelope = 0;
-                    this.gain = 1;
-                    this.hang = 0;
-                    this.noise = 0.001;
-                    this.silentFrames = 0;
-                    this.warmupSamples = 0;
-                    this.nrInput = new Float32Array(4096 + FFT_SIZE);
-                    this.nrOutput = new Float32Array(4096 + FFT_SIZE);
-                    this.nrReal = new Float32Array(FFT_SIZE);
-                    this.nrImag = new Float32Array(FFT_SIZE);
-                    this.nrNoise = new Float32Array(FFT_SIZE / 2 + 1);
-                    this.nrLastGain = new Float32Array(FFT_SIZE / 2 + 1).fill(1);
-                    this.nrMagnitude = new Float32Array(FFT_SIZE / 2 + 1);
-                    this.nrInitialized = false;
-                    this.nrPending = new Float32Array(4096);
-                    this.nrPendingLength = 0;
-                    this.nrReady = new Float32Array(8192);
-                    this.nrReadyLength = 0;
-                    this.port.onmessage = event => {
-                        if (event.data.type === 'reset') {
-                            this.average = 0.1;
-                            this.blankCounter = 0;
-                            this.nbEnvelope = 0;
-                            this.nbPreviousAbs = 0;
-                            this.nbCooldown = 0;
-                            this.nbSampleCounter = 0;
-                            this.nbLastImpulse = -1;
-                            this.nbImpulseRate = 0;
-                            this.envelope = 0;
-                            this.gain = 1;
-                            this.hang = 0;
-                            this.noise = 0.001;
-                            this.silentFrames = 0;
-                            this.warmupSamples = 2048;
-                            this.nrInput.fill(0);
-                            this.nrOutput.fill(0);
-                            this.nrNoise.fill(1e-9);
-                            this.nrLastGain.fill(1);
-                            this.nrInitialized = false;
-                            this.nrPending.fill(0);
-                            this.nrPendingLength = 0;
-                            this.nrReady.fill(0);
-                            this.nrReadyLength = 0;
-                        } else if (event.data.type === 'settings') {
-                            this.settings = event.data.value || {};
-                        }
-                    };
-                }
-                processSpectralBlock(block) {
-                    const settings = this.settings;
-                    this.nrInput.copyWithin(0, 4096, 4096 + FFT_SIZE);
-                    this.nrInput.set(block, FFT_SIZE);
-                    this.nrOutput.copyWithin(0, 4096, 4096 + FFT_SIZE);
-                    this.nrOutput.fill(0, FFT_SIZE);
-                    const alpha = settings.alpha;
-                    const threshold = Math.pow(10, settings.snr / 20);
-                    const outputGain = Math.pow(10, settings.gain / 20);
-                    const comb = settings.comb === undefined ? 0.5 : settings.comb;
-                    const speechMode = !!settings.speech_mode;
-                    const noiseRise = 1 + (1 - (speechMode && alpha > 0.98 ? 0.95 : alpha)) * 0.01;
-                    for (let blockIndex = 0; blockIndex < 8; blockIndex++) {
-                        const position = blockIndex * HOP_SIZE + FFT_SIZE - HOP_SIZE;
-                        for (let k = 0; k < FFT_SIZE; k++) this.nrReal[k] = this.nrInput[position + k] * fftWindow[k];
-                        this.nrImag.fill(0);
-                        workletFft(this.nrReal, this.nrImag, false);
-                        for (let k = 0; k <= FFT_SIZE / 2; k++) {
-                            const magnitude = Math.sqrt(this.nrReal[k] * this.nrReal[k] + this.nrImag[k] * this.nrImag[k]);
-                            this.nrMagnitude[k] = magnitude;
-                            const currentAlpha = speechMode && magnitude < this.nrNoise[k] * 0.5 ? 0.90 : alpha;
-                            if (magnitude < this.nrNoise[k]) this.nrNoise[k] = currentAlpha * this.nrNoise[k] + (1 - currentAlpha) * magnitude;
-                            else this.nrNoise[k] = this.nrNoise[k] * noiseRise + 1e-6;
-                            this.nrNoise[k] = Math.max(this.nrNoise[k], 1e-9);
-                        }
-                        if (!this.nrInitialized) {
-                            for (let k = 0; k <= FFT_SIZE / 2; k++) this.nrNoise[k] = Math.max(this.nrMagnitude[k], 1e-6);
-                            this.nrInitialized = true;
-                        }
-                        for (let k = 0; k <= FFT_SIZE / 2; k++) {
-                            const magnitude = this.nrMagnitude[k];
-                            const frequency = k * sampleRate / FFT_SIZE;
-                            let localThreshold = threshold;
-                            const peak = k > 1 && k < FFT_SIZE / 2 - 1 && magnitude >= this.nrMagnitude[k - 1] && magnitude >= this.nrMagnitude[k + 1];
-                            if (frequency > 100 && frequency < 9000) localThreshold *= peak ? 1 - 0.95 * comb : 1 + 0.9 * comb;
-                            else localThreshold *= 1.2;
-                            const snr = magnitude / (this.nrNoise[k] + 0.000001);
-                            const gain = Math.max(snr < localThreshold ? Math.pow(snr / localThreshold, 2) : 1, 0.005);
-                            this.nrLastGain[k] = gain > this.nrLastGain[k] ? this.nrLastGain[k] * 0.4 + gain * 0.6 : this.nrLastGain[k] * 0.95 + gain * 0.05;
-                            this.nrReal[k] *= this.nrLastGain[k];
-                            this.nrImag[k] *= this.nrLastGain[k];
-                            if (k > 0 && k < FFT_SIZE / 2) {
-                                this.nrReal[FFT_SIZE - k] *= this.nrLastGain[k];
-                                this.nrImag[FFT_SIZE - k] *= this.nrLastGain[k];
-                            }
-                        }
-                        workletFft(this.nrReal, this.nrImag, true);
-                        for (let k = 0; k < FFT_SIZE; k++) this.nrOutput[position + k] += this.nrReal[k] * fftWindow[k];
-                    }
-                    for (let k = 0; k < 4096; k++) this.nrReady[this.nrReadyLength + k] = this.nrOutput[k] * outputGain;
-                    this.nrReadyLength += 4096;
-                }
-                process(inputs, outputs) {
-                    const input = inputs[0] && inputs[0][0];
-                    const output = outputs[0] && outputs[0][0];
-                    if (!input || !output) return true;
-                    const settings = this.settings;
-                    let blockPeak = 0;
-                    for (let i = 0; i < input.length; i++) blockPeak = Math.max(blockPeak, Math.abs(input[i]));
-                    if (this.stage === 'nr') {
-                        if (!settings.enabled) {
-                            output.set(input);
-                            return true;
-                        }
-                        for (let i = 0; i < input.length; i++) this.nrPending[this.nrPendingLength + i] = input[i];
-                        this.nrPendingLength += input.length;
-                        while (this.nrPendingLength >= 4096) {
-                            this.processSpectralBlock(this.nrPending.slice(0, 4096));
-                            this.nrPending.copyWithin(0, 4096, this.nrPendingLength);
-                            this.nrPendingLength -= 4096;
-                        }
-                        if (this.nrReadyLength >= input.length) {
-                            output.set(this.nrReady.subarray(0, input.length));
-                            this.nrReady.copyWithin(0, input.length, this.nrReadyLength);
-                            this.nrReadyLength -= input.length;
-                        } else {
-                            output.fill(0);
-                        }
-                        return true;
-                    }
-                    if (this.stage === 'nr') {
-                        if (blockPeak < 0.00001) this.silentFrames++;
-                        else if (this.silentFrames > 20) {
-                            this.noise = Math.max(0.001, blockPeak * 0.1);
-                            this.warmupSamples = 2048;
-                            this.silentFrames = 0;
-                        } else this.silentFrames = 0;
-                    }
-                    for (let i = 0; i < input.length; i++) {
-                        let sample = input[i];
-                        if (this.stage === 'nb' && settings.nb_enabled) {
-                            const absolute = Math.abs(sample);
-                            const clipped = Math.min(absolute, Math.max(this.average * 4, 0.002));
-                            this.average = this.average * 0.9995 + clipped * 0.0005;
-                            if (this.average < 0.0005) this.average = 0.0005;
-
-                            this.nbEnvelope = this.nbEnvelope * 0.82 + absolute * 0.18;
-                            const slope = absolute - this.nbPreviousAbs;
-                            const noiseThreshold = this.average * 6.0;
-                            const crestThreshold = Math.max(this.nbEnvelope * 2.2, this.average * 10.0);
-                            const slopeThreshold = Math.max(this.average * 3.0, 0.0015);
-                            const impulse = absolute > noiseThreshold &&
-                                absolute > crestThreshold && slope > slopeThreshold;
-
-                            if (this.blankCounter > 0) {
-                                sample *= 0.08;
-                                this.blankCounter--;
-                            } else if (this.nbCooldown > 0) {
-                                this.nbCooldown--;
-                            } else if (impulse) {
-                                const interval = this.nbLastImpulse >= 0 ? this.nbSampleCounter - this.nbLastImpulse : 0;
-                                if (interval > 0) {
-                                    const rate = sampleRate / interval;
-                                    this.nbImpulseRate = this.nbImpulseRate === 0 ? rate :
-                                        this.nbImpulseRate * 0.8 + rate * 0.2;
-                                }
-                                this.nbLastImpulse = this.nbSampleCounter;
-
-                                // Shorter pulses are sufficient for frequent periodic PSU noise.
-                                const rateFactor = this.nbImpulseRate > 100 ? 0.7 : 1.0;
-                                this.blankCounter = Math.max(4, Math.round(sampleRate * 0.00035 * rateFactor));
-                                this.nbCooldown = Math.max(2, Math.round(sampleRate * 0.00015));
-                                sample *= 0.08;
-                            }
-                            this.nbPreviousAbs = absolute;
-                            this.nbSampleCounter++;
-                        } else if (this.stage === 'nr') {
-                            // NR is processed as a spectral block below, not per sample.
-                        } else if (this.stage === 'comp' && settings.comp_enabled) {
-                            const absolute = Math.abs(sample);
-                            if (absolute > this.envelope) this.envelope = absolute;
-                            else {
-                                const envelopeDecay = Math.exp(-1 / (0.05 * sampleRate));
-                                this.envelope = this.envelope * envelopeDecay + absolute * (1 - envelopeDecay);
-                            }
-                            const gate = Math.max(settings.gateThresh || 0.004, 0.000001);
-                            let target = (settings.agcTarget || 0.5) / (this.envelope + 0.000001);
-                            target = Math.min(target, settings.maxBoost || 20);
-                            if (this.envelope < gate) {
-                                const ratio = this.envelope / gate;
-                                target *= ratio * ratio;
-                            }
-                            if (target < this.gain) {
-                                this.gain = target;
-                                this.hang = Math.floor((settings.hangTime || 0.2) * sampleRate);
-                            } else if (this.hang > 0) this.hang--;
-                            else {
-                                const recovery = Math.max(settings.recoveryTime || 0.5, 0.001);
-                                const recoveryFactor = Math.exp(-1 / (recovery * sampleRate));
-                                this.gain = this.gain * recoveryFactor + target * (1 - recoveryFactor);
-                            }
-                            sample = Math.tanh(sample * this.gain) * (settings.compGain || 0.1);
-                        }
-                        output[i] = sample;
-                    }
-                    if (this.stage === 'nr') {
-                        if (!settings.enabled) {
-                            output.set(input);
-                            return true;
-                        }
-                        const bufferSize = input.length;
-                        this.nrInput.copyWithin(0, bufferSize, bufferSize + FFT_SIZE);
-                        this.nrInput.set(input, FFT_SIZE);
-                        this.nrOutput.copyWithin(0, bufferSize, bufferSize + FFT_SIZE);
-                        this.nrOutput.fill(0, FFT_SIZE);
-                        const alpha = settings.alpha;
-                        const threshold = Math.pow(10, settings.snr / 20);
-                        const outputGain = Math.pow(10, settings.gain / 20);
-                        const comb = settings.comb === undefined ? 0.5 : settings.comb;
-                        const speechMode = !!settings.speech_mode;
-                        const noiseRise = 1 + (1 - (speechMode && alpha > 0.98 ? 0.95 : alpha)) * 0.01;
-                        for (let block = 0; block < bufferSize / HOP_SIZE; block++) {
-                            const position = block * HOP_SIZE + FFT_SIZE - HOP_SIZE;
-                            for (let k = 0; k < FFT_SIZE; k++) this.nrReal[k] = this.nrInput[position + k] * fftWindow[k];
-                            this.nrImag.fill(0);
-                            workletFft(this.nrReal, this.nrImag, false);
-                            for (let k = 0; k <= FFT_SIZE / 2; k++) {
-                                const magnitude = Math.sqrt(this.nrReal[k] * this.nrReal[k] + this.nrImag[k] * this.nrImag[k]);
-                                this.nrMagnitude[k] = magnitude;
-                                const currentAlpha = speechMode && magnitude < this.nrNoise[k] * 0.5 ? 0.90 : alpha;
-                                if (magnitude < this.nrNoise[k]) this.nrNoise[k] = currentAlpha * this.nrNoise[k] + (1 - currentAlpha) * magnitude;
-                                else this.nrNoise[k] = this.nrNoise[k] * noiseRise + 1e-6;
-                                this.nrNoise[k] = Math.max(this.nrNoise[k], 1e-9);
-                            }
-                            if (!this.nrInitialized) {
-                                for (let k = 0; k <= FFT_SIZE / 2; k++) this.nrNoise[k] = Math.max(this.nrMagnitude[k], 1e-6);
-                                this.nrInitialized = true;
-                            }
-                            for (let k = 0; k <= FFT_SIZE / 2; k++) {
-                                const frequency = k * sampleRate / FFT_SIZE;
-                                let localThreshold = threshold;
-                                const magnitude = this.nrMagnitude[k];
-                                const peak = k > 1 && k < FFT_SIZE / 2 - 1 && magnitude >= this.nrMagnitude[k - 1] && magnitude >= this.nrMagnitude[k + 1];
-                                if (frequency > 100 && frequency < 9000) localThreshold *= peak ? 1 - 0.95 * comb : 1 + 0.9 * comb;
-                                else localThreshold *= 1.2;
-                                const snr = magnitude / (this.nrNoise[k] + 0.000001);
-                                let gain = snr < localThreshold ? Math.pow(snr / localThreshold, 2) : 1;
-                                gain = Math.max(gain, 0.005);
-                                this.nrLastGain[k] = gain > this.nrLastGain[k] ? this.nrLastGain[k] * 0.4 + gain * 0.6 : this.nrLastGain[k] * 0.95 + gain * 0.05;
-                                this.nrReal[k] *= this.nrLastGain[k];
-                                this.nrImag[k] *= this.nrLastGain[k];
-                                if (k > 0 && k < FFT_SIZE / 2) {
-                                    this.nrReal[FFT_SIZE - k] *= this.nrLastGain[k];
-                                    this.nrImag[FFT_SIZE - k] *= this.nrLastGain[k];
-                                }
-                            }
-                            workletFft(this.nrReal, this.nrImag, true);
-                            for (let k = 0; k < FFT_SIZE; k++) this.nrOutput[position + k] += this.nrReal[k] * fftWindow[k];
-                        }
-                        for (let i = 0; i < bufferSize; i++) output[i] = this.nrOutput[i] * outputGain;
-                    }
-                    return true;
-                }
-            }
-            registerProcessor('openwebrx-audio-filter', AudioFilterProcessor);
-        `;
-        const url = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
-        return ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
-    }
-
-    function isSecureAudioContext() {
-        if (typeof window !== 'undefined' && window.isSecureContext !== undefined)
-            return window.isSecureContext;
-        if (typeof location === 'undefined') return false;
-        return location.protocol === 'https:' ||
-            location.hostname === 'localhost' ||
-            location.hostname === '127.0.0.1' ||
-            location.hostname === '::1';
-    }
-
-    function createSpectralNoiseReduction(ctx) {
-        const processor = ctx.createScriptProcessor(4096, 1, 1);
-        processor.isCustomFilter = true;
-
-        const hopSize = FFT_SIZE / 2;
-        const bufferSize = 4096;
-        const real = new Float32Array(FFT_SIZE);
-        const imag = new Float32Array(FFT_SIZE);
-        const noise = new Float32Array(FFT_SIZE / 2 + 1).fill(0);
-        const lastGain = new Float32Array(FFT_SIZE / 2 + 1).fill(1);
-        const magnitude = new Float32Array(FFT_SIZE / 2 + 1);
-        const inputHistory = new Float32Array(bufferSize + FFT_SIZE);
-        const outputHistory = new Float32Array(bufferSize + FFT_SIZE);
-        let noiseInitialized = false;
-        let wasEnabled = false;
-
-        const reset = function () {
-            noiseInitialized = false;
-            noise.fill(1e-9);
-            lastGain.fill(1);
-            inputHistory.fill(0);
-            outputHistory.fill(0);
-        };
-
-        processor.resetSpectralState = reset;
-        processor.onaudioprocess = function (event) {
-            const input = event.inputBuffer.getChannelData(0);
-            const output = event.outputBuffer.getChannelData(0);
-            const settings = activeFilters.nrSettings;
-            const enabled = !!(settings && settings.enabled);
-
-            if (enabled && !wasEnabled) reset();
-            wasEnabled = enabled;
-
-            inputHistory.copyWithin(0, bufferSize, bufferSize + FFT_SIZE);
-            inputHistory.set(input, FFT_SIZE);
-            outputHistory.copyWithin(0, bufferSize, bufferSize + FFT_SIZE);
-            outputHistory.fill(0, FFT_SIZE);
-
-            if (!enabled) {
-                output.set(input);
-                return;
-            }
-
-            const alpha = settings.alpha;
-            const threshold = Math.pow(10, settings.snr / 20);
-            const outputGain = Math.pow(10, settings.gain / 20);
-            const comb = settings.comb === undefined ? 0.5 : settings.comb;
-            const speechMode = !!settings.speech_mode;
-            let alphaForRise = alpha;
-            if (speechMode && alpha > 0.98) alphaForRise = 0.95;
-            const noiseRise = 1 + (1 - alphaForRise) * 0.01;
-
-            for (let block = 0; block < bufferSize / hopSize; block++) {
-                const position = block * hopSize + FFT_SIZE - hopSize;
-                for (let k = 0; k < FFT_SIZE; k++) {
-                    real[k] = inputHistory[position + k] * fft_win[k];
-                }
-                imag.fill(0);
-                performFFT(real, imag, false);
-
-                for (let k = 0; k <= FFT_SIZE / 2; k++) {
-                    const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
-                    magnitude[k] = mag;
-                    let currentAlpha = alpha;
-                    if (speechMode && mag < noise[k] * 0.5) currentAlpha = 0.90;
-                    if (mag < noise[k]) noise[k] = currentAlpha * noise[k] + (1 - currentAlpha) * mag;
-                    else noise[k] = noise[k] * noiseRise + 1e-6;
-                    noise[k] = Math.max(noise[k], 1e-9);
-                }
-
-                if (!noiseInitialized) {
-                    for (let k = 0; k <= FFT_SIZE / 2; k++) noise[k] = Math.max(magnitude[k], 1e-6);
-                    noiseInitialized = true;
-                }
-
-                for (let k = 0; k <= FFT_SIZE / 2; k++) {
-                    const mag = magnitude[k];
-                    const frequency = k * ctx.sampleRate / FFT_SIZE;
-                    let localThreshold = threshold;
-                    const isPeak = k > 1 && k < FFT_SIZE / 2 - 1 &&
-                        mag >= magnitude[k - 1] && mag >= magnitude[k + 1];
-                    if (frequency > 100 && frequency < 9000) {
-                        localThreshold *= isPeak ? 1 - 0.95 * comb : 1 + 0.9 * comb;
-                    } else {
-                        localThreshold *= 1.2;
-                    }
-
-                    const snr = mag / (noise[k] + 0.000001);
-                    let gain = 1;
-                    if (snr < localThreshold) {
-                        gain = snr / localThreshold;
-                        gain *= gain;
-                    }
-                    gain = Math.max(gain, 0.005);
-                    if (gain > lastGain[k]) lastGain[k] = lastGain[k] * 0.4 + gain * 0.6;
-                    else lastGain[k] = lastGain[k] * 0.95 + gain * 0.05;
-                    real[k] *= lastGain[k];
-                    imag[k] *= lastGain[k];
-                    if (k > 0 && k < FFT_SIZE / 2) {
-                        real[FFT_SIZE - k] *= lastGain[k];
-                        imag[FFT_SIZE - k] *= lastGain[k];
-                    }
-                }
-
-                performFFT(real, imag, true);
-                for (let k = 0; k < FFT_SIZE; k++) outputHistory[position + k] += real[k] * fft_win[k];
-            }
-
-            for (let i = 0; i < bufferSize; i++) output[i] = outputHistory[i] * outputGain;
-        };
-        return processor;
-    }
-
-    function setupScriptProcessorStages(ctx, nbProcessor, nrProcessor, compProcessor, highpass, gainNode) {
-        const createStage = function (handler) {
-            const processor = ctx.createScriptProcessor(4096, 1, 1);
-            processor.isCustomFilter = true;
-            processor.onaudioprocess = handler;
-            return processor;
-        };
-
-        let nbAverage = 0.1;
-        let nbPreviousAbs = 0;
-        let nbBlank = 0;
-        let nbCooldown = 0;
-        const nb = createStage(function (event) {
-            const input = event.inputBuffer.getChannelData(0);
-            const output = event.outputBuffer.getChannelData(0);
-            const settings = activeFilters.dynamicsSettings || {};
-            for (let i = 0; i < input.length; i++) {
-                let sample = input[i];
-                const absolute = Math.abs(sample);
-                const clipped = Math.min(absolute, Math.max(nbAverage * 4, 0.002));
-                nbAverage = nbAverage * 0.9995 + clipped * 0.0005;
-                if (nbAverage < 0.0005) nbAverage = 0.0005;
-                const impulse = settings.nb_enabled &&
-                    absolute > nbAverage * 6 &&
-                    absolute > Math.max(nbAverage * 10, (nbAverage * 0.82 + absolute * 0.18) * 2.2) &&
-                    absolute - nbPreviousAbs > Math.max(nbAverage * 3, 0.0015);
-                if (settings.nb_enabled && nbBlank > 0) {
-                    sample *= 0.08;
-                    nbBlank--;
-                } else if (nbCooldown > 0) {
-                    nbCooldown--;
-                } else if (impulse) {
-                    nbBlank = Math.max(4, Math.round(ctx.sampleRate * 0.00035));
-                    nbCooldown = Math.max(2, Math.round(ctx.sampleRate * 0.00015));
-                    sample *= 0.08;
-                }
-                nbPreviousAbs = absolute;
-                output[i] = sample;
-            }
-        });
-
-        let nrNoise = 0.001;
-        const nr = createSpectralNoiseReduction(ctx);
-
-        let compEnvelope = 0;
-        let compGain = 1;
-        let compHang = 0;
-        const comp = createStage(function (event) {
-            const input = event.inputBuffer.getChannelData(0);
-            const output = event.outputBuffer.getChannelData(0);
-            const settings = activeFilters.dynamicsSettings || {};
-            for (let i = 0; i < input.length; i++) {
-                let sample = input[i];
-                if (settings.comp_enabled) {
-                    const absolute = Math.abs(sample);
-                    const envelopeDecay = Math.exp(-1 / (0.05 * ctx.sampleRate));
-                    if (absolute > compEnvelope) compEnvelope = absolute;
-                    else compEnvelope = compEnvelope * envelopeDecay + absolute * (1 - envelopeDecay);
-                    const gate = Math.max(settings.gateThresh || 0.004, 0.000001);
-                    let target = (settings.agcTarget || 0.5) / (compEnvelope + 0.000001);
-                    target = Math.min(target, settings.maxBoost || 20);
-                    if (compEnvelope < gate) {
-                        const ratio = compEnvelope / gate;
-                        target *= ratio * ratio;
-                    }
-                    if (target < compGain) {
-                        compGain = target;
-                        compHang = Math.floor((settings.hangTime || 0.2) * ctx.sampleRate);
-                    } else if (compHang > 0) {
-                        compHang--;
-                    } else {
-                        const recovery = Math.max(settings.recoveryTime || 0.5, 0.001);
-                        const recoveryFactor = Math.exp(-1 / (recovery * ctx.sampleRate));
-                        compGain = compGain * recoveryFactor + target * (1 - recoveryFactor);
-                    }
-                    sample = Math.tanh(sample * compGain) * (settings.compGain || 0.1);
-                }
-                output[i] = sample;
-            }
-        });
-
-        activeFilters.inputProxy.disconnect();
-        activeFilters.inputProxy.connect(nb);
-        nb.connect(activeFilters.analyser);
-        activeFilters.notches[activeFilters.notches.length - 1].disconnect(nrProcessor);
-        activeFilters.notches[activeFilters.notches.length - 1].connect(nr);
-        try { nrProcessor.disconnect(); } catch (error) { }
-        try { compProcessor.disconnect(); } catch (error) { }
-        activeFilters.compLowpass.disconnect(compProcessor);
-        activeFilters.compLowpass.connect(comp);
-        nr.connect(highpass);
-        comp.connect(gainNode);
-        activeFilters.nbProcessor = nb;
-        activeFilters.nrProcessor = nr;
-        activeFilters.compProcessor = comp;
-        activeFilters.workletActive = false;
-        console.warn('[audio_filter] AudioWorklet unavailable; using ScriptProcessorNode fallback.');
-    }
-
-    function setupFilters(ctx) {
-
-        // Analyser for Auto Notch
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 4096; // High resolution for notch detection
-        analyser.smoothingTimeConstant = 0.15;
-        analyser.minDecibels = -140;
-        analyser.maxDecibels = -10;
-        activeFilters.analyser = analyser;
-
-        // Analyser for Visualization (Output)
-        const outputAnalyser = ctx.createAnalyser();
-        outputAnalyser.fftSize = 4096; // High resolution for visualization
-        outputAnalyser.smoothingTimeConstant = 0.15;
-        outputAnalyser.minDecibels = -140;
-        outputAnalyser.maxDecibels = -10;
-        activeFilters.outputAnalyser = outputAnalyser;
-
-        // Notch Filters (Pool of 4)
-        activeFilters.notches = [];
-        for (let i = 0; i < 4; i++) {
-            const n = ctx.createBiquadFilter();
-            n.type = 'notch';
-            n.frequency.value = 0; // 0 = disabled/inactive
-            n.Q.value = 20;
-            n.isCustomFilter = true;
-            activeFilters.notches.push(n);
-        }
-
-        // Compressor Pre-Filter (Bandpass)
-        const compHighpass = ctx.createBiquadFilter();
-        compHighpass.type = 'highpass';
-        compHighpass.frequency.value = 0;
-        compHighpass.isCustomFilter = true;
-        activeFilters.compHighpass = compHighpass;
-
-        const compLowpass = ctx.createBiquadFilter();
-        compLowpass.type = 'lowpass';
-        compLowpass.frequency.value = (ctx.sampleRate / 2) - 100;
-        compLowpass.isCustomFilter = true;
-        activeFilters.compLowpass = compLowpass;
-
-        // AudioWorklet placeholders are replaced once the module is ready.
-        const nbProcessor = ctx.createGain();
-        nbProcessor.isCustomFilter = true;
-        activeFilters.nbProcessor = nbProcessor;
-        activeFilters.inputProxy = ctx.createGain();
-        activeFilters.inputProxy.isCustomFilter = true;
-        activeFilters.inputProxy.connect(nbProcessor);
-
-        // NR placeholder; the real processor is selected below per context.
-        const nrProcessor = ctx.createGain();
-        nrProcessor.isCustomFilter = true;
-        activeFilters.nrProcessor = nrProcessor;
-
-        activeFilters.reset_nr = function () {
-            if (activeFilters.nrProcessor.resetSpectralState) {
-                activeFilters.nrProcessor.resetSpectralState();
-            } else if (activeFilters.nrProcessor.port) {
-                activeFilters.nrProcessor.port.postMessage({ type: 'reset' });
-                activeFilters.nrProcessor.port.postMessage({ type: 'settings', value: activeFilters.nrSettings || {} });
-            }
-        };
-
-        // 3. AudioWorklet Compressor Processor (End of Chain)
-        const compProcessor = ctx.createGain();
-        compProcessor.isCustomFilter = true;
-        activeFilters.compProcessor = compProcessor;
-
-        const highpass = ctx.createBiquadFilter();
-        highpass.type = 'highpass';
-        highpass.frequency.value = 0;
-        highpass.isCustomFilter = true;
-        activeFilters.highpass = highpass;
-
-        // Loudness Filter (LowShelf for Bass Boost)
-        const loudness = ctx.createBiquadFilter();
-        loudness.type = 'lowshelf';
-        loudness.frequency.value = 150;
-        loudness.gain.value = 0;
-        loudness.isCustomFilter = true;
-        activeFilters.loudness = loudness;
-
-        const peaking = ctx.createBiquadFilter();
-        peaking.type = 'peaking';
-        peaking.frequency.value = 2000;
-        peaking.Q.value = 1;
-        peaking.gain.value = 0;
-        peaking.isCustomFilter = true;
-        activeFilters.peaking = peaking;
-
-        const lowpass = ctx.createBiquadFilter();
-        lowpass.type = 'lowpass';
-        lowpass.frequency.value = (ctx.sampleRate / 2) - 100;
-        lowpass.isCustomFilter = true;
-        activeFilters.lowpass = lowpass;
-
-        // Air Filter (HighShelf)
-        const air = ctx.createBiquadFilter();
-        air.type = 'highshelf';
-        air.frequency.value = 12000; // Default 12kHz
-        air.gain.value = 0;
-        air.isCustomFilter = true;
-        activeFilters.air = air;
-
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = 1.0;
-        gainNode.isCustomFilter = true;
-        activeFilters.gain = gainNode;
-
-        // Connect the chain
-        nbProcessor.connect(analyser);
-        analyser.connect(activeFilters.notches[0]);
-        for (let i = 0; i < activeFilters.notches.length - 1; i++) {
-            activeFilters.notches[i].connect(activeFilters.notches[i+1]);
-        }
-        activeFilters.notches[activeFilters.notches.length - 1].connect(nrProcessor);
-        nrProcessor.connect(highpass);
-
-        highpass.connect(loudness);
-        loudness.connect(peaking);
-        peaking.connect(air);
-        air.connect(lowpass);
-        lowpass.connect(compHighpass);
-        compHighpass.connect(compLowpass);
-        compLowpass.connect(compProcessor);
-        compProcessor.connect(gainNode);
-
-        gainNode.connect(outputAnalyser);
-
-        // The master switch connects the output only while processing is enabled.
-        apply_filter_settings();
-
-        activeFilters.workletFallback = function () {
-            if (!activeFilters.workletActive) return;
-            activeFilters.workletActive = false;
-            try { activeFilters.inputProxy.disconnect(); } catch (error) { }
-            try { activeFilters.nbProcessor.disconnect(); } catch (error) { }
-            try { activeFilters.nrProcessor.disconnect(); } catch (error) { }
-            try { activeFilters.compProcessor.disconnect(); } catch (error) { }
-            activeFilters.inputProxy.connect(nbProcessor);
-            nbProcessor.connect(analyser);
-            activeFilters.notches[activeFilters.notches.length - 1].disconnect();
-            activeFilters.notches[activeFilters.notches.length - 1].connect(nrProcessor);
-            nrProcessor.connect(highpass);
-            activeFilters.compLowpass.disconnect();
-            activeFilters.compLowpass.connect(compProcessor);
-            compProcessor.connect(gainNode);
-            activeFilters.nbProcessor = nbProcessor;
-            activeFilters.nrProcessor = nrProcessor;
-            activeFilters.compProcessor = compProcessor;
-            apply_filter_settings();
-        };
-
-        if (!isSecureAudioContext()) {
-            console.warn('[audio_filter] Insecure context; using ScriptProcessorNode fallback.');
-            setupScriptProcessorStages(ctx, nbProcessor, nrProcessor, compProcessor, highpass, gainNode);
-        } else {
-            console.info('[audio_filter] Secure context detected; using AudioWorklet.');
-            createAudioWorkletModule(ctx).then(function () {
-            const options = function (stage) {
-                return {
-                    numberOfInputs: 1,
-                    numberOfOutputs: 1,
-                    outputChannelCount: [1],
-                    processorOptions: { stage: stage }
-                };
-            };
-            const createProcessor = function (stage) {
-                const processor = new AudioWorkletNode(ctx, 'openwebrx-audio-filter', options(stage));
-                processor.isCustomFilter = true;
-                processor.addEventListener('processorerror', function () {
-                    console.error('[audio_filter] AudioWorklet processor failed:', stage);
-                    activeFilters.workletFallback();
-                });
-                if (processor.port && processor.port.start) processor.port.start();
-                return processor;
-            };
-
-            const workletNb = createProcessor('nb');
-            const workletNr = createProcessor('nr');
-            const workletComp = createProcessor('comp');
-
-            activeFilters.inputProxy.disconnect();
-            activeFilters.inputProxy.connect(workletNb);
-            activeFilters.nbProcessor.disconnect();
-            workletNb.connect(analyser);
-
-            activeFilters.notches[activeFilters.notches.length - 1].disconnect(nrProcessor);
-            activeFilters.notches[activeFilters.notches.length - 1].connect(workletNr);
-            activeFilters.nrProcessor.disconnect();
-            workletNr.connect(highpass);
-
-            activeFilters.compLowpass.disconnect(compProcessor);
-            activeFilters.compLowpass.connect(workletComp);
-            activeFilters.compProcessor.disconnect();
-            workletComp.connect(gainNode);
-
-            activeFilters.nbProcessor = workletNb;
-            activeFilters.nrProcessor = workletNr;
-            activeFilters.compProcessor = workletComp;
-            activeFilters.workletActive = true;
-            apply_filter_settings();
-            if (is_nr_enabled) activeFilters.reset_nr();
-            }).catch(function (error) {
-                console.warn('[audio_filter] AudioWorklet stages unavailable; using ScriptProcessorNode fallback:', error);
-                setupScriptProcessorStages(ctx, nbProcessor, nrProcessor, compProcessor, highpass, gainNode);
-            });
-        }
-
-    }
-
-    function initAudioFilter() {
-        if (is_initialized) return;
-
-        try {
-            if (localStorage.getItem('openwebrx-audio-filter-enabled') === 'true') is_filter_enabled = true;
-            if (localStorage.getItem('openwebrx-audio-filter-nr') === 'true') is_nr_enabled = true;
-            if (localStorage.getItem('openwebrx-audio-filter-autonotch') === 'true') is_autonotch_enabled = true;
-            if (localStorage.getItem('openwebrx-audio-filter-declick') === 'true') is_nb_enabled = true;
-            if (localStorage.getItem('openwebrx-audio-filter-compressor') === 'true') is_compressor_enabled = true;
-            if (localStorage.getItem('openwebrx-audio-filter-loudness') === 'true') is_loudness_enabled = true;
-
-            try {
-                const savedSettings = localStorage.getItem('openwebrx-audio-filter-settings');
-                if (savedSettings) {
-                    const parsed = JSON.parse(savedSettings);
-                    if (parsed.ssb || parsed.am || parsed.cw || parsed.nfm || parsed.wfm || parsed.digital) {
-                        if (parsed.ssb) settings_store.ssb = parsed.ssb;
-                        if (parsed.am) settings_store.am = parsed.am;
-                        if (parsed.cw) settings_store.cw = parsed.cw;
-                        if (parsed.nfm) settings_store.nfm = parsed.nfm;
-                        if (parsed.wfm) settings_store.wfm = parsed.wfm;
-                        if (parsed.digital) settings_store.digital = parsed.digital;
-                    } else {
-                        settings_store.ssb = parsed;
-                    }
-                }
-            } catch (e) {
-                console.error(`[${PLUGIN_ID}] Error loading settings:`, e);
-            }
-
-            if (!create_ui()) {
-                setTimeout(initAudioFilter, 250);
-                return;
-            }
-
-            // Initialize last_modulation to avoid resetting settings on first loop
-            last_modulation = get_modulation();
-
-            let startKey = get_config_mode(last_modulation);
-            if (settings_store[startKey]) {
-                override_settings = JSON.parse(JSON.stringify(settings_store[startKey]));
-            }
-
-            // Start monitoring loops
-            setInterval(check_modulation_loop, 500);
-            setInterval(process_audio_analysis, 50); // Polling for AutoNotch
-
-            is_initialized = true;
-            if (typeof Plugins !== 'undefined' && Plugins.rig_audio) {
-                Plugins.rig_audio.is_initialized = true;
-            }
-        } catch (e) {
-            console.error(`[${PLUGIN_ID}] Error during initialization:`, e);
-        }
-    }
-
-    let viz_cache = { w: 0, freqArray: null, magResponse: null, phaseResponse: null, totalResp: null, spectrumData: null };
-
-    function draw_comp_visualization(ctx, w, h, mouseX, mouseY) {
-        ctx.clearRect(0, 0, w, h);
-
-        const maxFreq = 8000, minFreq = 50;
-        const freqToX = (f) => {
-            if (f < minFreq) f = minFreq;
-            if (f > maxFreq) f = maxFreq;
-            return (w - 2) * (Math.log(f) - Math.log(minFreq)) / (Math.log(maxFreq) - Math.log(minFreq)) + 1;
-        };
-
-        if (viz_cache.w !== w) {
-            viz_cache.w = w;
-            viz_cache.freqArray = new Float32Array(w);
-            viz_cache.magResponse = new Float32Array(w);
-            viz_cache.phaseResponse = new Float32Array(w);
-            viz_cache.totalResp = new Float32Array(w);
-            for (let x = 0; x < w; x++) {
-                let t = (x - 1) / (w - 2);
-                if (t < 0) t = 0; if (t > 1) t = 1;
-                viz_cache.freqArray[x] = minFreq * Math.pow(maxFreq / minFreq, t);
-            }
-        }
-        const { freqArray, magResponse, phaseResponse, totalResp } = viz_cache;
-
-        const drawCurve = (color, fill, nodes) => {
-            if (!nodes || nodes.length === 0) return;
-
-            totalResp.fill(1.0);
-
-            let hasNodes = false;
-            nodes.forEach(node => {
-                if (node && node.getFrequencyResponse) {
-                    node.getFrequencyResponse(freqArray, magResponse, phaseResponse);
-                    for(let i=0; i<w; i++) totalResp[i] *= magResponse[i];
-                    hasNodes = true;
-                }
-            });
-
-            if (!hasNodes) return;
-
-            ctx.beginPath();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
-            if (fill) ctx.fillStyle = fill;
-
-            for (let x = 0; x < w; x++) {
-                let mag = totalResp[x];
-                if (mag < 0.00001) mag = 0.00001;
-                let db = 20 * Math.log10(mag);
-                let y = 40 - db * (h - 40) / 60;
-
-                if (x === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-
-            if (fill) {
-                ctx.lineTo(w, h);
-                ctx.lineTo(0, h);
-                ctx.fill();
-            }
-            ctx.stroke();
-            ctx.lineWidth = 1;
-        };
-
-        // 1. Compressor Bandpass (Green)
-        if (is_compressor_enabled) {
-            if (activeFilters.compHighpass && activeFilters.compLowpass) {
-                const xHPF = freqToX(activeFilters.compHighpass.frequency.value);
-                const xLPF = freqToX(activeFilters.compLowpass.frequency.value);
-                ctx.fillStyle = 'rgba(57, 255, 20, 0.1)';
-                ctx.fillRect(xHPF, 0, xLPF - xHPF, h);
-            }
-
-            if (activeFilters.compHighpass) {
-                const xHPF = freqToX(activeFilters.compHighpass.frequency.value);
-                ctx.fillStyle = 'rgba(57, 255, 20, 0.8)';
-                ctx.font = '9px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText('Comp', xHPF + 2, 10);
-            }
-        }
-
-        // 2. EQ (Yellow)
-        if (is_filter_enabled && activeFilters.highpass) {
-
-            ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 2]);
-
-            const xHP = freqToX(activeFilters.highpass.frequency.value);
-            ctx.beginPath();
-            ctx.moveTo(xHP, 0);
-            ctx.lineTo(xHP, h);
-            ctx.stroke();
-
-            if (activeFilters.lowpass) {
-                const xLP = freqToX(activeFilters.lowpass.frequency.value);
-                ctx.beginPath();
-                ctx.moveTo(xLP, 0);
-                ctx.lineTo(xLP, h);
-                ctx.stroke();
-            }
-            ctx.setLineDash([]);
-
-            if (activeFilters.peaking && Math.abs(activeFilters.peaking.gain.value) > 0.1) {
-                const f_c = activeFilters.peaking.frequency.value;
-                const Q = activeFilters.peaking.Q.value;
-                const term1 = Math.sqrt(1 + 1 / (4 * Q * Q));
-                const term2 = 1 / (2 * Q);
-                const f1 = f_c * (term1 - term2);
-                const f2 = f_c * (term1 + term2);
-                const x1 = freqToX(f1);
-                const x2 = freqToX(f2);
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
-                ctx.fillRect(x1, 0, x2 - x1, h);
-            }
-        }
-
-        // 3. Auto Notch (Red)
-        if (is_autonotch_enabled && activeFilters.notches) {
-            let effectiveNotchRange = (override_settings.notchRange !== null && override_settings.notchRange !== undefined) ? override_settings.notchRange : 4000;
-            let effectiveNotchCenter = (override_settings.notchCenter !== null && override_settings.notchCenter !== undefined) ? override_settings.notchCenter : (effectiveNotchRange / 2);
-
-            let halfWidth = effectiveNotchRange / 2;
-            let startFreq = Math.max(50, effectiveNotchCenter - halfWidth);
-            let endFreq = effectiveNotchCenter + halfWidth;
-            const x1 = freqToX(startFreq);
-            const x2 = freqToX(endFreq);
-            ctx.fillStyle = 'rgba(255, 50, 50, 0.1)';
-            ctx.fillRect(x1, 0, x2 - x1, h);
-
-            const activeNotches = activeFilters.notches.filter(n => n.frequency.value > 10);
-            if (activeNotches.length > 0) {
-                drawCurve('rgba(255, 50, 50, 0.8)', null, activeNotches);
-
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.9)';
-                activeNotches.forEach(n => {
-                    const bw = n.frequency.value / n.Q.value;
-                    const xStart = freqToX(n.frequency.value - bw / 2);
-                    const xEnd = freqToX(n.frequency.value + bw / 2);
-                    const wBar = Math.max(2, xEnd - xStart);
-                    ctx.fillRect(xStart, 0, wBar, 6);
-                });
-            }
-        }
-
-        // 4. Spectrum (Input & Output)
-        const drawSpectrum = (analyser, color) => {
-            if (!analyser) return;
-            const bufferLength = analyser.frequencyBinCount;
-            if (!viz_cache.spectrumData || viz_cache.spectrumData.length !== bufferLength) {
-                viz_cache.spectrumData = new Uint8Array(bufferLength);
-            }
-            const dataArray = viz_cache.spectrumData;
-            analyser.getByteFrequencyData(dataArray);
-            const sampleRate = analyser.context.sampleRate;
-
-            ctx.beginPath();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1;
-            let started = false;
-            for (let x = 0; x < w; x++) {
-                let f = viz_cache.freqArray[x];
-
-                let bin = Math.floor(f / (sampleRate / 2) * bufferLength);
-                if (bin < 0) bin = 0; if (bin >= bufferLength) bin = bufferLength - 1;
-
-                let y = h - (dataArray[bin] / 255) * h;
-                if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
-            }
-            ctx.stroke();
-        };
-
-        if (show_input_spectrum) {
-            drawSpectrum(activeFilters.analyser, 'rgba(255, 255, 0, 0.6)');
-        }
-
-        if (show_output_spectrum) {
-            drawSpectrum(activeFilters.outputAnalyser, 'rgba(0, 255, 255, 0.8)');
-        }
-
-        // 5. Legend
-        ctx.font = '9px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-
-        ctx.fillStyle = show_input_spectrum ? 'rgba(255, 255, 0, 0.8)' : 'rgba(100, 100, 0, 0.6)';
-        ctx.fillRect(5, 5, 6, 6);
-        ctx.fillStyle = show_input_spectrum ? '#ddd' : '#666';
-        ctx.fillText('In', 14, 8);
-
-        ctx.fillStyle = show_output_spectrum ? 'rgba(0, 255, 255, 0.8)' : 'rgba(0, 100, 100, 0.6)';
-        ctx.fillRect(32, 5, 6, 6);
-        ctx.fillStyle = show_output_spectrum ? '#ddd' : '#666';
-        ctx.fillText('Out', 41, 8);
-
-        // 6. Frequency Axis
-        ctx.fillStyle = '#fff';
-        ctx.font = '9px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-
-        const axisFreqs = [100, 200, 500, 1000, 2000, 4000];
-        ctx.beginPath();
-        axisFreqs.forEach(f => {
-            const x = freqToX(f);
-            ctx.moveTo(x, h);
-            ctx.lineTo(x, h - 4);
-            let txt = (f >= 1000) ? (f/1000) + 'k' : f;
-            ctx.fillText(txt, x, h - 4);
-        });
-        ctx.strokeStyle = '#555';
-        ctx.stroke();
-
-        // Tooltip
-        if (mouseX && mouseX > 0) {
-            let hovered = null;
-
-            if (is_autonotch_enabled) {
-                let effectiveNotchRange = (override_settings.notchRange !== null && override_settings.notchRange !== undefined) ? override_settings.notchRange : 4000;
-                let effectiveNotchCenter = (override_settings.notchCenter !== null && override_settings.notchCenter !== undefined) ? override_settings.notchCenter : (effectiveNotchRange / 2);
-                let halfWidth = effectiveNotchRange / 2;
-                let startFreq = Math.max(50, effectiveNotchCenter - halfWidth);
-                let endFreq = effectiveNotchCenter + halfWidth;
-                const x1 = freqToX(startFreq);
-                const x2 = freqToX(endFreq);
-                if (mouseX >= x1 && mouseX <= x2) hovered = "Notch Range";
-            }
-
-            if (is_filter_enabled && activeFilters.peaking && Math.abs(activeFilters.peaking.gain.value) > 0.1) {
-                const f_c = activeFilters.peaking.frequency.value;
-                const Q = activeFilters.peaking.Q.value;
-                const term1 = Math.sqrt(1 + 1 / (4 * Q * Q));
-                const term2 = 1 / (2 * Q);
-                const f1 = f_c * (term1 - term2);
-                const f2 = f_c * (term1 + term2);
-                const x1 = freqToX(f1);
-                const x2 = freqToX(f2);
-                if (mouseX >= x1 && mouseX <= x2) {
-                    hovered = "Presence Range";
-                }
-            }
-
-            const check = (x, label) => {
-                if (Math.abs(x - mouseX) < 5) hovered = label;
-            };
-
-            if (is_compressor_enabled) {
-                let modKey = get_config_mode(last_modulation);
-                let base = CONFIG[modKey];
-                const compHPF = (override_settings.compHPF !== null && override_settings.compHPF !== undefined) ? override_settings.compHPF : (base.compHPF || 300);
-                const compLPF = (override_settings.compLPF !== null && override_settings.compLPF !== undefined) ? override_settings.compLPF : (base.compLPF || 3000);
-                const xHPF = freqToX(compHPF);
-                const xLPF = freqToX(compLPF);
-                if (mouseX >= xHPF && mouseX <= xLPF) hovered = "Comp Range";
-            }
-
-            if (is_filter_enabled && activeFilters.highpass && activeFilters.lowpass) {
-                check(freqToX(activeFilters.highpass.frequency.value), `EQ Highpass: ${Math.round(activeFilters.highpass.frequency.value)}Hz`);
-                check(freqToX(activeFilters.lowpass.frequency.value), `EQ Lowpass: ${Math.round(activeFilters.lowpass.frequency.value)}Hz`);
-            }
-
-            if (hovered) {
-                ctx.font = '10px sans-serif';
-                const tw = ctx.measureText(hovered).width;
-                const tx = Math.min(Math.max(mouseX - tw / 2, 0), w - tw - 4);
-                const ty = 20;
-
-                ctx.fillStyle = 'rgba(0,0,0,0.8)';
-                ctx.fillRect(tx - 2, ty - 10, tw + 4, 14);
-                ctx.fillStyle = '#fff';
-                ctx.textAlign = 'left';
-                ctx.fillText(hovered, tx, ty);
-            }
-        }
-    }
-
-    let plugin_button = null;
-    let window_created = false;
-
-    function create_ui() {
-        if (typeof Plugins !== 'undefined' && typeof Plugins.addButton === 'function') {
-            if (!plugin_button) {
-                plugin_button = Plugins.addButton(PLUGIN_ID, 'AF', on_plugin_button_click);
-                if (plugin_button) {
-                    plugin_button.title = 'Audio Filter Controls (EQ, NR, NB, Comp, Notch)';
-                }
-            }
-            if (!window_created) {
-                create_mini_window();
-            }
-            update_fil_button_state();
-            return true;
-        }
-
-        return create_fallback_ui();
-    }
-
-    function on_plugin_button_click() {
-        if (!window_created) {
-            create_mini_window();
-        }
-        if (typeof Plugins !== 'undefined' && typeof Plugins.toggleWindow === 'function') {
-            Plugins.toggleWindow(PLUGIN_ID);
-        } else {
-            var win = document.getElementById('plugin-window-' + PLUGIN_ID);
-            if (win) {
-                win.style.display = (win.style.display === 'none' || !win.style.display) ? 'flex' : 'none';
-            }
-        }
-        var win = document.getElementById('plugin-window-' + PLUGIN_ID);
-        var isVisible = win && (typeof $ !== 'undefined' ? $(win).is(':visible') : win.style.display !== 'none');
-        if (isVisible && document.getElementById('audio-filter-graph-check') && document.getElementById('audio-filter-graph-check').checked) {
-            if (typeof window.startMainGraphLoop === 'function') {
-                window.startMainGraphLoop();
-            }
-        }
-        update_fil_button_state();
-    }
-
-    function create_mini_window() {
-        if (window_created) return;
-
-        var winElem = null;
-        if (typeof Plugins !== 'undefined' && typeof Plugins.addWindow === 'function') {
-            winElem = Plugins.addWindow(PLUGIN_ID, 'Audio Filter');
-        }
-        if (!winElem) return;
-
-        if (typeof LS !== 'undefined') {
-            const name = 'plugin_' + PLUGIN_ID;
-            if (!LS.has(name + '_w')) {
-                winElem.style.width = '375px';
-            }
-        }
-
-        var $win = $(winElem);
-        $win.find('.openwebrx-plugin-close').on('click touchend', () => {
-            setTimeout(update_fil_button_state, 50);
-        });
-
-        var body = winElem.querySelector('.openwebrx-plugin-body');
-        if (!body) body = winElem;
-        body.style.padding = '6px';
-        body.style.overflow = 'hidden';
-
-        build_filter_controls(body);
-
-        window_created = true;
-    }
-
-    function build_filter_controls(container) {
-        const master = document.createElement('div');
-        master.className = 'rig-audio-bypass';
-        const masterLabel = document.createElement('span');
-        masterLabel.id = 'rig-audio-master-state';
-        const masterToggle = document.createElement('button');
-        masterToggle.id = 'rig-audio-master-toggle';
-        masterToggle.type = 'button';
-        masterToggle.onclick = function () {
-            try { set_enabled(!audio_enabled); }
-            catch (error) { masterLabel.textContent = error.message; }
-        };
-        master.append(masterLabel, masterToggle);
-        container.append(master);
-        update_master_state();
-        var content = document.createElement('div');
-        content.style.padding = '2px';
-
-        var btnContainer = document.createElement('div');
-        btnContainer.style.cssText = 'display: flex; gap: 5px; flex-wrap: nowrap; justify-content: center;';
-
-        function createBtn(label, title, hasMenu, isActiveFn, onClick, onLongPress) {
-            var btn = document.createElement('button');
-            btn.style.cssText = 'position: relative; width: 45px; height: 32px; padding: 0; line-height: 32px; font-size: 11px; font-weight: 600; border: none; border-radius: 5px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease; background: #444; color: #fff; user-select: none; -webkit-user-select: none;';
-            btn.title = title;
-
-            function update() {
-                var active = isActiveFn ? isActiveFn() : false;
-                var html = label;
-                if (hasMenu) html += '<span style="position: absolute; right: 3px; bottom: 2px; font-size: 9px; opacity: 0.7;">&#9698;</span>';
-                btn.innerHTML = html;
-                if (active) {
-                    btn.style.background = '#39FF14';
-                    btn.style.color = 'black';
-                } else {
-                    btn.style.background = '#444';
-                    btn.style.color = '#fff';
-                }
-            }
-            update();
-            control_updates.push(update);
-
-            if (onLongPress) {
-                var pressTimer;
-                var longPressTriggered = false;
-                var start = function(e) {
-                    if (e.type === 'mousedown' && e.button !== 0) return;
-                    longPressTriggered = false;
-                    pressTimer = setTimeout(function() {
-                        longPressTriggered = true;
-                        onLongPress(btn.getBoundingClientRect());
-                    }, 600);
-                };
-                var end = function(e) {
-                    if (pressTimer) clearTimeout(pressTimer);
-                    if (!longPressTriggered) {
-                        if (e.type === 'touchend') e.preventDefault();
-                        onClick();
-                        update();
-                        update_fil_button_state();
-                    }
-                };
-                btn.addEventListener('mousedown', start);
-                btn.addEventListener('mouseup', end);
-                btn.addEventListener('mouseleave', function() { if (pressTimer) clearTimeout(pressTimer); });
-                btn.addEventListener('touchstart', start, {passive: true});
-                btn.addEventListener('touchend', end);
-            } else {
-                btn.onclick = function() {
-                    onClick();
-                    update();
-                    update_fil_button_state();
-                };
-            }
-            return { element: btn, update: update };
-        }
-
-        var btnNB = createBtn('NB', 'Enable/Disable Noise Blanker.', false, () => is_nb_enabled, () => {
-            is_nb_enabled = !is_nb_enabled;
-            localStorage.setItem('openwebrx-audio-filter-declick', is_nb_enabled);
-            apply_filter_settings();
-        }).element;
-
-        var btnNotch = createBtn('Notch', 'Enable/Disable Auto Notch. Long press for settings.', true, () => is_autonotch_enabled, () => {
-            is_autonotch_enabled = !is_autonotch_enabled;
-            localStorage.setItem('openwebrx-audio-filter-autonotch', is_autonotch_enabled);
-            if (!is_autonotch_enabled) activeFilters.notches.forEach(n => n.frequency.value = 0);
-        }, (rect) => show_notch_menu(rect)).element;
-
-        var btnNR = createBtn('NR', 'Enable/Disable Noise Reduction. Long press for settings.', true, () => is_nr_enabled, () => {
-            is_nr_enabled = !is_nr_enabled;
-            localStorage.setItem('openwebrx-audio-filter-nr', is_nr_enabled);
-            apply_filter_settings();
-            if (is_nr_enabled && activeFilters.reset_nr) activeFilters.reset_nr();
-        }, (rect) => show_nr_menu(rect)).element;
-
-        var btnEq = createBtn('EQ', 'Enable/Disable Equalizer. Long press for settings.', true, () => is_filter_enabled, () => {
-            is_filter_enabled = !is_filter_enabled;
-            localStorage.setItem('openwebrx-audio-filter-enabled', is_filter_enabled);
-            apply_filter_settings();
-        }, (rect) => show_eq_menu(rect)).element;
-
-        var btnComp = createBtn('Comp', 'Enable/Disable Compressor. Long press for settings.', true, () => is_compressor_enabled, () => {
-            is_compressor_enabled = !is_compressor_enabled;
-            localStorage.setItem('openwebrx-audio-filter-compressor', is_compressor_enabled);
-            apply_filter_settings();
-        }, (rect) => show_comp_menu(rect)).element;
-
-        btnContainer.appendChild(btnNB);
-        btnContainer.appendChild(btnNotch);
-        btnContainer.appendChild(btnNR);
-        btnContainer.appendChild(btnEq);
-        btnContainer.appendChild(btnComp);
-
-        var btnSet = document.createElement('button');
-        btnSet.style.cssText = 'position: relative; width: 45px; height: 32px; padding: 0; line-height: 32px; font-size: 11px; font-weight: 600; border: none; border-radius: 5px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease; background: #444; color: #fff; user-select: none; -webkit-user-select: none;';
-        btnSet.title = 'Plugin Settings (Import/Export)';
-        btnSet.innerHTML = 'Set<span style="position: absolute; right: 3px; bottom: 2px; font-size: 9px; opacity: 0.7;">&#9698;</span>';
-        btnSet.onclick = function() {
-            show_settings_menu(btnSet.getBoundingClientRect());
-        };
-        btnContainer.appendChild(btnSet);
-
-        var divGraph = document.createElement('div');
-        divGraph.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; width: 36px; cursor: pointer; background: #222; border-radius: 4px; border: 1px solid #444; height: 32px; user-select: none; -webkit-user-select: none;';
-        divGraph.title = 'Show Visualizer';
-
-        var lblGraph = document.createElement('span');
-        lblGraph.textContent = 'Graph';
-        lblGraph.style.cssText = 'font-size: 9px; color: #ccc; line-height: 10px; margin-bottom: 1px;';
-
-        var chkGraph = document.createElement('input');
-        chkGraph.type = 'checkbox';
-        chkGraph.id = 'audio-filter-graph-check';
-        chkGraph.style.cursor = 'pointer';
-        chkGraph.style.margin = '0';
-
-        if (localStorage.getItem('openwebrx-audio-filter-show-graph') === 'true') {
-            chkGraph.checked = true;
-        }
-
-        divGraph.appendChild(lblGraph);
-        divGraph.appendChild(chkGraph);
-
-        divGraph.onclick = function(e) {
-            if (e.target !== chkGraph) {
-                chkGraph.checked = !chkGraph.checked;
-                if (chkGraph.onchange) chkGraph.onchange();
-            }
-        };
-
-        btnContainer.appendChild(divGraph);
-        content.appendChild(btnContainer);
-
-        var graphContainer = document.createElement('div');
-        graphContainer.id = 'audio-filter-main-graph';
-        graphContainer.style.cssText = 'display: none; margin-top: 5px; border-top: 1px solid #444; padding-top: 5px;';
-
-        var mainCanvas = document.createElement('canvas');
-        mainCanvas.width = 350;
-        mainCanvas.height = 110;
-        mainCanvas.style.cssText = 'background: #181818; border-radius: 3px; border: 1px solid #333; display: block; width: 100%; box-sizing: border-box;';
-        graphContainer.appendChild(mainCanvas);
-        content.appendChild(graphContainer);
-
-        var mainCtx = mainCanvas.getContext('2d');
-        var mainLoopId;
-        var mouseX = -1, mouseY = -1;
-
-        mainCanvas.addEventListener('click', function(e) {
-            var rect = mainCanvas.getBoundingClientRect();
-            var clickX = e.clientX - rect.left;
-            var clickY = e.clientY - rect.top;
-
-            if (clickX >= 5 && clickX <= 30 && clickY >= 2 && clickY <= 14) {
-                show_input_spectrum = !show_input_spectrum;
-                localStorage.setItem('openwebrx-audio-filter-show-in-spec', show_input_spectrum);
-            }
-
-            if (clickX >= 32 && clickX <= 60 && clickY >= 2 && clickY <= 14) {
-                show_output_spectrum = !show_output_spectrum;
-                localStorage.setItem('openwebrx-audio-filter-show-out-spec', show_output_spectrum);
-            }
-        });
-
-        mainCanvas.addEventListener('mousemove', function(e) {
-            var rect = mainCanvas.getBoundingClientRect();
-            mouseX = e.clientX - rect.left;
-            mouseY = e.clientY - rect.top;
-            if ((mouseX >= 5 && mouseX <= 30 && mouseY >= 2 && mouseY <= 14) ||
-                (mouseX >= 32 && mouseX <= 60 && mouseY >= 2 && mouseY <= 14)) {
-                mainCanvas.style.cursor = 'pointer';
-            } else {
-                mainCanvas.style.cursor = 'default';
-            }
-        });
-        mainCanvas.addEventListener('mouseleave', function() {
-            mouseX = -1; mouseY = -1;
-            mainCanvas.style.cursor = 'default';
-        });
-
-        window.startMainGraphLoop = function() {
-            if (mainLoopId) cancelAnimationFrame(mainLoopId);
-            let lastDraw = 0;
-            const interval = 40; // ~25 FPS
-
-            function loop(timestamp) {
-                var win = document.getElementById('plugin-window-' + PLUGIN_ID);
-                var fallbackPanel = document.getElementById('audio-filter-floating-panel');
-                var isVisible = false;
-                if (win) {
-                    isVisible = (typeof $ !== 'undefined') ? $(win).is(':visible') : (win.style.display !== 'none');
-                } else if (fallbackPanel) {
-                    isVisible = fallbackPanel.style.display !== 'none';
-                }
-
-                if (!chkGraph.checked || !isVisible) return;
-                if (document.hidden) return;
-                mainLoopId = requestAnimationFrame(loop);
-                if (timestamp - lastDraw >= interval) {
-                    lastDraw = timestamp;
-                    draw_comp_visualization(mainCtx, mainCanvas.width, mainCanvas.height, mouseX, mouseY);
-                }
-            }
-            requestAnimationFrame(loop);
-        };
-
-        document.addEventListener('visibilitychange', function() {
-            var win = document.getElementById('plugin-window-' + PLUGIN_ID);
-            var fallbackPanel = document.getElementById('audio-filter-floating-panel');
-            var isVisible = false;
-            if (win) {
-                isVisible = (typeof $ !== 'undefined') ? $(win).is(':visible') : (win.style.display !== 'none');
-            } else if (fallbackPanel) {
-                isVisible = fallbackPanel.style.display !== 'none';
-            }
-            if (!document.hidden && chkGraph.checked && isVisible) {
-                startMainGraphLoop();
-            }
-        });
-
-        chkGraph.onchange = function() {
-            localStorage.setItem('openwebrx-audio-filter-show-graph', chkGraph.checked);
-            if (chkGraph.checked) {
-                graphContainer.style.display = 'block';
-                startMainGraphLoop();
-            } else {
-                graphContainer.style.display = 'none';
-                if (mainLoopId) cancelAnimationFrame(mainLoopId);
-            }
-        };
-
-        if (chkGraph.checked) {
-            graphContainer.style.display = 'block';
-        }
-
-        container.appendChild(content);
-    }
-
-    function create_fallback_ui() {
-        var container = document.querySelector('#openwebrx-panel-receiver');
-        if (!container) return false;
-
-        if (!document.getElementById('audio-filter-toggle-btn')) {
-            var toggleBtn = document.createElement('div');
-            toggleBtn.id = 'audio-filter-toggle-btn';
-            toggleBtn.textContent = 'AF';
-            toggleBtn.title = 'Open Audio Filter Controls';
-            toggleBtn.style.cssText = 'position: absolute; bottom: 3px; left: 4px; z-index: 99; font-size: 12px; font-weight: bold; color: #aaa; cursor: pointer; background: rgba(0,0,0,0.5); padding: 0px 4px; border-radius: 3px; border: 1px solid #666; user-select: none; line-height: 12px; transition: left 0.2s;';
-
-            toggleBtn.onclick = function() {
-                var panel = document.getElementById('audio-filter-floating-panel');
-                if (!panel) return;
-                if (panel.style.display === 'none') {
-                    panel.style.display = 'block';
-                } else {
-                    panel.style.display = 'none';
-                }
-                update_fil_button_state();
-                if (panel.style.display !== 'none' && document.getElementById('audio-filter-graph-check').checked) {
-                    startMainGraphLoop();
-                }
-            };
-
-            container.appendChild(toggleBtn);
-
-            var af_update_pos = function() {
-                var btn = document.getElementById('audio-filter-toggle-btn');
-                if (!btn) return;
-                var cont = document.querySelector('#openwebrx-panel-receiver');
-                if (!cont) return;
-
-                var allButtons = Array.from(cont.querySelectorAll('div[id$="-toggle-btn"], div[id$="-btn"], div[id="openwebrx-clock-utc"]'))
-                    .filter(b => b.offsetParent !== null);
-
-                allButtons.sort((a, b) => {
-                    if (a.id === 'openwebrx-clock-utc') return -1;
-                    if (b.id === 'openwebrx-clock-utc') return 1;
-                    return a.id.localeCompare(b.id);
-                });
-
-                var left = 4;
-                for (var i = 0; i < allButtons.length; i++) {
-                    var currentBtn = allButtons[i];
-                    if (currentBtn.id === btn.id) {
-                        break;
-                    }
-                    var rect = currentBtn.getBoundingClientRect();
-                    if (rect.width > 0) {
-                        left += rect.width + 4;
-                    }
-                }
-
-                btn.style.left = left + 'px';
-            };
-            setInterval(af_update_pos, 1000);
-            af_update_pos();
-        }
-
-        if (!document.getElementById('audio-filter-floating-panel')) {
-            var panel = document.createElement('div');
-            panel.id = 'audio-filter-floating-panel';
-            panel.style.cssText = 'display: none; position: fixed; top: 200px; left: 10px; background: rgba(30,30,30,0.95); border: 1px solid #666; border-radius: 5px; padding: 0; z-index: 10000; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-family: sans-serif;';
-
-            var dragHandle = document.createElement('div');
-            dragHandle.textContent = 'Audio Filter';
-            dragHandle.style.cssText = 'height: 18px; line-height: 18px; font-size: 11px; color: #ddd; text-align: center; background: #444; cursor: move; border-radius: 5px 5px 0 0; width: 100%; border-bottom: 1px solid #555; user-select: none;';
-            dragHandle.title = 'Drag to move';
-            panel.appendChild(dragHandle);
-
-            var isDragging = false;
-            var dragOffsetX = 0;
-            var dragOffsetY = 0;
-
-            var startDrag = function(e) {
-                isDragging = true;
-                var clientX = e.clientX;
-                var clientY = e.clientY;
-                if (e.touches && e.touches.length > 0) {
-                    clientX = e.touches[0].clientX;
-                    clientY = e.touches[0].clientY;
-                }
-                dragOffsetX = clientX - panel.offsetLeft;
-                dragOffsetY = clientY - panel.offsetTop;
-                e.preventDefault();
-            };
-
-            var doDrag = function(e) {
-                if (isDragging) {
-                    var clientX = e.clientX;
-                    var clientY = e.clientY;
-                    if (e.touches && e.touches.length > 0) {
-                        clientX = e.touches[0].clientX;
-                        clientY = e.touches[0].clientY;
-                    }
-                    panel.style.left = (clientX - dragOffsetX) + 'px';
-                    panel.style.top = (clientY - dragOffsetY) + 'px';
-                    if (e.type === 'touchmove') e.preventDefault();
-                }
-            };
-
-            var stopDrag = function() { isDragging = false; };
-
-            dragHandle.addEventListener('mousedown', startDrag);
-            document.addEventListener('mousemove', doDrag);
-            document.addEventListener('mouseup', stopDrag);
-
-            dragHandle.addEventListener('touchstart', startDrag, {passive: false});
-            document.addEventListener('touchmove', doDrag, {passive: false});
-            document.addEventListener('touchend', stopDrag);
-
-            var panelBody = document.createElement('div');
-            panelBody.style.padding = '5px';
-            build_filter_controls(panelBody);
-
-            panel.appendChild(panelBody);
-            document.body.appendChild(panel);
-        }
-
-        update_fil_button_state();
-        return true;
-    }
-
-    function get_modulation() {
-        if (typeof UI !== 'undefined' && UI.getDemodulator) {
-            var demod = UI.getDemodulator();
-            if (demod && typeof demod.get_modulation === 'function') {
-                return demod.get_modulation();
-            }
-        }
-        return 'ssb'; // Fallback
-    }
-
-    function check_modulation_loop() {
-        let current_mod = get_modulation();
-
-        if (current_mod && current_mod !== last_modulation) {
-            // Save current settings to store before switching
-            let oldKey = get_config_mode(last_modulation);
-            settings_store[oldKey] = JSON.parse(JSON.stringify(override_settings));
-
-            last_modulation = current_mod;
-
-            // Reset NR state before applying new settings for the new mode
-            if (is_nr_enabled && activeFilters.reset_nr) {
-                activeFilters.reset_nr();
-            }
-
-            // Load settings for new mode
-            let newKey = get_config_mode(current_mod);
-            if (settings_store[newKey]) {
-                override_settings = JSON.parse(JSON.stringify(settings_store[newKey]));
-            } else {
-                override_settings = create_empty_settings();
-            }
-            apply_filter_settings();
-            saveSettings();
-        }
-    }
-
-    function apply_filter_settings() {
-        let settings;
-        let effectiveHP, effectiveLP, effectivePeakGain, effectivePeakFreq, effectivePeakQ, effectiveGain, effectiveNotchQ, effectiveCompHPF, effectiveCompLPF;
-        let dynSettings = {};
-
-        let modKey = get_config_mode(last_modulation);
-        let baseSettings = CONFIG[modKey];
-        effectiveNotchQ = (override_settings.notchQ !== null && override_settings.notchQ !== undefined) ? override_settings.notchQ : (baseSettings.notchQ || 30);
-
-        let effectiveAirGain = (override_settings.airGain !== null && override_settings.airGain !== undefined) ? override_settings.airGain : (baseSettings.airGain !== undefined ? baseSettings.airGain : 0);
-        let effectiveAirFreq = (override_settings.airFreq !== null && override_settings.airFreq !== undefined) ? override_settings.airFreq : (baseSettings.airFreq !== undefined ? baseSettings.airFreq : 12000);
-
-        effectiveCompHPF = (override_settings.compHPF !== null && override_settings.compHPF !== undefined) ? override_settings.compHPF : (baseSettings.compHPF || 300);
-        effectiveCompLPF = (override_settings.compLPF !== null && override_settings.compLPF !== undefined) ? override_settings.compLPF : (baseSettings.compLPF || 3000);
-
-        let nrSettings = {
-            enabled: is_nr_enabled,
-            gain: (override_settings.nr_gain !== null && override_settings.nr_gain !== undefined) ? override_settings.nr_gain : (baseSettings.nr_gain || 0),
-            alpha: (override_settings.nr_alpha !== null && override_settings.nr_alpha !== undefined) ? override_settings.nr_alpha : (baseSettings.nr_alpha || 0.95),
-            snr: (override_settings.nr_snr !== null && override_settings.nr_snr !== undefined) ? override_settings.nr_snr : (baseSettings.nr_snr || 10),
-            comb: (override_settings.nr_comb !== null && override_settings.nr_comb !== undefined) ? override_settings.nr_comb : (baseSettings.nr_comb !== undefined ? baseSettings.nr_comb : 0.5),
-            speech_mode: (override_settings.nr_speech_mode !== null && override_settings.nr_speech_mode !== undefined) ? override_settings.nr_speech_mode : (baseSettings.nr_speech_mode !== undefined ? baseSettings.nr_speech_mode : false)
-        };
-
-        dynSettings = {
-            nb_enabled: is_nb_enabled,
-            comp_enabled: is_compressor_enabled,
-            agcTarget: baseSettings.agcTarget,
-            maxBoost: (override_settings.maxBoost !== null && override_settings.maxBoost !== undefined) ? override_settings.maxBoost : baseSettings.maxBoost,
-            gateThresh: (override_settings.gateThresh !== null && override_settings.gateThresh !== undefined) ? override_settings.gateThresh : 0.004,
-            hangTime: (override_settings.hangTime !== null && override_settings.hangTime !== undefined) ? override_settings.hangTime : 0.2,
-            recoveryTime: (override_settings.recoveryTime !== null && override_settings.recoveryTime !== undefined) ? override_settings.recoveryTime : 0.5,
-            compGain: (override_settings.compGain !== null && override_settings.compGain !== undefined) ? override_settings.compGain : 0.10,
-            sampleRate: activeFilters.gain ? activeFilters.gain.context.sampleRate : 48000
-        };
-
-        if (!is_filter_enabled) {
-            // Bypass / Neutral (Filter disabled)
-            let maxFreq = 22000;
-            if (activeFilters.lowpass && activeFilters.lowpass.context) {
-                maxFreq = (activeFilters.lowpass.context.sampleRate / 2) - 100;
-            }
-            settings = { gain: 1.0 };
-            effectiveHP = 0;
-            effectiveLP = maxFreq;
-            effectivePeakGain = 0;
-            effectiveGain = 1.0;
-            effectivePeakFreq = 2000;
-            effectivePeakQ = 1.0;
-
-            if (is_nr_enabled && get_config_mode(last_modulation) === 'am') {
-                effectivePeakGain = 6.0;
-                effectivePeakFreq = 500;
-                effectivePeakQ = 1.0;
-            }
-        } else {
-            settings = baseSettings;
-            effectiveHP = (override_settings.highpassFreq !== null) ? override_settings.highpassFreq : settings.highpassFreq;
-            effectiveLP = (override_settings.lowpassFreq !== null) ? override_settings.lowpassFreq : settings.lowpassFreq;
-            effectivePeakGain = (override_settings.peakingGain !== null) ? override_settings.peakingGain : (settings.peakingGain || 0);
-            effectivePeakFreq = (override_settings.peakingFreq !== null && override_settings.peakingFreq !== undefined) ? override_settings.peakingFreq : (settings.peakingFreq || 2000);
-            effectivePeakQ = (override_settings.peakingQ !== null && override_settings.peakingQ !== undefined) ? override_settings.peakingQ : (settings.peakingQ || 1.0);
-            effectiveGain = settings.gain; // Fixed gain
-        }
-
-        activeFilters.dynamicsSettings = dynSettings;
-        activeFilters.nrSettings = nrSettings;
-        const workletSettings = Object.assign({}, dynSettings, nrSettings);
-        [activeFilters.nbProcessor, activeFilters.nrProcessor, activeFilters.compProcessor].forEach(function (processor) {
-            if (processor && processor.port) {
-                processor.port.postMessage({ type: 'settings', value: workletSettings });
-            }
-        });
-
-        if (activeFilters.highpass) activeFilters.highpass.frequency.value = effectiveHP;
-        if (activeFilters.lowpass) activeFilters.lowpass.frequency.value = effectiveLP;
-        if (activeFilters.gain) activeFilters.gain.gain.value = effectiveGain;
-
-        if (activeFilters.compHighpass && activeFilters.compLowpass) {
-            if (is_compressor_enabled) {
-                activeFilters.compHighpass.frequency.value = effectiveCompHPF;
-                activeFilters.compLowpass.frequency.value = effectiveCompLPF;
-            } else {
-                activeFilters.compHighpass.frequency.value = 0;
-                activeFilters.compLowpass.frequency.value = (activeFilters.compLowpass.context.sampleRate / 2) - 100;
-            }
-        }
-
-        if (activeFilters.loudness) {
-            activeFilters.loudness.gain.value = ((is_filter_enabled && is_loudness_enabled) || (is_nr_enabled && get_config_mode(last_modulation) === 'am')) ? 12 : 0;
-        }
-
-        if (activeFilters.notches) {
-            activeFilters.notches.forEach(n => {
-                if (n) n.Q.value = effectiveNotchQ;
-            });
-        }
-
-        if (activeFilters.peaking) {
-            if (is_filter_enabled || (is_nr_enabled && get_config_mode(last_modulation) === 'am')) {
-                activeFilters.peaking.frequency.value = effectivePeakFreq;
-                activeFilters.peaking.Q.value = effectivePeakQ;
-            }
-            activeFilters.peaking.gain.value = effectivePeakGain;
-        }
-
-        if (activeFilters.air) {
-            let finalAirGain = is_compressor_enabled ? effectiveAirGain : 0;
-            if (!is_filter_enabled && is_nr_enabled && get_config_mode(last_modulation) === 'am') {
-                finalAirGain = 5.0;
-            }
-            activeFilters.air.gain.value = finalAirGain;
-            activeFilters.air.frequency.value = effectiveAirFreq;
-        }
-    }
-
-    function process_audio_analysis() {
-        if (!audio_enabled || !activeFilters.analyser || !is_autonotch_enabled) return;
-
-        const bufferLength = activeFilters.analyser.frequencyBinCount;
-
-        if (!analysisBuffer || analysisBuffer.length !== bufferLength) {
-            analysisBuffer = new Float32Array(bufferLength);
-        }
-        const dataArray = analysisBuffer;
-        activeFilters.analyser.getFloatFrequencyData(dataArray);
-
-        const sampleRate = activeFilters.analyser.context.sampleRate;
-        const binSize = sampleRate / activeFilters.analyser.fftSize;
-
-        let sum = 0;
-        let count = 0;
-        let effectiveNotchRange = (override_settings.notchRange !== null && override_settings.notchRange !== undefined) ? override_settings.notchRange : 4000;
-        let effectiveNotchCenter = (override_settings.notchCenter !== null && override_settings.notchCenter !== undefined) ? override_settings.notchCenter : (effectiveNotchRange / 2);
-
-        let halfWidth = effectiveNotchRange / 2;
-        let startFreq = Math.max(50, effectiveNotchCenter - halfWidth);
-        let endFreq = effectiveNotchCenter + halfWidth;
-        const startBin = Math.floor(startFreq / binSize);
-        const endBin = Math.floor(endFreq / binSize);
-
-        for (let i = startBin; i < endBin; i++) {
-            if (dataArray[i] > -150) {
-                sum += dataArray[i];
-                count++;
-            }
-        }
-        const currentNoiseFloor = (count > 0) ? (sum / count) : -100;
-
-        if (typeof activeFilters.smoothedNoiseFloor === 'undefined') activeFilters.smoothedNoiseFloor = currentNoiseFloor;
-        if (currentNoiseFloor > activeFilters.smoothedNoiseFloor) {
-            activeFilters.smoothedNoiseFloor = activeFilters.smoothedNoiseFloor * 0.98 + currentNoiseFloor * 0.02;
-        } else {
-            activeFilters.smoothedNoiseFloor = activeFilters.smoothedNoiseFloor * 0.8 + currentNoiseFloor * 0.2;
-        }
-
-        // --- Auto Notch Logic ---
-        if (!is_autonotch_enabled) return;
-
-        const threshold = activeFilters.smoothedNoiseFloor + 4; // 4dB above smoothed floor
-
-        let peaks = [];
-        for (let i = startBin + 1; i < endBin - 1; i++) {
-            const v = dataArray[i];
-            if (v > threshold) {
-                if (v > dataArray[i-1] && v > dataArray[i+1]) {
-                    peaks.push({ freq: i * binSize, mag: v });
-                }
-            }
-        }
-
-        peaks.sort((a, b) => b.mag - a.mag);
-
-        let effectiveMaxNotches = (override_settings.maxNotches !== null && override_settings.maxNotches !== undefined) ? override_settings.maxNotches : 4;
-
-        activeFilters.notches.forEach(n => {
-            if (typeof n.notchConfidence === 'undefined') n.notchConfidence = 0;
-            if (typeof n.notchLastFreq === 'undefined') n.notchLastFreq = 0;
-            if (typeof n.notchLastMag === 'undefined') n.notchLastMag = -100;
-        });
-
-        activeFilters.notches.forEach(n => {
-            if (n.notchConfidence > 0) {
-                let bestMatchIndex = -1;
-                let minDiff = 60; // Search window +/- 60Hz
-
-                for (let i = 0; i < peaks.length; i++) {
-                    let diff = Math.abs(peaks[i].freq - n.notchLastFreq);
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        bestMatchIndex = i;
-                    }
-                }
-
-                if (bestMatchIndex !== -1) {
-                    n.notchLastFreq = peaks[bestMatchIndex].freq;
-                    n.notchLastMag = peaks[bestMatchIndex].mag;
-                    n.notchConfidence = Math.min(n.notchConfidence + 10, 100);
-                    peaks.splice(bestMatchIndex, 1);
-                } else {
-                    n.notchConfidence -= 1;
-                    n.notchLastMag = -100;
-                }
-            }
-        });
-
-        let activeCandidates = activeFilters.notches.filter(n => n.notchConfidence > 0);
-        if (activeCandidates.length > effectiveMaxNotches) {
-            activeCandidates.sort((a, b) => a.notchConfidence - b.notchConfidence);
-            while (activeCandidates.length > effectiveMaxNotches) {
-                let victim = activeCandidates.shift();
-                victim.notchConfidence = 0;
-                victim.notchLastMag = -100;
-            }
-        }
-
-        while (peaks.length > 0) {
-            let p = peaks.shift();
-
-            let activeNotches = activeFilters.notches.filter(n => n.notchConfidence > 0);
-
-            if (activeNotches.length < effectiveMaxNotches) {
-                let freeFilter = activeFilters.notches.find(n => n.notchConfidence <= 0);
-                if (freeFilter) {
-                    freeFilter.notchLastFreq = p.freq;
-                    freeFilter.notchLastMag = p.mag;
-                    freeFilter.notchConfidence = 50;
-                    continue;
-                }
-            }
-
-            if (activeNotches.length > 0) {
-                activeNotches.sort((a, b) => a.notchLastMag - b.notchLastMag);
-                let weakest = activeNotches[0];
-
-                if (p.mag > weakest.notchLastMag + 6) {
-                    weakest.notchLastFreq = p.freq;
-                    weakest.notchLastMag = p.mag;
-                    weakest.notchConfidence = 50;
-                    continue;
-                }
-            }
-        }
-
-        activeFilters.notches.forEach(n => {
-            if (n.notchConfidence > 0) {
-                let current = n.frequency.value;
-                let target = n.notchLastFreq;
-                if (current < 10) n.frequency.value = target;
-                else n.frequency.value = current + (target - current) * 0.5;
-            } else {
-                n.frequency.value = 0;
-                n.notchLastFreq = 0;
-            }
-        });
-    }
-
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(initAudioFilter, 100);
-    } else {
-        window.addEventListener('load', initAudioFilter);
-    }
-
-    window.RigDockAudioFilter = {
-        myname: PLUGIN_ID,
-        init: initAudioFilter,
-        toggle: on_plugin_button_click
-    };
-
-    if (typeof Plugins !== 'undefined' && Plugins.rig_audio) {
-        Plugins.rig_audio._version = '0.1.0';
-        Plugins.rig_audio.setEnabled = set_enabled;
-        Plugins.rig_audio.isEnabled = function () { return audio_enabled; };
-        Plugins.rig_audio.no_css = true;
-        Plugins.rig_audio.init = function() {
-            initAudioFilter();
-            return true;
-        };
-    }
-
-    function createFloatingMenu(id, titleText, rect, width, buildContentFn) {
-        var existing = document.getElementById(id);
-        if (existing) existing.remove();
-
-        var menu = document.createElement('div');
-        menu.id = id;
-        menu.style.cssText = 'position: fixed; background: #222; border: 1px solid #444; color: #eee; z-index: 10001; border-radius: 4px; padding: 10px; font-family: sans-serif; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); width: ' + width + 'px; visibility: hidden;';
-
-        if (titleText) {
-            var title = document.createElement('div');
-            title.textContent = titleText;
-            title.style.cssText = 'font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px;';
-            menu.appendChild(title);
-        }
-
-        buildContentFn(menu);
-
-        var closeHandler = function(e) {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('mousedown', closeHandler);
-                document.removeEventListener('touchstart', closeHandler);
-            }
-        };
-
-        setTimeout(function() {
-            document.addEventListener('mousedown', closeHandler);
-            document.addEventListener('touchstart', closeHandler);
-        }, 10);
-
-        document.body.appendChild(menu);
-
-        var menuHeight = menu.offsetHeight;
-        var menuWidth = menu.offsetWidth;
-        var left = rect.left;
-        if (left + menuWidth > window.innerWidth - 5) left = rect.right - menuWidth;
-        if (left < 5) left = 5;
-
-        if (rect.top < menuHeight + 10) menu.style.top = rect.bottom + 5 + 'px';
-        else menu.style.bottom = (window.innerHeight - rect.top) + 5 + 'px';
-
-        menu.style.left = left + 'px';
-        menu.style.visibility = 'visible';
-    }
-
-    function show_eq_menu(rect) {
-        createFloatingMenu('audio-filter-eq-menu', null, rect, 200, function(menu) {
-        let modKey = get_config_mode(last_modulation);
-        let base = CONFIG[modKey];
-        let currentHP = (override_settings.highpassFreq !== null) ? override_settings.highpassFreq : base.highpassFreq;
-        let currentLP = (override_settings.lowpassFreq !== null) ? override_settings.lowpassFreq : base.lowpassFreq;
-        let currentPeak = (override_settings.peakingGain !== null) ? override_settings.peakingGain : base.peakingGain;
-        let currentPeakFreq = (override_settings.peakingFreq !== null && override_settings.peakingFreq !== undefined) ? override_settings.peakingFreq : base.peakingFreq;
-        let currentPeakQ = (override_settings.peakingQ !== null && override_settings.peakingQ !== undefined) ? override_settings.peakingQ : (base.peakingQ || 1.0);
-
-        var sliders = []; // Store update functions for reset
-
-        function createMappedSlider(label, value0to100, onChange, formatFn) {
-            var container = document.createElement('div');
-            container.style.marginBottom = '8px';
-
-            var getLabelText = function(val) {
-                if (formatFn) return label + ': ' + formatFn(val);
-                return label + ': ' + Math.round(val) + '%';
-            };
-
-            var lbl = document.createElement('div');
-            lbl.textContent = getLabelText(value0to100);
-            lbl.style.marginBottom = '2px';
-
-            var inp = document.createElement('input');
-            inp.type = 'range';
-            inp.min = 0;
-            inp.max = 100;
-            inp.value = value0to100;
-            inp.style.width = '100%';
-
-            var updateUI = function(val) {
-                inp.value = val;
-                lbl.textContent = getLabelText(val);
-            };
-            sliders.push(updateUI);
-
-            inp.oninput = function() {
-                lbl.textContent = getLabelText(parseFloat(inp.value));
-                onChange(parseFloat(inp.value));
-            };
-
-            inp.onchange = function() {
-                saveSettings();
-            };
-
-            container.appendChild(lbl);
-            container.appendChild(inp);
-
-            return container;
-        }
-
-        var minBassFreq = 50, maxBassFreq = 1350;
-        var bassPercent = 100 * (maxBassFreq - currentHP) / (maxBassFreq - minBassFreq);
-        if (bassPercent < 0) bassPercent = 0; if (bassPercent > 100) bassPercent = 100;
-
-        menu.appendChild(createMappedSlider('Bass', bassPercent, function(val) {
-            var freq = maxBassFreq - (val / 100) * (maxBassFreq - minBassFreq);
-            override_settings.highpassFreq = freq;
-            apply_filter_settings();
-        }));
-
-        var minTrebFreq = 1500, maxTrebFreq = 13500;
-        var trebPercent = 100 * Math.log(currentLP / minTrebFreq) / Math.log(maxTrebFreq / minTrebFreq);
-        if (trebPercent < 0) trebPercent = 0; if (trebPercent > 100) trebPercent = 100;
-
-        menu.appendChild(createMappedSlider('Treble', trebPercent, function(val) {
-            var freq = minTrebFreq * Math.pow(maxTrebFreq / minTrebFreq, val / 100);
-            override_settings.lowpassFreq = freq;
-            apply_filter_settings();
-        }));
-
-        var presPercent = 100 * currentPeak / 33;
-        if (presPercent < 0) presPercent = 0; if (presPercent > 100) presPercent = 100;
-
-        menu.appendChild(createMappedSlider('Presence', presPercent, function(val) {
-            override_settings.peakingGain = val * 33 / 100;
-            apply_filter_settings();
-        }));
-
-        var minPresFreq = 200, maxPresFreq = 8000;
-        var presFreqPercent = 100 * Math.log(currentPeakFreq / minPresFreq) / Math.log(maxPresFreq / minPresFreq);
-        if (presFreqPercent < 0) presFreqPercent = 0; if (presFreqPercent > 100) presFreqPercent = 100;
-
-        var minQ = 0.5, maxQ = 4.0;
-
-        menu.appendChild(createMappedSlider('Presence Freq', presFreqPercent, function(val) {
-            var freq = minPresFreq * Math.pow(maxPresFreq / minPresFreq, val / 100);
-            override_settings.peakingFreq = freq;
-            apply_filter_settings();
-
-            if (sliders[4]) {
-                var q = (override_settings.peakingQ !== null && override_settings.peakingQ !== undefined) ? override_settings.peakingQ : currentPeakQ;
-                var wPct = 100 * (maxQ - q) / (maxQ - minQ);
-                if (wPct < 0) wPct = 0; if (wPct > 100) wPct = 100;
-                sliders[4](wPct);
-            }
-        }, function(val) {
-            var freq = minPresFreq * Math.pow(maxPresFreq / minPresFreq, val / 100);
-            return Math.round(freq) + 'Hz';
-        }));
-
-        var widthPercent = 100 * (maxQ - currentPeakQ) / (maxQ - minQ);
-        if (widthPercent < 0) widthPercent = 0; if (widthPercent > 100) widthPercent = 100;
-
-        menu.appendChild(createMappedSlider('Presence Width', widthPercent, function(val) {
-            var q = maxQ - (val / 100) * (maxQ - minQ);
-            override_settings.peakingQ = q;
-            apply_filter_settings();
-        }, function(val) {
-            var q = maxQ - (val / 100) * (maxQ - minQ);
-            var freq = (override_settings.peakingFreq !== null && override_settings.peakingFreq !== undefined) ? override_settings.peakingFreq : currentPeakFreq;
-            var bw = freq / q;
-            return Math.round(bw) + 'Hz (Q: ' + q.toFixed(1) + ')';
-        }));
-
-        var loudDiv = document.createElement('div');
-        loudDiv.style.marginTop = '10px';
-        loudDiv.style.borderTop = '1px solid #444';
-        loudDiv.style.paddingTop = '5px';
-
-        var loudLbl = document.createElement('label');
-        loudLbl.style.display = 'flex';
-        loudLbl.style.alignItems = 'center';
-        loudLbl.style.cursor = 'pointer';
-
-        var loudChk = document.createElement('input');
-        loudChk.type = 'checkbox';
-        loudChk.checked = is_loudness_enabled;
-        loudChk.style.marginRight = '8px';
-        loudChk.onchange = function() {
-            is_loudness_enabled = loudChk.checked;
-            localStorage.setItem('openwebrx-audio-filter-loudness', is_loudness_enabled);
-            apply_filter_settings();
-            update_fil_button_state();
-        };
-
-        loudLbl.appendChild(loudChk);
-        loudLbl.appendChild(document.createTextNode('Loudness'));
-        loudDiv.appendChild(loudLbl);
-        menu.appendChild(loudDiv);
-
-        var btnDef = document.createElement('button');
-        btnDef.textContent = 'Default';
-        btnDef.style.cssText = 'margin-top: 10px; width: 100%; height: 24px; background: #444; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; user-select: none; -webkit-user-select: none;';
-        btnDef.onclick = function() {
-            let modKey = get_config_mode(last_modulation);
-            let def = CONFIG[modKey];
-
-            override_settings.highpassFreq = null;
-            override_settings.lowpassFreq = null;
-            override_settings.peakingGain = null;
-            override_settings.peakingFreq = null;
-            override_settings.peakingQ = null;
-            override_settings.nr_gain = null;
-            override_settings.nr_alpha = null;
-            override_settings.nr_snr = null;
-            override_settings.nr_speech_mode = null;
-            if (settings_store[modKey]) {
-                settings_store[modKey].highpassFreq = null;
-                settings_store[modKey].lowpassFreq = null;
-                settings_store[modKey].peakingGain = null;
-                settings_store[modKey].peakingFreq = null;
-                settings_store[modKey].peakingQ = null;
-                settings_store[modKey].nr_gain = null;
-                settings_store[modKey].nr_alpha = null;
-                settings_store[modKey].nr_snr = null;
-                settings_store[modKey].nr_speech_mode = null;
-            }
-
-            is_loudness_enabled = false;
-            localStorage.setItem('openwebrx-audio-filter-loudness', 'false');
-            loudChk.checked = false;
-
-            saveSettings();
-            apply_filter_settings();
-            update_fil_button_state();
-
-            // Update Sliders UI
-            var bassPercent = 100 * (maxBassFreq - def.highpassFreq) / (maxBassFreq - minBassFreq);
-            if (bassPercent < 0) bassPercent = 0; if (bassPercent > 100) bassPercent = 100;
-            sliders[0](bassPercent);
-
-            var trebPercent = 100 * Math.log(def.lowpassFreq / minTrebFreq) / Math.log(maxTrebFreq / minTrebFreq);
-            if (trebPercent < 0) trebPercent = 0; if (trebPercent > 100) trebPercent = 100;
-            sliders[1](trebPercent);
-
-            var presPercent = 100 * (def.peakingGain || 0) / 33;
-            if (presPercent < 0) presPercent = 0; if (presPercent > 100) presPercent = 100;
-            sliders[2](presPercent);
-
-            var presFreqPercent = 100 * Math.log((def.peakingFreq || 2000) / minPresFreq) / Math.log(maxPresFreq / minPresFreq);
-            if (presFreqPercent < 0) presFreqPercent = 0; if (presFreqPercent > 100) presFreqPercent = 100;
-            sliders[3](presFreqPercent);
-
-            var defQ = def.peakingQ || 1.0;
-            var defWidthPercent = 100 * (maxQ - defQ) / (maxQ - minQ);
-            if (defWidthPercent < 0) defWidthPercent = 0; if (defWidthPercent > 100) defWidthPercent = 100;
-            sliders[4](defWidthPercent);
-        };
-        menu.appendChild(btnDef);
-        });
-    }
-
-    function show_comp_menu(rect) {
-        createFloatingMenu('audio-filter-comp-menu', 'Compressor Settings', rect, 220, function(menu) {
-
-        function createSlider(label, key, min, max, step, scale, precision) {
-            var container = document.createElement('div');
-            container.style.marginBottom = '8px';
-
-            var baseSettings = CONFIG[get_config_mode(last_modulation)];
-            var defVal = baseSettings[key];
-            if (defVal === undefined) {
-                 switch(key) {
-                    case 'gateThresh': defVal = 0.004; break;
-                    case 'hangTime': defVal = 0.2; break;
-                    case 'recoveryTime': defVal = 0.5; break;
-                    case 'compGain': defVal = 0.10; break;
-                    case 'airGain': defVal = 0; break;
-                    case 'airFreq': defVal = 12000; break;
-                    default: defVal = 0;
-                }
-            }
-            var val = (override_settings[key] !== null && override_settings[key] !== undefined) ? override_settings[key] : defVal;
-
-            var lbl = document.createElement('div');
-            var decimals = (precision !== undefined) ? precision : (scale ? 0 : 2);
-            lbl.textContent = label + ': ' + (val * (scale || 1)).toFixed(decimals);
-            lbl.style.marginBottom = '2px';
-
-            var inp = document.createElement('input');
-            inp.type = 'range';
-            inp.min = min;
-            inp.max = max;
-            inp.step = step;
-            inp.value = val;
-            inp.style.width = '100%';
-
-            inp.oninput = function() {
-                var v = parseFloat(inp.value);
-                lbl.textContent = label + ': ' + (v * (scale || 1)).toFixed(decimals);
-                override_settings[key] = v;
-                apply_filter_settings();
-            };
-
-            inp.onchange = function() {
-                saveSettings();
-            };
-
-            container.appendChild(lbl);
-            container.appendChild(inp);
-            return container;
-        }
-
-        function createCustomSlider(label, min, max, step, initialVal, onChange) {
-            var container = document.createElement('div');
-            container.style.marginBottom = '8px';
-
-            var lbl = document.createElement('div');
-            lbl.textContent = label + ': ' + Math.round(initialVal) + 'Hz';
-            lbl.style.marginBottom = '2px';
-
-            var inp = document.createElement('input');
-            inp.type = 'range';
-            inp.min = min;
-            inp.max = max;
-            inp.step = step;
-            inp.value = initialVal;
-            inp.style.width = '100%';
-
-            inp.oninput = function() {
-                var v = parseFloat(inp.value);
-                lbl.textContent = label + ': ' + Math.round(v) + 'Hz';
-                onChange(v);
-            };
-
-            inp.onchange = function() {
-                saveSettings();
-            };
-
-            container.appendChild(lbl);
-            container.appendChild(inp);
-            return container;
-        }
-
-        var eqHint = document.createElement('div');
-        eqHint.textContent = 'Equalizer (Air)';
-        eqHint.style.cssText = 'font-size: 10px; color: #aaa; margin-bottom: 5px; font-weight: 600;';
-        menu.appendChild(eqHint);
-
-        menu.appendChild(createSlider('Air Gain (dB)', 'airGain', 0, 20, 0.5));
-
-        var sep = document.createElement('div');
-        sep.style.cssText = 'border-bottom: 1px solid #444; margin: 8px 0;';
-        menu.appendChild(sep);
-
-        menu.appendChild(createSlider('Max Boost', 'maxBoost', 1.0, 50.0, 1.0));
-        menu.appendChild(createSlider('Gate Threshold', 'gateThresh', 0.000, 0.020, 0.0005, null, 4));
-        menu.appendChild(createSlider('Hang Time (s)', 'hangTime', 0.0, 2.0, 0.1));
-        menu.appendChild(createSlider('Recovery (s)', 'recoveryTime', 0.1, 5.0, 0.1));
-        menu.appendChild(createSlider('Comp Volume', 'compGain', 0.05, 1.0, 0.01));
-
-        let modKey = get_config_mode(last_modulation);
-        let base = CONFIG[modKey];
-        let currHPF = (override_settings.compHPF !== null && override_settings.compHPF !== undefined) ? override_settings.compHPF : (base.compHPF || 300);
-        let currLPF = (override_settings.compLPF !== null && override_settings.compLPF !== undefined) ? override_settings.compLPF : (base.compLPF || 3000);
-        let currCenter = (currHPF + currLPF) / 2;
-        let currWidth = currLPF - currHPF;
-
-        menu.appendChild(createCustomSlider('Comp Center', 200, 6000, 50, currCenter, function(val) {
-            let h = (override_settings.compHPF !== null && override_settings.compHPF !== undefined) ? override_settings.compHPF : (base.compHPF || 300);
-            let l = (override_settings.compLPF !== null && override_settings.compLPF !== undefined) ? override_settings.compLPF : (base.compLPF || 3000);
-            let w = l - h;
-            let newH = val - w / 2;
-            let newL = val + w / 2;
-            if (newH < 50) newH = 50;
-            if (newL > 8000) newL = 8000;
-            override_settings.compHPF = newH;
-            override_settings.compLPF = newL;
-
-            override_settings.airFreq = newL;
-
-            apply_filter_settings();
-        }));
-
-        menu.appendChild(createCustomSlider('Comp Width', 100, 7500, 50, currWidth, function(val) {
-            let h = (override_settings.compHPF !== null && override_settings.compHPF !== undefined) ? override_settings.compHPF : (base.compHPF || 300);
-            let l = (override_settings.compLPF !== null && override_settings.compLPF !== undefined) ? override_settings.compLPF : (base.compLPF || 3000);
-            let c = (h + l) / 2;
-            let newH = c - val / 2;
-            let newL = c + val / 2;
-            if (newH < 50) newH = 50;
-            if (newL > 8000) newL = 8000;
-            override_settings.compHPF = newH;
-            override_settings.compLPF = newL;
-
-            override_settings.airFreq = newL;
-
-            apply_filter_settings();
-        }));
-
-        var btnDef = document.createElement('button');
-        btnDef.textContent = 'Default';
-        btnDef.style.cssText = 'margin-top: 5px; width: 100%; height: 24px; background: #444; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; user-select: none; -webkit-user-select: none;';
-        btnDef.onclick = function() {
-            override_settings.maxBoost = null;
-            override_settings.gateThresh = null;
-            override_settings.hangTime = null;
-            override_settings.recoveryTime = null;
-            override_settings.compGain = null;
-            override_settings.compHPF = null;
-            override_settings.compLPF = null;
-            override_settings.airGain = null;
-            override_settings.airFreq = null;
-            saveSettings();
-            apply_filter_settings();
-            menu.remove();
-            show_comp_menu(rect);
-        };
-        menu.appendChild(btnDef);
-        });
-    }
-
-    function show_settings_menu(rect) {
-        createFloatingMenu('audio-filter-settings-menu', 'Plugin Settings', rect, 150, function(menu) {
-
-        function build_export_settings() {
-            var modes = {};
-            Object.keys(CONFIG).forEach(function (mode) {
-                modes[mode] = {};
-                SETTING_KEYS.forEach(function (key) {
-                    var override = settings_store[mode] && settings_store[mode][key];
-                    modes[mode][key] = override !== null && override !== undefined ?
-                        override : (Object.prototype.hasOwnProperty.call(CONFIG[mode], key) ? CONFIG[mode][key] : null);
-                });
-            });
-
-            return {
-                version: 2,
-                modes: modes,
-                enabled: {
-                    equalizer: is_filter_enabled,
-                    noiseReduction: is_nr_enabled,
-                    noiseBlanker: is_nb_enabled,
-                    compressor: is_compressor_enabled,
-                    autoNotch: is_autonotch_enabled,
-                    loudness: is_loudness_enabled
-                },
-                visualization: {
-                    graph: localStorage.getItem('openwebrx-audio-filter-show-graph') === 'true',
-                    inputSpectrum: show_input_spectrum,
-                    outputSpectrum: show_output_spectrum
-                }
-            };
-        }
-
-        var btnExport = document.createElement('button');
-        btnExport.textContent = 'Export Settings';
-        btnExport.style.cssText = 'width: 100%; margin-bottom: 5px; height: 24px; background: #444; color: #fff; border: none; border-radius: 3px; cursor: pointer; user-select: none; -webkit-user-select: none;';
-        btnExport.onclick = function() {
-            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(build_export_settings(), null, 2));
-            var downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", "audio_filter_settings.json");
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
-            menu.remove();
-        };
-        menu.appendChild(btnExport);
-
-        var btnImport = document.createElement('button');
-        btnImport.textContent = 'Import Settings';
-        btnImport.style.cssText = 'width: 100%; height: 24px; background: #444; color: #fff; border: none; border-radius: 3px; cursor: pointer; user-select: none; -webkit-user-select: none;';
-        btnImport.onclick = function() {
-            var input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.json';
-            input.onchange = function(e) {
-                var file = e.target.files[0];
-                if (!file) return;
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    try {
-                        var s = JSON.parse(e.target.result);
-                        var importedModes = s && s.modes ? s.modes : s;
-                        if (importedModes && (importedModes.ssb || importedModes.am)) {
-                            settings_store = Object.assign({
-                                ssb: create_empty_settings(),
-                                am: create_empty_settings(),
-                                cw: create_empty_settings(),
-                                nfm: create_empty_settings(),
-                                wfm: create_empty_settings(),
-                                digital: create_empty_settings()
-                            }, importedModes);
-                            localStorage.setItem('openwebrx-audio-filter-settings', JSON.stringify(settings_store));
-
-                            if (s.enabled) {
-                                is_filter_enabled = !!s.enabled.equalizer;
-                                is_nr_enabled = !!s.enabled.noiseReduction;
-                                is_nb_enabled = !!s.enabled.noiseBlanker;
-                                is_compressor_enabled = !!s.enabled.compressor;
-                                is_autonotch_enabled = !!s.enabled.autoNotch;
-                                is_loudness_enabled = !!s.enabled.loudness;
-                                localStorage.setItem('openwebrx-audio-filter-enabled', is_filter_enabled);
-                                localStorage.setItem('openwebrx-audio-filter-nr', is_nr_enabled);
-                                localStorage.setItem('openwebrx-audio-filter-declick', is_nb_enabled);
-                                localStorage.setItem('openwebrx-audio-filter-compressor', is_compressor_enabled);
-                                localStorage.setItem('openwebrx-audio-filter-autonotch', is_autonotch_enabled);
-                                localStorage.setItem('openwebrx-audio-filter-loudness', is_loudness_enabled);
-                            }
-                            if (s.visualization) {
-                                show_input_spectrum = !!s.visualization.inputSpectrum;
-                                show_output_spectrum = !!s.visualization.outputSpectrum;
-                                localStorage.setItem('openwebrx-audio-filter-show-graph', !!s.visualization.graph);
-                                localStorage.setItem('openwebrx-audio-filter-show-in-spec', show_input_spectrum);
-                                localStorage.setItem('openwebrx-audio-filter-show-out-spec', show_output_spectrum);
-                            }
-                            // Apply current
-                            let modKey = get_config_mode(last_modulation);
-                            if (settings_store[modKey]) {
-                                override_settings = JSON.parse(JSON.stringify(settings_store[modKey]));
-                            }
-                            apply_filter_settings();
-                            update_fil_button_state();
-                        } else {
-                            alert('Invalid settings file.');
-                        }
-                    } catch(err) {
-                        console.error(`[${PLUGIN_ID}] Error importing settings:`, err);
-                        alert('Error importing settings: ' + err.message);
-                    }
-                };
-                reader.readAsText(file);
-            };
-            input.click();
-            menu.remove();
-        };
-        menu.appendChild(btnImport);
-        });
-    }
-
-    function show_notch_menu(rect) {
-        createFloatingMenu('audio-filter-notch-menu', 'Notch Settings', rect, 200, function(menu) {
-
-        function createSlider(label, key, min, max, step) {
-            var container = document.createElement('div');
-            container.style.marginBottom = '8px';
-
-            var defVal = CONFIG[get_config_mode(last_modulation)][key];
-            if (defVal === undefined) {
-                if (key === 'maxNotches') defVal = 4;
-                else if (key === 'notchRange') defVal = 4000;
-                else if (key === 'notchCenter') {
-                    let nr = (override_settings.notchRange !== null && override_settings.notchRange !== undefined) ? override_settings.notchRange : 4000;
-                    defVal = nr / 2;
-                }
-                else defVal = 30;
-            }
-
-            var val = (override_settings[key] !== null && override_settings[key] !== undefined) ? override_settings[key] : defVal;
-
-            var lbl = document.createElement('div');
-            lbl.textContent = label + ': ' + val;
-            lbl.style.marginBottom = '2px';
-
-            var inp = document.createElement('input');
-            inp.type = 'range';
-            inp.min = min;
-            inp.max = max;
-            inp.step = step;
-            inp.value = val;
-            inp.style.width = '100%';
-
-            inp.oninput = function() {
-                var v = parseFloat(inp.value);
-                lbl.textContent = label + ': ' + v;
-                override_settings[key] = v;
-                apply_filter_settings();
-            };
-
-            inp.onchange = function() {
-                saveSettings();
-            };
-
-            container.appendChild(lbl);
-            container.appendChild(inp);
-            return container;
-        }
-
-        menu.appendChild(createSlider('Notch Q (Sharpness)', 'notchQ', 1, 50, 1));
-        menu.appendChild(createSlider('Max Notches', 'maxNotches', 1, 4, 1));
-        menu.appendChild(createSlider('Detection Center (Hz)', 'notchCenter', 250, 8000, 50));
-        menu.appendChild(createSlider('Detection Width (Hz)', 'notchRange', 500, 8000, 100));
-
-        var btnDef = document.createElement('button');
-        btnDef.textContent = 'Default';
-        btnDef.style.cssText = 'margin-top: 5px; width: 100%; height: 24px; background: #444; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; user-select: none; -webkit-user-select: none;';
-        btnDef.onclick = function() {
-            override_settings.notchQ = null;
-            override_settings.maxNotches = null;
-            override_settings.notchRange = null;
-            override_settings.notchCenter = null;
-            saveSettings();
-            menu.remove();
-            show_notch_menu(rect);
-            apply_filter_settings();
-        };
-        menu.appendChild(btnDef);
-        });
-    }
-
-    function show_nr_menu(rect) {
-        createFloatingMenu('audio-filter-nr-menu', 'Spectral Noise Reduction', rect, 200, function(menu) {
-
-        function createSlider(label, key, min, max, step, scale) {
-            var container = document.createElement('div');
-            container.style.marginBottom = '8px';
-
-            var defVal = CONFIG[get_config_mode(last_modulation)][key];
-            if (defVal === undefined) {
-                if (key === 'nr_gain') defVal = 0;
-                else if (key === 'nr_alpha') defVal = 0.95;
-                else if (key === 'nr_snr') defVal = 10;
-                else if (key === 'nr_comb') defVal = 0.5;
-            }
-            var val = (override_settings[key] !== null && override_settings[key] !== undefined) ? override_settings[key] : defVal;
-
-            var lbl = document.createElement('div');
-            lbl.textContent = label + ': ' + (val * (scale || 1)).toFixed(scale ? 0 : 4);
-            lbl.style.marginBottom = '2px';
-
-            var inp = document.createElement('input');
-            inp.type = 'range';
-            inp.min = min;
-            inp.max = max;
-            inp.step = step;
-            inp.value = val;
-            inp.style.width = '100%';
-
-            inp.oninput = function() {
-                var v = parseFloat(inp.value);
-                lbl.textContent = label + ': ' + (v * (scale || 1)).toFixed(scale ? 0 : 4);
-                override_settings[key] = v;
-                apply_filter_settings();
-            };
-            inp.onchange = function() { saveSettings(); };
-
-            container.appendChild(lbl);
-            container.appendChild(inp);
-            return container;
-        }
-
-        menu.appendChild(createSlider('Gain (dB)', 'nr_gain', -60, 60, 1, 1));
-        menu.appendChild(createSlider('Alpha (Smooth)', 'nr_alpha', 0.90, 0.9999, 0.0001));
-        menu.appendChild(createSlider('Active SNR (dB)', 'nr_snr', -10, 40, 1, 1));
-
-        menu.appendChild(createSlider('Comb Strength', 'nr_comb', 0.0, 1.0, 0.05));
-
-        var speechDiv = document.createElement('div');
-        speechDiv.style.marginTop = '10px';
-        speechDiv.style.borderTop = '1px solid #444';
-        speechDiv.style.paddingTop = '5px';
-
-        var speechLbl = document.createElement('label');
-        speechLbl.style.display = 'flex';
-        speechLbl.style.alignItems = 'center';
-        speechLbl.style.cursor = 'pointer';
-
-        var speechChk = document.createElement('input');
-        speechChk.type = 'checkbox';
-
-        let modKey = get_config_mode(last_modulation);
-        let base = CONFIG[modKey];
-        speechChk.checked = (override_settings.nr_speech_mode !== null && override_settings.nr_speech_mode !== undefined) ? override_settings.nr_speech_mode : (base.nr_speech_mode !== undefined ? base.nr_speech_mode : false);
-
-        speechChk.style.marginRight = '8px';
-        speechChk.onchange = function() {
-            override_settings.nr_speech_mode = speechChk.checked;
-            apply_filter_settings();
-            saveSettings();
-        };
-
-        speechLbl.appendChild(speechChk);
-        speechLbl.appendChild(document.createTextNode('Speech Mode (Fast Adapt)'));
-        speechDiv.appendChild(speechLbl);
-        menu.appendChild(speechDiv);
-        });
-    }
-
-    function update_fil_button_state() {
-        var win = document.getElementById('plugin-window-' + PLUGIN_ID);
-        var fallbackPanel = document.getElementById('audio-filter-floating-panel');
-        var isVisible = false;
-        if (win) {
-            isVisible = (typeof $ !== 'undefined') ? $(win).is(':visible') : (win.style.display !== 'none');
-        } else if (fallbackPanel) {
-            isVisible = fallbackPanel.style.display !== 'none';
-        }
-
-        var active = is_filter_enabled || is_autonotch_enabled || is_nb_enabled || is_compressor_enabled || is_nr_enabled;
-
-        var extBtn = document.getElementById('plugin-button-' + PLUGIN_ID);
-        if (extBtn) {
-            extBtn.style.color = active? '#39FF14' : '';
-        }
-
-        var btn = document.getElementById('audio-filter-toggle-btn');
-        if (btn) {
-            if (isVisible) {
-                btn.style.color = '#39FF14';
-                btn.style.borderColor = '#39FF14';
-            } else if (active) {
-                btn.style.color = 'yellow';
-                btn.style.borderColor = 'yellow';
-            } else {
-                btn.style.color = '#aaa';
-                btn.style.borderColor = '#666';
-            }
-        }
-    }
-
+    const b=document.getElementById('af2-bypass');if(b)b.textContent=audio_enabled?'Bypass':'Enable';
+    renderStatus();return audio_enabled;
+  }
+  const api={setEnabled:set_enabled,isEnabled:()=>audio_enabled,build:BUILD,revision:REVISION,init,disable,status,attach,detachAll:()=>[...routes].forEach(detachRoute),
+    setFlag,settings:()=>currentDSPSettings(),getMode:()=>mode,
+    applyPreset:applyListeningPreset,listPresets:()=>choicesForMode().map(p=>({id:p.id,label:p.label}))};
+  window.RigAudioStudio=api;
+  if(window.Plugins&&Plugins.rig_audio){
+    Object.assign(Plugins.rig_audio,api);
+    Plugins.rig_audio.no_css=true;
+    Plugins.rig_audio.init=init;
+    Plugins.rig_audio._version='0.4.0';
+  }
+  init();
+  listen(window,'pagehide',()=>set_enabled(false));
 })();
-

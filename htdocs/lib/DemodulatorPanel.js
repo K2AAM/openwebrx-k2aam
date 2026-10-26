@@ -190,7 +190,7 @@ DemodulatorPanel.prototype.updatePanels = function() {
     // Skimmer modes share the same panel
     toggle_panel("openwebrx-panel-skimmer-message", ['cwskimmer', 'rttyskimmer'].indexOf(modulation) >= 0);
     // These modes come with their own panels
-    ['js8', 'page', 'pocsag', 'sstv', 'fax', 'dsc', 'adsb', 'meshtastic'].forEach(function(m) {
+    ['js8', 'page', 'pocsag', 'sstv', 'fax', 'dsc', 'adsb', 'meshtastic', 'ale2g'].forEach(function(m) {
         toggle_panel('openwebrx-panel-' + m + '-message', modulation === m);
     });
 
@@ -420,3 +420,4 @@ $.fn.demodulatorPanel = function(){
     }
     return this.data('panel');
 };
+

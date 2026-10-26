@@ -49,6 +49,7 @@ window.setupFixture = function () {
         {modulation:'wfm',name:'WFM',type:'analog',squelch:true}, {modulation:'cw',name:'CW',type:'analog',squelch:true},
         {modulation:'dmr',name:'DMR',type:'analog',squelch:false},
         ...['ft8','ft4','wspr','js8','packet','ais','pocsag','page','hfdl','vdl2','acars','uat','adsb','ism','wmbus','dsc','sstv','fax','cwskimmer','meshtastic'].map(modulation=>({modulation,name:modulation.toUpperCase(),type:'digimode',squelch:false,underlying:['usb'],secondaryFft:true})),
+        {modulation:'ale2g',name:'ALE 2G',type:'digimode',squelch:false,underlying:['usb'],secondaryFft:false},
         {modulation:'rtty',name:'RTTY',type:'digimode',squelch:false,underlying:['usb','lsb'],secondaryFft:true},
         ...['m17','ysf','dstar','nxdn','p25','tetra','dab','hdr','drm'].map(modulation=>({modulation,name:modulation.toUpperCase(),type:'analog',squelch:false}))
     ].map(x=>new Mode(x));
@@ -76,16 +77,40 @@ window.setupFixture = function () {
     class Socket extends EventTarget {
         readyState=1;
         selected='Antenna C';
+        antennaSupported=true;
         sent=[];
         allowTune=true;
         requiredKey=null;
         tuneDelay=30;
+        scanState={available:true,session:'fixture-scan',running:false,status:'Stopped',sequence:0,events:[],source_id:'sdrplay'};
         send(value){const packet=JSON.parse(value);this.sent.push(packet); if(packet.type==='setantenna')this.selected=packet.params.antenna;
+            if(packet.type==='ale_scan') {
+                const p=packet.params;
+                if(p.action==='log'||p.action==='export') {
+                    const events=this.logEvents||[];
+                    let value={kind:'log',request_id:p.request_id,source_id:'sdrplay'};
+                    if(this.logFailure)value.error='ALE log unavailable; check the server journal';
+                    else if(p.action==='log')value={...value,total:events.length,retention:50000,station_limit:50,stations:this.logStations||[]};
+                    else {
+                        const through=p.log_through===undefined?(events.at(-1)?.log_id||0):p.log_through;
+                        const eligible=events.filter(e=>e.log_id>(p.log_after||0)&&e.log_id<=through);
+                        const page=eligible.slice(0,200);
+                        value={...value,events:page,through,after:page.at(-1)?.log_id||p.log_after||0,more:eligible.length>200,total:events.filter(e=>e.log_id<=through).length};
+                    }
+                    setTimeout(()=>this.reply({type:'ale_scan_state',value}),5);return;
+                }
+                if(p.action==='start') {
+                    this.scanState={...this.scanState,running:true,status:'Scanning · server',frequency:p.channels[0],bank:p.bank,options:p};
+                    this.reply({type:'config',value:{center_freq:p.channels[0],start_mod:'usb'}});
+                }
+                if(p.action==='stop')this.scanState={...this.scanState,running:false,status:'Stopped'};
+                setTimeout(()=>this.reply({type:'ale_scan_state',value:{...this.scanState,events:this.scanState.events.filter(e=>e.scan_seq>(p.after||0))}}),5);
+            }
             if(packet.type==='setfrequency' && this.allowTune && (!this.requiredKey || packet.params.key===this.requiredKey)) {
                 const frequency=packet.params.frequency;
                 setTimeout(()=>this.reply({type:'config',value:{center_freq:frequency,start_offset_freq:0,start_mod:'nfm'}}),this.tuneDelay);
             }
-            if(['getantenna','setantenna'].includes(packet.type))setTimeout(()=>this.reply({type:'rsp_antenna_state',value:{supported:true,ready:true,sdr_id:'sdrplay',selected:this.selected,held:true,antennas:[{value:'Antenna A',label:'A - VHF'},{value:'Antenna B',label:'B - Experimental'},{value:'Antenna C',label:'C - HF'}]}}),10);
+            if(['getantenna','setantenna'].includes(packet.type))setTimeout(()=>this.reply({type:'rsp_antenna_state',value:{supported:this.antennaSupported,ready:true,sdr_id:'sdrplay',selected:this.selected,held:true,antennas:[{value:'Antenna A',label:'A - VHF'},{value:'Antenna B',label:'B - Experimental'},{value:'Antenna C',label:'C - HF'}]}}),10);
         }
         reply(data){
             if(data.type==='config') {

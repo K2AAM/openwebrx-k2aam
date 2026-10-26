@@ -744,6 +744,9 @@ class DspManager(SdrSourceEventClient, ClientDemodulatorSecondaryDspEventClient)
         elif mod == "navtex":
             from csdr.chain.digimodes import NavtexDemodulator
             return NavtexDemodulator(100, 170 + 40)
+        elif mod == "ale2g":
+            from csdr.chain.ale import AleDemodulator
+            return AleDemodulator()
         elif mod == "dsc":
             from csdr.chain.digimodes import DscDemodulator
             return DscDemodulator(100, 170 + 40)

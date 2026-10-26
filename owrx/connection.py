@@ -342,6 +342,14 @@ class OpenWebRxReceiverClient(OpenWebRxClient, SdrSourceEventClient):
                         key     = params["key"] if "key" in params else None
                         self.setProfile(profile[0], profile[1], key)
 
+                elif message["type"] == "ale_scan":
+                    from owrx.ale_scan import request as ale_scan_request
+                    try:
+                        state = ale_scan_request(self, message.get("params", {}))
+                    except (ValueError, OSError, KeyError, TypeError) as error:
+                        state = {"available": True, "error": str(error)}
+                    self.send({"type": "ale_scan_state", "value": state})
+
                 elif message["type"] == "setfrequency":
                     # If the magic key is set in the settings, only allow
                     # changes if it matches the received key
@@ -663,3 +671,4 @@ class HandshakeMessageHandler(Handler):
 
     def handleClose(self):
         pass
+

@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.rig_dock;
-    plugin._version = '0.2.1';
+    plugin._version = '0.4.0';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
@@ -12,7 +12,7 @@
     let pendingTune = null, centerChangesAllowed = null;
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
     let decoderNodes = [], decoderSignature = '', decoderCollapsed = false, decoderPercent = 28;
-    let decoderIFPreference = null;
+    let decoderIFPreference = null, decoderFit = true;
     let startupStyle, startupNotice;
     const refs = {};
     const $ = (selector, root) => (root || document).querySelector(selector);
@@ -98,7 +98,16 @@
         refs.message.hidden = !text;
     }
     function safely(fn) {
-        try { fn(); message(''); } catch (error) { message(error.message || String(error)); }
+        try {
+            const result = fn();
+            if (result && typeof result.then === 'function') result.then(() => message(''), error => message(error.message || String(error)));
+            else message('');
+        } catch (error) { message(error.message || String(error)); }
+    }
+    function manualControl(action) {
+        const scan = window.owrxAleScanner;
+        if (scan && scan.isRunning()) return scan.takeControl().then(action);
+        return action();
     }
     function positionPopup() {
         if (!popup || !opener) return;
@@ -186,8 +195,7 @@
                 item.type = 'button'; item.dataset.mode = mode.modulation;
                 // These short-lived list nodes do not need a global cleanup entry.
                 item.addEventListener('click', () => safely(() => {
-                    UI.setModulation(mode.modulation);
-                    closePopup(true); tick();
+                    return manualControl(() => { UI.setModulation(mode.modulation); closePopup(true); tick(); });
                 }));
                 grid.append(item); count++;
             });
@@ -208,8 +216,8 @@
         refs.underlyingRow = el('label', 'rd-field', 'Underlying mode');
         refs.underlying = el('select'); refs.underlyingRow.append(refs.underlying);
         pop.node.append(refs.underlyingRow);
-        on(refs.underlying, 'change', () => safely(() =>
-            UI.setModulation(UI.getModulation(), refs.underlying.value)));
+        on(refs.underlying, 'change', () => safely(() => manualControl(() =>
+            UI.setModulation(UI.getModulation(), refs.underlying.value))));
         refs.modePopup = pop.node;
     }
     function finishTune(error) {
@@ -287,27 +295,40 @@
         const form = el('form', 'rd-tune-form');
         const input = el('input'); input.type = 'text'; input.inputMode = 'decimal';
         input.placeholder = '7.121 MHz'; input.setAttribute('aria-label', 'Frequency with units');
+        const units = el('select'); units.setAttribute('aria-label', 'Frequency units');
+        ['Hz','kHz','MHz'].forEach(unit => { const option = el('option', '', unit); option.value = unit; units.append(option); });
+        units.value = 'MHz';
         const submit = el('button', 'rd-button rd-primary', 'Tune'); submit.type = 'submit';
         refs.tuneSubmit = submit;
-        form.append(input, submit);
+        form.append(input, units, submit);
         pop.node.append(form, el('p', 'rd-note', 'Use Hz, kHz, or MHz. A value without units is MHz.'));
         pop.node.append(el('p', 'rd-note', 'Outside the current view, Tune moves the receiver for everyone using this SDR. Server tuning limits still apply.'));
         refs.tuneFeedback = el('p', 'rd-note'); refs.tuneFeedback.setAttribute('role', 'status');
         refs.tuneCancel = button('Stop waiting', () => finishTune('Stopped waiting for receiver tuning.'));
         refs.tuneCancel.hidden = true;
         pop.node.append(refs.tuneFeedback, refs.tuneCancel);
-        on(form, 'submit', event => {
+        on(form, 'submit', async event => {
             event.preventDefault();
             if (pendingTune) return;
             try {
                 const match = /^\s*(\d+(?:\.\d+)?)\s*(Hz|kHz|MHz)?\s*$/i.exec(input.value);
                 if (!match) throw new Error('Enter a frequency such as 7.121 MHz.');
-                const unit = (match[2] || 'MHz').toLowerCase();
+                const unit = (match[2] || units.value).toLowerCase();
                 const value = Math.round(Number(match[1]) * {hz: 1, khz: 1e3, mhz: 1e6}[unit]);
                 if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Enter a positive frequency.');
-                tuneFrequency(value);
+                refs.tuneSubmit.disabled = true;
+                await manualControl(() => tuneFrequency(value));
+                if (!pendingTune) refs.tuneSubmit.disabled = false;
             } catch (error) { finishTune(error.message || String(error)); }
         });
+        const readout = $('.webrx-actual-freq', frequency);
+        const readoutAttributes = ['role','tabindex','title','aria-label'].map(name => [name,readout.getAttribute(name)]);
+        listeners.push(() => readoutAttributes.forEach(([name,value]) => value === null ? readout.removeAttribute(name) : readout.setAttribute(name,value)));
+        readout.setAttribute('role','button'); readout.tabIndex = 0;
+        readout.title = 'Enter a frequency'; readout.setAttribute('aria-label','Enter frequency');
+        const edit = () => { input.value = String(UI.getFrequency()/1e6); units.value = 'MHz'; openPopup(pop.node,pop.trigger); input.focus(); input.select(); };
+        on(readout,'click',event => { event.preventDefault(); event.stopImmediatePropagation(); edit(); },true);
+        on(readout,'keydown',event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); } });
         on($('#openwebrx-sdr-profiles-listbox'), 'change', () => {
             if (pendingTune) finishTune('Tuning stopped because the receiver or profile changed.');
         });
@@ -377,7 +398,7 @@
         pop.node.append(settings);
     }
     function buildMore(toolbar) {
-        const pop = popover('more', 'More controls'); toolbar.append(pop.trigger); refs.more = pop.node;
+        const pop = popover('more', 'More controls'); toolbar.append(pop.trigger); refs.more = pop.node; refs.moreTrigger = pop.trigger;
         const actions = group(pop.node);
         actions.append(button('Zoom −', () => zoomOutOneStep()), button('Zoom +', () => zoomInOneStep()));
         native('#openwebrx-panel-plugins', pop.node, 'Plugins');
@@ -480,7 +501,18 @@
         const headerHeight = refs.decoderHeader.getBoundingClientRect().height;
         const maximum = Math.max(headerHeight, available - Math.min(80, available * .35));
         const minimumBody = innerWidth <= 620 ? 72 : 48;
-        const height = decoderCollapsed ? headerHeight : Math.min(maximum, Math.max(headerHeight + minimumBody, available * decoderPercent / 100));
+        let requestedHeight = available * decoderPercent / 100;
+        const ale = active.find(node => node.id === 'openwebrx-panel-ale2g-message');
+        refs.decoderFit.hidden = !ale;
+        refs.decoderFit.setAttribute('aria-pressed',String(decoderFit));
+        if (ale && decoderFit) {
+            const controls = $('.ale-scan-controls',ale), head = $('thead',ale), rows = all('tbody tr',ale);
+            const rowHeight = rows.slice(-6).reduce((total,row) => total+row.getBoundingClientRect().height,0);
+            requestedHeight = headerHeight+(controls ? Math.max(controls.getBoundingClientRect().height,controls.scrollHeight) : 0)+
+                (head ? head.getBoundingClientRect().height : 0)+Math.max(48,rowHeight)+12+
+                all('.ale-log-tools,.ale-heard',ale).reduce((total,node)=>total+node.getBoundingClientRect().height,0);
+        }
+        const height = decoderCollapsed ? headerHeight : Math.min(maximum, Math.max(headerHeight + minimumBody, requestedHeight));
         const previous = refs.decoderTray.style.height;
         refs.decoderTray.style.height = Math.ceil(height) + 'px';
         if (changedIF || previous !== refs.decoderTray.style.height) refreshDecoderCanvas();
@@ -488,10 +520,13 @@
     }
     function syncDecoders() {
         if (!mounted || !refs.decoderBody) return;
+        adoptScreenshot();
         const adopted = adoptDecoders();
         settleDecoderPanels();
         const active = decoderNodes.filter(decoderActive);
-        const signature = active.map(node => node.id).join('|') + ':' + UI.getModulation();
+        const ale = active.find(node => node.id === 'openwebrx-panel-ale2g-message');
+        const fitSignature = ale && decoderFit ? all('tbody tr',ale).slice(-6).map(row => row.getBoundingClientRect().height).join(',')+':'+all('.ale-log-tools,.ale-heard',ale).map(node=>node.getBoundingClientRect().height).join(',') : '';
+        const signature = active.map(node => node.id).join('|') + ':' + UI.getModulation()+':'+fitSignature;
         if (adopted || signature !== decoderSignature) {
             decoderSignature = signature;
             reserveSpace();
@@ -501,7 +536,9 @@
     function buildDecoders() {
         try {
             decoderCollapsed = localStorage.getItem('rig_dock_decoder_collapsed') === 'true';
-            const percent = Number(localStorage.getItem('rig_dock_decoder_height'));
+            const savedHeight = localStorage.getItem('rig_dock_decoder_height');
+            decoderFit = localStorage.getItem('rig_dock_decoder_fit') === 'true' || (localStorage.getItem('rig_dock_decoder_fit') === null && savedHeight === null);
+            const percent = Number(savedHeight);
             decoderPercent = percent >= 16 && percent <= 65 ? percent : 28;
             const showIF = localStorage.getItem('rig_dock_decoder_if');
             decoderIFPreference = showIF === null ? null : showIF === 'true';
@@ -517,10 +554,13 @@
         height.setAttribute('aria-label', 'Decoder pane height');
         heightLabel.append(height);
         const changeHeight = () => {
+            decoderFit = false; saveDecoderSetting('fit', false);
             decoderPercent = Number(height.value);
             saveDecoderSetting('height', decoderPercent); reserveSpace(); refreshDecoderCanvas();
         };
         on(height, 'input', changeHeight); on(height, 'change', changeHeight);
+        refs.decoderFit = button('Fit', () => { decoderFit = !decoderFit; saveDecoderSetting('fit',decoderFit); reserveSpace(); });
+        refs.decoderFit.title = 'Fit ALE output to the latest rows; use Height for a fixed size';
         refs.decoderIF = button('IF waterfall', () => {
             decoderIFPreference = tray.classList.contains('rd-if-hidden');
             saveDecoderSetting('if', decoderIFPreference); reserveSpace(); refreshDecoderCanvas();
@@ -535,8 +575,9 @@
         refs.decoderCollapse.setAttribute('aria-controls', 'rig-decoder-body');
         refs.decoderCollapse.title = 'Collapse the output area while decoding continues';
         refs.decoderBody = el('div', 'rd-decoder-body'); refs.decoderBody.id = 'rig-decoder-body';
-        header.append(refs.decoderTitle, heightLabel, refs.decoderIF, refs.decoderClear, refs.decoderCollapse);
+        header.append(refs.decoderTitle, heightLabel, refs.decoderFit, refs.decoderIF, refs.decoderClear, refs.decoderCollapse);
         tray.append(header, refs.decoderBody);
+        on(tray,'toggle',reserveSpace,true);
         // A fixed child of the native animated receiver panel can inherit its
         // transformed containing block. Keep the tray beside the panel stacks.
         $('#openwebrx-panels-container').append(tray);
@@ -549,7 +590,42 @@
             subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class', 'data-mode']
         });
     }
+    function adoptScreenshot() {
+        if (!refs.actions || !refs.record) return;
+        const screenshots = all('#screenshot-btn',panel);
+        if (!screenshots.length) return;
+        // The upstream plugin wraps every .openwebrx-record-button, including
+        // our permission marker. Its first native PIC node owns the handler;
+        // a second id created beside our Record button has no handler.
+        const pic = screenshots.includes(refs.screenshot) ? refs.screenshot :
+            screenshots.find(node => !dock.contains(node)) || screenshots[0];
+        screenshots.filter(node => node !== pic && dock.contains(node)).forEach(node => node.remove());
+        const wrapper = refs.record.parentElement;
+        if (wrapper !== refs.actions && wrapper.parentElement === refs.actions &&
+            wrapper.matches('.openwebrx-button.openwebrx-square-button')) {
+            refs.actions.prepend(refs.record);
+            if (!wrapper.children.length) wrapper.remove();
+        }
+        if (pic !== refs.screenshot) {
+            const attributes = ['class','role','tabindex','title','aria-label'].map(name => [name,pic.getAttribute(name)]);
+            const text = pic.textContent;
+            listeners.push(() => {
+                attributes.forEach(([name,value]) => value === null ? pic.removeAttribute(name) : pic.setAttribute(name,value));
+                pic.textContent = text;
+            });
+            pic.classList.add('rd-button','rd-screenshot'); pic.textContent = 'Screenshot';
+            pic.setAttribute('role','button'); pic.tabIndex = 0;
+            pic.title = 'Save a waterfall screenshot'; pic.setAttribute('aria-label','Save waterfall screenshot');
+            on(pic,'keydown',event => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pic.click(); }
+            });
+            move(pic,refs.actions); refs.screenshot = pic;
+        }
+        if (pic.parentElement === refs.actions && pic.nextElementSibling !== refs.moreTrigger)
+            refs.actions.insertBefore(pic,refs.moreTrigger);
+    }
     function adoptPlugins() {
+        adoptScreenshot();
         const antenna = $('.rsp-antenna', panel);
         if (antenna && !refs.antennas.contains(antenna)) move(antenna, refs.antennas);
         const sectionIds = new Set(['openwebrx-section-modes', 'openwebrx-section-controls',
@@ -605,6 +681,9 @@
             if (socket) socket.addEventListener('message', receive);
         }
         const connected = socket && socket.readyState === 1;
+        const aleScan = window.owrxAleScanner;
+        refs.aleStatus.hidden = !(aleScan && aleScan.isRunning());
+        if (!refs.aleStatus.hidden) refs.aleStatus.textContent = 'ALE · '+aleScan.status()+' · Stop';
         refs.connection.textContent = connected ? 'Connected' : 'Disconnected';
         refs.connection.classList.toggle('rd-connected', !!connected);
         const err = $('#openwebrx-error-overlay');
@@ -624,7 +703,7 @@
         refs.antennas.hidden = !ant || ant.hidden;
         const status = ant && $('.rsp-antenna-status', ant);
         refs.antennaStatus.textContent = ant && !ant.hidden && status ? status.textContent : '';
-        refs.antennaStatus.title = 'Shared antenna selection affects everyone on this SDR. ' + refs.antennaStatus.textContent;
+        refs.antennaStatus.title = 'Current receiver antenna. ' + refs.antennaStatus.textContent;
         refs.antennaStatus.classList.toggle('rd-error', !!(status && status.classList.contains('rsp-antenna-error')));
         const recording = typeof audioEngine !== 'undefined' && audioEngine && audioEngine.recording;
         refs.record.classList.toggle('rd-recording', !!recording);
@@ -672,10 +751,10 @@
         move($('.openwebrx-mute-button', panel), volume); move($('#openwebrx-panel-volume'), volume);
         const squelch = group(toolbar, 'Squelch');
         move($('.openwebrx-squelch-auto', panel), squelch); move($('.openwebrx-squelch-slider', panel), squelch);
-        const nr = group(toolbar, 'NR');
+        const nr = group(toolbar);
         move($('.openwebrx-nr-toggle', panel), nr); move($('#openwebrx-panel-nr'), nr);
         const step = group(toolbar, 'Step'); move($('#openwebrx-tuning-step-listbox'), step);
-        step.append(button('−', () => tuneBySteps(-1)), button('+', () => tuneBySteps(1)));
+        step.append(button('−', () => safely(() => manualControl(() => tuneBySteps(-1)))), button('+', () => safely(() => manualControl(() => tuneBySteps(1)))));
         buildBandpass(toolbar); buildWaterfall(toolbar); buildAudio(toolbar);
         const nativeRecord = $('.openwebrx-record-button', panel);
         refs.record = button('● Record', () => safely(() => { UI.toggleRecording(); tick(); }));
@@ -684,14 +763,16 @@
         refs.record.classList.add('openwebrx-record-button');
         refs.record.style.display = nativeRecord ? nativeRecord.style.display : 'none';
         refs.record.title = 'Record receiver audio; stop to download the MP3';
-        toolbar.append(refs.record);
-        toolbar.append(button('Scan', () => safely(() => UI.toggleScanner())));
-        buildMore(toolbar);
+        const actions = refs.actions = group(main); refs.screenshot = null; actions.classList.add('rd-actions'); actions.append(refs.record);
+        buildMore(actions);
+        toolbar.append(button('Scan', () => safely(() => manualControl(() => UI.toggleScanner()))));
         refs.connection = el('span', 'rd-connection', 'Connecting');
         refs.cpu = el('span'); refs.clients = el('span'); refs.clock = el('span', 'rd-clock');
         refs.antennaStatus = el('span', 'rd-antenna-status');
         const meter = el('span', 'rd-meter'); move($('#openwebrx-smeter'), meter); move($('#openwebrx-smeter-db'), meter);
-        footer.append(refs.connection, meter, refs.cpu, refs.clients, refs.antennaStatus, refs.clock);
+        refs.aleStatus = button('ALE', () => safely(() => window.owrxAleScanner.takeControl()), 'rd-ale-status');
+        refs.aleStatus.title = 'Stop the ALE scanner and take manual control'; refs.aleStatus.hidden = true;
+        footer.append(refs.connection, meter, refs.cpu, refs.clients, refs.antennaStatus, refs.aleStatus, refs.clock);
         refs.message = el('div', 'rd-message'); refs.message.hidden = true; refs.message.setAttribute('role', 'status'); dock.append(refs.message);
         buildDecoders();
         const chat = $('#openwebrx-panel-log');
@@ -766,6 +847,7 @@
         document.body.classList.remove('rig-dock-active');
         document.documentElement.style.removeProperty('--rig-dock-height');
         document.documentElement.style.removeProperty('--rig-decoder-height');
+        refs.screenshot = null; refs.actions = null;
         mounted = false; modeSignature = '';
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', true);
         if (typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done && typeof scale_canvas !== 'undefined' && scale_canvas && typeof scale_ctx !== 'undefined' && scale_ctx && typeof openwebrx_resize === 'function') openwebrx_resize();

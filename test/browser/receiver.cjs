@@ -7,7 +7,7 @@ let html=read('htdocs/index.html');
 html=html.replace(/<script[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link[^>]*>/g,'').replace('onload="openwebrx_init();"','');
 html=html.replace('${header}','<header style="display:flex;justify-content:space-between;padding:18px 24px;background:#0b1728;color:#e7eff9;font:16px system-ui"><b>OpenWebRX+ <span style="color:#75d8f1">K2AAM</span></b><span style="font-size:11px;color:#a6bacf">Preview · simulated receiver</span></header>');
 html=html.replace('</header>','<button data-toggle-panel="openwebrx-panel-log" onclick="toggle_panel(\'openwebrx-panel-log\',true)">Chat</button></header>');
-const scripts=['htdocs/lib/jquery-3.7.1.min.js','htdocs/lib/jquery.nanoscroller.min.js','htdocs/lib/Plugins.js','htdocs/lib/lame.min.js','htdocs/lib/AudioEngine.js','test/browser/fixture.js','htdocs/lib/Utils.js','htdocs/lib/UI.js','htdocs/lib/Modes.js','htdocs/lib/Waterfall.js','htdocs/lib/MessagePanel.js','htdocs/lib/Js8Threads.js','htdocs/lib/MetaPanel.js','htdocs/lib/DemodulatorPanel.js'];
+const scripts=['htdocs/lib/jquery-3.7.1.min.js','htdocs/lib/jquery.nanoscroller.min.js','htdocs/lib/Plugins.js','htdocs/lib/lame.min.js','htdocs/lib/AudioEngine.js','test/browser/fixture.js','htdocs/lib/Utils.js','htdocs/lib/UI.js','htdocs/lib/Modes.js','htdocs/lib/Waterfall.js','htdocs/lib/AleScanner.js','htdocs/lib/MessagePanel.js','htdocs/lib/Js8Threads.js','htdocs/lib/MetaPanel.js','htdocs/lib/DemodulatorPanel.js'];
 const core=read('htdocs/openwebrx.js');
 const nativeFunctions=['resize_scale','openwebrx_resize','panel_displayed','toggle_panel','first_show_panel','initPanels',...Array.from(core.matchAll(/^function (secondary_demod_\w+)\(/gm),match=>match[1])];
 const resizeFunctions=nativeFunctions.map(name=>core.match(new RegExp('function '+name+'\\([^\\n]*\\)\\s*\\{[\\s\\S]*?\\n\\}'))[0]).join('\n');
@@ -51,7 +51,14 @@ const server=http.createServer((req,res)=>{
         args:JSON.parse(process.env.PLAYWRIGHT_CHROMIUM_ARGS||'[]')});
     const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];
     page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message);});
-    let checks=0;const check=(v,msg)=>{assert.ok(v,msg);checks++;};
+    let checks=0;const check=(v,msg)=>{assert.ok(v,msg);checks++;if(process.env.RECEIVER_TEST_PROGRESS)console.log(checks+': '+msg);};
+    async function loadScreenshotPlugin(target) {
+        await target.route('**/html2canvas.min.js',route=>route.fulfill({contentType:'application/javascript',body:
+            'window.html2canvas=(node,options)=>{window.screenshotCalls=(window.screenshotCalls||0)+1;options.canvas.getContext("2d").fillRect(0,0,8,8);return Promise.resolve(options.canvas);};'}));
+        await target.evaluate(()=>{Plugins.screenshot={};});
+        await target.addScriptTag({path:path.join(root,'test/browser/fixtures/screenshot.js')});
+        await target.evaluate(async()=>{await Plugins.screenshot.init();window.originalScreenshot=document.getElementById('screenshot-btn');});
+    }
     try{
         const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:3});
         const cold=await mobileContext.newPage(),coldErrors=[];
@@ -107,7 +114,7 @@ const server=http.createServer((req,res)=>{
         check(await cold.locator('#rig-decoder-tray').count()===0,'restoring stock controls removes the separate decoder tray');
         check(await cold.evaluate(()=>savedDecoderNodes.every(n=>n.parentElement===savedDecoderParents.get(n))),'cold-load decoder nodes return to their native positions');
         await cold.unroute('**/rig_dock.css?*');
-        await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`);
+        await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
         await cold.waitForSelector('#rig-dock-startup');
         await cold.evaluate(()=>{coldStartup.modes();coldStartup.features();coldStartup.profiles();});
         await cold.waitForTimeout(150);
@@ -116,7 +123,7 @@ const server=http.createServer((req,res)=>{
         await cold.waitForSelector('body.rig-dock-active:not(.rig-dock-loading)');
         check(await cold.locator('#rig-dock .webrx-actual-freq').textContent()==='7.074000 MHz','reverse startup message order settles without a refresh');
         await cold.route('**/rig_dock.css?*',route=>route.abort());
-        await cold.goto(`http://127.0.0.1:${server.address().port}/`);
+        await cold.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
         await cold.waitForFunction(()=>window.Plugins?.rig_dock?._script_loaded&&!document.body.classList.contains('rig-dock-loading'));
         check(await cold.locator('#openwebrx-panel-receiver').isVisible()&&await cold.locator('#rig-dock').count()===0,'stylesheet failure restores usable stock controls');
         check(await cold.locator('#rig-dock-startup').count()===0,'stylesheet failure removes the connecting notice');
@@ -125,7 +132,8 @@ const server=http.createServer((req,res)=>{
             console.log(`${checks} ${useWebKit?'WebKit':'Chromium'} cold mobile startup checks passed; simulated RF transport.`);
             return;
         }
-        await page.goto(`http://127.0.0.1:${server.address().port}/`);
+        await page.bringToFront();
+        await page.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
         await page.waitForSelector('body.rig-dock-active');
         await page.waitForSelector('.rd-antennas button');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!Plugins.audio_filter&&!Plugins.rig_audio),'legacy plugins blocked and optional filter not loaded');
@@ -137,10 +145,58 @@ const server=http.createServer((req,res)=>{
         check(await page.locator('#openwebrx-panel-log').isHidden(),'chat stays hidden when OWRX tries to reopen it');
         check(await page.locator('[data-toggle-panel="openwebrx-panel-log"]').isHidden(),'header chat button is hidden');
         check(await page.evaluate(()=>document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().top+1),'waterfall space reserved');
+        await loadScreenshotPlugin(page);
+        await page.waitForTimeout(600);
         const record=page.locator('#rig-dock .openwebrx-record-button');
+        check(await record.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'Screenshot plugin cannot clip the RIG Record label');
+        check(await page.locator('#screenshot-btn').count()===1,'Screenshot plugin keeps one working PIC control');
+        await page.locator('#rig-dock #screenshot-btn').waitFor({state:'visible'});
+        const screenshotDownload=page.waitForEvent('download');await page.locator('#rig-dock #screenshot-btn').click();
+        const shot=await screenshotDownload,shotBytes=fs.readFileSync(await shot.path());
+        check(shotBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&await page.evaluate(()=>screenshotCalls===1),'the retained upstream PIC handler downloads one PNG');
+        await page.evaluate(()=>{ws.antennaSupported=false;ws.send(JSON.stringify({type:'getantenna'}));});
+        await page.waitForFunction(()=>document.querySelector('.rd-antennas').hidden);
+        for(const [width,height] of [[1918,900],[1024,768],[390,844],[375,667]]) {
+            await page.setViewportSize({width,height});
+            await page.waitForTimeout(550);
+            check(await page.evaluate(()=>{
+                const nodes=[document.querySelector('#rig-dock .openwebrx-record-button'),document.querySelector('#rig-dock #screenshot-btn'),document.querySelector('[aria-controls="rd-popover-more"]')];
+                const rects=nodes.map(n=>n.getBoundingClientRect());
+                return nodes.every((n,i)=>n.scrollWidth<=n.clientWidth+1&&rects[i].left>=0&&rects[i].right<=innerWidth+1)&&rects.every((r,i)=>!i||r.left>=rects[i-1].right+4);
+            }),`Record, Screenshot and More fit without overlap without antenna controls ${width}×${height}`);
+            if(width===1918)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-desktop.png')});
+            if(width===390)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-mobile.png')});
+        }
+        await page.setViewportSize({width:1440,height:900});
+        await page.evaluate(()=>{ws.antennaSupported=true;ws.send(JSON.stringify({type:'getantenna'}));});
+        await page.waitForFunction(()=>!document.querySelector('.rd-antennas').hidden);
+        const keyboardScreenshot=page.waitForEvent('download');
+        await page.locator('#rig-dock #screenshot-btn').focus();await page.locator('#rig-dock #screenshot-btn').press('Enter');
+        await keyboardScreenshot;
+        check(await page.evaluate(()=>screenshotCalls===2),'Screenshot remains keyboard accessible without duplicate downloads');
+        const early=await browser.newPage({viewport:{width:1024,height:768}});
+        let releaseEarlyStyle,styleQueued;
+        const earlyStyleRequest=new Promise(resolve=>{styleQueued=resolve;});
+        await early.route('**/rig_dock.css?*',async route=>{await new Promise(resolve=>{releaseEarlyStyle=resolve;styleQueued();});await route.continue();});
+        await early.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
+        await earlyStyleRequest;await loadScreenshotPlugin(early);
+        check(await early.evaluate(()=>!document.getElementById('rig-dock')&&!!originalScreenshot),'Screenshot can initialize before the dock mounts');
+        releaseEarlyStyle();await early.waitForSelector('#rig-dock #screenshot-btn');
+        check(await early.evaluate(()=>document.querySelector('#rig-dock #screenshot-btn')===originalScreenshot),'early PIC initialization retains the original handler node');
+        const earlyDownload=early.waitForEvent('download');await early.locator('#rig-dock #screenshot-btn').click();await earlyDownload;
+        check(await early.evaluate(()=>screenshotCalls===1),'an early-loaded Screenshot plugin works after adoption');
+        await early.evaluate(()=>Plugins.rig_dock.destroy(false));
+        check(await early.evaluate(()=>document.getElementById('screenshot-btn')===originalScreenshot&&!originalScreenshot.closest('#rig-dock')&&originalScreenshot.textContent==='PIC'),'stock fallback restores the original PIC node and label');
+        const stockShot=early.waitForEvent('download');await early.locator('#screenshot-btn').click();await stockShot;
+        check(await early.evaluate(()=>screenshotCalls===2),'stock PIC handler still works after dock teardown');
+        // Keep this auxiliary page until browser teardown for single-process Chromium.
+        await page.bringToFront();
+        if(process.argv.includes('--screenshot-only')) { console.log(`${checks} Screenshot compatibility checks passed.`); return; }
+
         await record.click();
         check(await page.evaluate(()=>audioEngine.recording),'dock starts native recording through the visible recording control');
         check(await record.getAttribute('aria-pressed')==='true','recording state is shown immediately');
+        check(await record.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'active recording label fits with Screenshot loaded');
         await page.evaluate(()=>{
             const samples=new Int16Array(24000);
             for(let i=0;i<samples.length;i++)samples[i]=Math.round(6000*Math.sin(2*Math.PI*1000*i/12000));
@@ -153,6 +209,7 @@ const server=http.createServer((req,res)=>{
         check(await page.evaluate(()=>!audioEngine.recording),'stop clears native recording state');
         await page.evaluate(()=>{ws.reply({type:'config',value:{allow_audio_recording:false}});UI.toggleRecording(true);});
         check(await record.isHidden()&&await page.evaluate(()=>!audioEngine.recording),'server recording permission still applies');
+        check(await page.locator('#rig-dock #screenshot-btn').isVisible(),'Screenshot remains available when audio recording is disabled');
         await page.evaluate(()=>ws.reply({type:'config',value:{allow_audio_recording:true}}));
         await page.locator('#openwebrx-sdr-profiles-listbox').selectOption('sdrplay|20m');
         check(await page.evaluate(()=>profilesChanged===1),'native profile handler works after move');
@@ -186,6 +243,18 @@ const server=http.createServer((req,res)=>{
         await page.locator('.rd-antennas button').filter({hasText:'C - HF'}).click();
         await page.waitForSelector('.rd-antennas button[title="Antenna C"][aria-pressed="true"]');
         check(await page.evaluate(()=>ws.selected==='Antenna C'),'antenna C selection works');
+        await page.evaluate(()=>{
+            const node=document.querySelector('.webrx-actual-freq');
+            node.innerHTML='<span class="digit">7</span>.074000 MHz';
+            node.addEventListener('click',()=>window.nativeFrequencyClick=true,{once:true});
+        });
+        await page.locator('.webrx-actual-freq .digit').click();
+        check(await page.locator('#rd-popover-tune').isVisible()&&!await page.evaluate(()=>!!window.nativeFrequencyClick),'clicking a native frequency digit opens one RIG frequency editor');
+        await page.getByLabel('Frequency units',{exact:true}).selectOption('kHz');
+        await page.getByLabel('Frequency with units',{exact:true}).fill('7074');
+        await page.locator('#rd-popover-tune').getByRole('button',{name:'Tune',exact:true}).click();
+        await page.waitForFunction(()=>UI.getFrequency()===7074000);
+        check(await page.evaluate(()=>UI.getFrequency()===7074000),'explicit unit selection tunes a unitless number correctly');
         await page.locator('[aria-controls="rd-popover-bandpass"]').click();
         await page.locator('#rd-popover-bandpass input').nth(0).fill('-2700');await page.locator('#rd-popover-bandpass input').nth(1).fill('-200');
         await page.getByRole('button',{name:'Apply',exact:true}).click();
@@ -193,7 +262,7 @@ const server=http.createServer((req,res)=>{
         await page.locator('[aria-controls="rd-popover-audio"]').click();
         check(await page.getByText('Enable audio filter for this session',{exact:true}).locator('input').isChecked()===false,'audio starts bypassed');
         await page.getByRole('button',{name:'Filter settings…',exact:true}).click();
-        await page.waitForSelector('#rig-audio-master-state');
+        await page.waitForSelector('#af2-status');
         check(await page.evaluate(()=>!Plugins.rig_audio.isEnabled()&&routeLog.length===0),'loading settings leaves native audio route untouched');
         check(await page.evaluate(()=>AudioNode.prototype.connect===originalAudioConnect),'AudioNode prototype is unchanged');
         await page.getByRole('button',{name:'Enable',exact:true}).click();
@@ -223,6 +292,23 @@ const server=http.createServer((req,res)=>{
         await page.evaluate(()=>Plugins.toggleWindow('rig_audio',false));
         await page.waitForTimeout(600);
         check(await page.locator('[aria-controls="rd-popover-audio"]').innerText()==='Audio: Bypassed ▴','dock displays actual bypass state');
+        await page.evaluate(async()=>{
+            window.beforeNeuralAudio=audioEngine;
+            window.neuralContext=new AudioContext({sampleRate:48000});await neuralContext.resume();
+            const gainNode=neuralContext.createGain();gainNode.gain.value=.05;gainNode.connect(neuralContext.destination);
+            window.neuralOscillator=neuralContext.createOscillator();neuralOscillator.connect(gainNode);neuralOscillator.start();
+            audioEngine={audioContext:neuralContext,gainNode,isStarted:()=>true};
+            UI.setModulation('usb');Plugins.rig_audio.setEnabled(true);
+            RigAudioStudio.applyPreset('weak-dx-neural');
+        });
+        await page.waitForFunction(()=>RigAudioStudio.status().nrEngineEffective==='rnnoise',{},{timeout:20000});
+        check(await page.evaluate(()=>RigAudioStudio.status().routes.some(r=>r.rnnoiseState==='ready'&&r.nonzeroInputSamples>0)),'real bundled RNNoise model processes nonzero receiver audio in an AudioWorklet');
+        check(await page.evaluate(()=>AudioNode.prototype.connect===originalAudioConnect),'Studio RNNoise does not patch the global audio connection prototype');
+        await page.evaluate(()=>UI.setModulation('cw'));
+        await page.waitForFunction(()=>RigAudioStudio.status().mode==='cw');
+        check(await page.evaluate(()=>RigAudioStudio.status().nrEngineEffective==='classic'),'CW uses classical processing rather than speech suppression');
+        await page.evaluate(async()=>{Plugins.rig_audio.setEnabled(false);neuralOscillator.stop();await neuralContext.close();audioEngine=beforeNeuralAudio;UI.setModulation('lsb');});
+
         await page.locator('[aria-controls="rd-popover-more"]').click();
         check(await page.locator('#openwebrx-themes-listbox').isVisible(),'display settings available in More');
         check(await page.getByRole('button',{name:'Chat / log',exact:true}).count()===0,'chat launcher removed from More');
@@ -237,8 +323,9 @@ const server=http.createServer((req,res)=>{
         await page.locator('.rd-tune-form input').fill('7127000 Hz');await page.locator('.rd-tune-form input').press('Enter');
         check(await page.evaluate(()=>UI.getFrequency()===7127000),'frequency entry accepts Hz with Enter');
         await page.locator('[aria-controls="rd-popover-tune"]').click();
+        await page.getByLabel('Frequency units',{exact:true}).selectOption('MHz');
         await page.locator('.rd-tune-form input').fill('7.128');await page.locator('.rd-tune-form button').click();
-        check(await page.evaluate(()=>UI.getFrequency()===7128000),'unitless frequency remains MHz');
+        check(await page.evaluate(()=>UI.getFrequency()===7128000),'a unitless frequency uses the selected MHz scale');
         check(await page.evaluate(()=>!ws.sent.some(x=>x.type==='setfrequency')),'in-window tuning does not retune the shared SDR');
         await page.evaluate(()=>{UI.setModulation('rtty','lsb');UI.getDemodulatorPanel().setMagicKey('test-key');ws.requiredKey='test-key';});
         await page.locator('[aria-controls="rd-popover-tune"]').click();
@@ -292,7 +379,7 @@ const server=http.createServer((req,res)=>{
             ft8:'wsjt-message',ft4:'wsjt-message',wspr:'wsjt-message',js8:'js8-message',
             packet:'packet-message',ais:'packet-message',pocsag:'pocsag-message',page:'page-message',
             hfdl:'hfdl-message',vdl2:'hfdl-message',acars:'hfdl-message',uat:'hfdl-message',
-            adsb:'adsb-message',ism:'ism-message',wmbus:'ism-message',dsc:'dsc-message',
+            adsb:'adsb-message',ism:'ism-message',wmbus:'ism-message',dsc:'dsc-message',ale2g:'ale2g-message',
             sstv:'sstv-message',fax:'fax-message',cwskimmer:'skimmer-message',meshtastic:'meshtastic-message',
             rtty:'digimodes',dmr:'metadata-dmr',m17:'metadata-m17',ysf:'metadata-ysf',
             dstar:'metadata-dstar',nxdn:'metadata-nxdn',p25:'metadata-p25',tetra:'metadata-tetra',
@@ -302,7 +389,7 @@ const server=http.createServer((req,res)=>{
             await page.evaluate(mode=>UI.setModulation(mode),mode);
             await page.waitForFunction(suffix=>{
                 const node=document.getElementById('openwebrx-panel-'+suffix);
-                return node&&node.parentElement.id==='rig-decoder-body'&&node.style.display!=='none'&&!node.movement&&
+                return node&&node.parentElement.id==='rig-decoder-body'&&node.style.display!=='none'&&
                     !document.getElementById('rig-decoder-tray').hidden;
             },suffix,{timeout:10000,polling:50}).catch(async error=>{
                 console.error('Decoder mode failed:',mode,suffix,await page.evaluate(suffix=>{
@@ -312,6 +399,139 @@ const server=http.createServer((req,res)=>{
             });
             check(await page.locator('#openwebrx-panel-'+suffix).isVisible(),`${mode} output is in the decoder tray`);
         }
+        await page.evaluate(()=>{
+            UI.setModulation('ale2g');
+            const panel=$('#openwebrx-panel-ale2g-message').ale2gMessagePanel();
+            window.alePanel=panel;
+            panel.pushMessage({mode:'ALE2G',timestamp:Date.now(),freq:7102000,source:'BAS',destination:'',event:'amd',message:'AMD: <img src=x onerror=alert(1)>'});
+        });
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody').innerText().then(s=>s.includes('BAS')&&s.includes('7102.0')),'ALE output preserves station and exact channel');
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody img').count()===0,'radio text cannot inject HTML into ALE output');
+        await page.evaluate(()=>{
+            ws.logEvents=Array.from({length:205},(_,i)=>({log_id:i+1,source_id:'sdrplay',timestamp:1792962000000+i,freq:11226000,source:'ADW',destination:'',event:'amd',message:i===0?'=SUM(1,2)':'Radio "text", line\nnext',bank:'hfgcs_candidates'}));
+            ws.logStations=[{address:'ADW',timestamp:1792962000204,count:204,frequencies:[11226000,15043000]},
+                {address:'<img src=x onerror=alert(1)>',timestamp:1792962000000,count:1,frequencies:[5708000]}];
+        });
+        await page.getByRole('button',{name:'Refresh log',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.ale-log-status').textContent.includes('205'));
+        await page.locator('.ale-heard > summary').click();
+        check(await page.locator('.ale-heard-list').innerText().then(s=>s.includes('ADW')&&s.includes('15043.0')&&s.includes('204 decodes')),'stations heard shows aggregated source addresses, channels and counts');
+        check(await page.locator('.ale-heard-list img').count()===0,'station summary escapes received addresses');
+        const csvDownloadPromise=page.waitForEvent('download');
+        await page.getByRole('button',{name:'Export CSV',exact:true}).click();
+        const csvDownload=await csvDownloadPromise;
+        const csvText=fs.readFileSync(await csvDownload.path(),'utf8');
+        check(csvDownload.suggestedFilename().endsWith('.csv')&&csvText.includes('Frequency_Hz'),'CSV download has frequency units and column headers');
+        check(csvText.includes('"' + "'=SUM(1,2)" + '"')&&csvText.includes('Radio ""text"", line'),'CSV quotes radio text and neutralizes spreadsheet formulas');
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='export').length)===2,'CSV export downloads every retained page');
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        check(await page.locator('.ale-heard-list li').count()===2,'Clear removes displayed messages without erasing the durable station summary');
+        await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
+        check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'heard stations and CSV controls fit phone width');
+        await page.screenshot({path:path.join(root,'test-results/ale-heard-mobile.png')});
+        await page.setViewportSize({width:1440,height:900});await page.waitForTimeout(150);
+        await page.screenshot({path:path.join(root,'test-results/ale-heard-desktop.png')});
+        await page.locator('.ale-heard > summary').click();
+        await page.evaluate(()=>{ws.logFailure=true;});
+        await page.getByRole('button',{name:'Refresh log',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.ale-log-status').textContent.includes('unavailable'));
+        check(await page.evaluate(()=>!alePanel.serverScanner.pending),'log failures do not change scanner control state');
+        await page.evaluate(()=>{ws.logFailure=false;});
+
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
+        await page.evaluate(()=>{
+            for (const [source,freq] of [['ADW',15043000],['JNR',11226000],['OFF',5708000]])
+                alePanel.pushMessage({mode:'ALE2G',timestamp:Date.now(),freq,source,destination:'',event:'sounding_this_was',message:`[Sounding THIS WAS] [From: ${source}]`});
+        });
+        const sounding=page.locator('#openwebrx-panel-ale2g-message tbody tr').last();
+        check(await sounding.locator('td').nth(2).innerText()==='OFF'&&await sounding.locator('td').nth(3).innerText()==='—','sounding keeps the literal OFF address with no invented destination');
+        check(await sounding.innerText().then(t=>t.includes('Sounding · TWS')&&!t.includes('[From: OFF]')),'sounding summary avoids repeating raw protocol fields');
+        await sounding.getByText('Raw decode',{exact:true}).click();
+        check(await sounding.locator('pre').innerText()==='[Sounding THIS WAS] [From: OFF]','original sounding remains available in raw details');
+        await sounding.getByText('Raw decode',{exact:true}).click();
+        check(await page.evaluate(()=>{
+            const head=[...document.querySelectorAll('#openwebrx-panel-ale2g-message th')];
+            const cells=[...document.querySelector('#openwebrx-panel-ale2g-message tbody tr').children];
+            return head.every((th,i)=>Math.abs(th.getBoundingClientRect().left-cells[i].getBoundingClientRect().left)<1);
+        }),'all ALE column headings align with their data');
+        await page.getByRole('button',{name:'Fit',exact:true}).click();
+        // Fit starts enabled on a fresh browser; exercise toggling back on explicitly.
+        if(await page.getByRole('button',{name:'Fit',exact:true}).getAttribute('aria-pressed')==='false') await page.getByRole('button',{name:'Fit',exact:true}).click();
+        await page.screenshot({path:path.join(root,'test-results/ale-compact-desktop.png')});
+        const compactHeight=await page.locator('#rig-decoder-tray').evaluate(n=>n.getBoundingClientRect().height);
+        check(compactHeight<340,'Fit bounds a few ALE rows instead of reserving a large empty pane');
+        await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
+        check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'ALE rows fit the phone width');
+        await page.screenshot({path:path.join(root,'test-results/ale-compact-mobile.png')});
+        await page.setViewportSize({width:1440,height:900});
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('.ale-scan-controls > summary').click();
+        check(await page.getByLabel('Run scanner on server').isChecked(),'server scanning is the default');
+        await page.getByLabel('Run scanner on server').uncheck();
+        check(await page.getByRole('button',{name:'Start ALE scan',exact:true}).isVisible(),'ALE scanner controls are visible in tray');
+        check(await page.getByLabel('Scan across HF bands').isChecked()===false,'ALE cross-band scanning is opt-in');
+        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
+        await page.waitForFunction(()=>window.alePanel.scanner.running&&!window.alePanel.scanner.tuning);
+        check(await page.evaluate(()=>UI.getFrequency()===7102000),'ALE bank start tunes native demodulator');
+        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',freq:7102000,event:'activity',active:true}));
+        check(await page.locator('.ale-scan-status').innerText().then(s=>s.includes('Activity / hold')),'native ALE activity reaches scanner hold');
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'activity events do not create message rows');
+        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',freq:7102000,event:'activity',active:false}));
+        await page.getByRole('button',{name:'Stop',exact:true}).click();
+        check(await page.evaluate(()=>!alePanel.scanner.running),'ALE Stop cancels scanning');
+        await page.getByLabel('ALE scan bank').selectOption('cothen_candidates');
+        await page.getByLabel('Scan across HF bands').check();
+        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
+        await page.waitForFunction(()=>alePanel.scanner.running&&!alePanel.scanner.tuning&&UI.getFrequency()===5250000);
+        check(await page.evaluate(()=>UI.getModulation()==='ale2g'),'cross-band scan restores ALE after native center restart');
+        await page.getByRole('button',{name:'Stop',exact:true}).click();
+        await page.getByLabel('Scan across HF bands').uncheck();
+        await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_offset_freq:0,start_mod:'usb'}}));
+        await page.waitForTimeout(150);
+        await page.evaluate(()=>UI.setModulation('ale2g'));
+        await page.getByLabel('Run scanner on server').check();
+        await page.getByLabel('Scan across HF bands').check();
+        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
+        await page.waitForFunction(()=>alePanel.serverScanner.running);
+        check(await page.evaluate(()=>!alePanel.scanner.running),'server scan does not run browser scan simultaneously');
+        await page.evaluate(()=>{
+            ws.scanState={...ws.scanState,sequence:1,events:[{mode:'ALE2G',freq:5250000,timestamp:Date.now(),source:'ADW',event:'sounding_this_was',message:'SERVER TEST',server_scan:true,scan_seq:1}]};
+            alePanel.serverScanner.poll();
+        });
+        await page.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr').length===1);
+        await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===1,'server history is deduplicated by sequence');
+        const stopsBefore=await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length);
+        await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+        check(await page.evaluate(()=>ws.scanState.running),'closing/hiding a tab does not stop the server worker');
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length)===stopsBefore,'pagehide sends no server stop request');
+        // A discarded mobile document loses its in-memory following flag.
+        // Recreate the controller with AM selected, retaining only tab storage.
+        const startsBefore=await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='start').length);
+        await page.evaluate(()=>{
+            const old=alePanel.serverScanner;
+            UI.setModulation('am');
+            alePanel.serverScanner=new AleServerScanClient(old.status,old.event,old.reset);
+            window.dispatchEvent(new Event('pageshow'));
+        });
+        await page.waitForFunction(()=>UI.getModulation()==='ale2g'&&alePanel.serverScanner.running);
+        check(await page.evaluate(()=>UI.getFrequency()===5250000),'a fresh mobile observer rejoins the running ALE scan after the profile defaults to AM');
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='start').length)===startsBefore,'mobile return observes the existing worker without starting another scan');
+        await page.locator('[aria-controls="rd-popover-mode"]').click();
+        await page.getByLabel('Search modes',{exact:true}).fill('');
+        await page.locator('#rd-popover-mode [data-mode="usb"]').click();
+        await page.waitForFunction(()=>!alePanel.serverScanner.running&&UI.getModulation()==='usb');
+        check(await page.evaluate(()=>!ws.scanState.running),'choosing a RIG mode waits for server scanner Stop');
+        check(await page.evaluate(()=>sessionStorage.getItem('owrx_ale_observer_v1:sdrplay')===null),'manual mode takeover clears mobile scan-following intent');
+        await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
+        check(await page.evaluate(()=>UI.getModulation()==='usb'),'later scanner status does not pull manual mode back to ALE');
+        const savedScan = await page.evaluate(()=>JSON.parse(localStorage.getItem('owrx_ale_scan_preferences_v1')).sdrplay);
+        check(savedScan.bank==='cothen_candidates'&&savedScan.across&&savedScan.server,'scan bank, engine and scope are saved per receiver in this browser');
+        await page.evaluate(()=>UI.setModulation('ale2g'));
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_mod:'usb'}}));
+        await page.waitForTimeout(150);
         await page.evaluate(()=>UI.setModulation('ft8'));
         await page.waitForFunction(()=>!document.getElementById('rig-decoder-tray').hidden);
         await page.evaluate(()=>{
@@ -427,14 +647,18 @@ const server=http.createServer((req,res)=>{
         check(await page.evaluate(()=>!document.body.classList.contains('rig-dock-active')),'stock controls restored');
         check(await page.evaluate(()=>savedSquelchNode===document.querySelector('.openwebrx-squelch-slider')&&!document.querySelector('#rig-dock')),'native nodes restored after destroy');
         check(await page.evaluate(()=>savedDecoderNodes.every(node=>node.parentElement===savedDecoderParents.get(node)&&!node.classList.contains('rd-decoder-native'))),'all native decoder panels return to their original parents');
+        check(await page.locator('.webrx-actual-freq').getAttribute('role')===null,'stock frequency readout attributes are restored');
         check(await page.locator('#removed-decoder').count()===0,'teardown does not recreate a decoder removed by its owner');
         await page.getByRole('button',{name:'RIG Dock',exact:true}).click();await page.waitForSelector('#rig-dock');
         check(await page.evaluate(()=>!Plugins.rig_audio||!Plugins.rig_audio.isEnabled()),'reenabling dock keeps filter bypassed or unloaded');
         await page.reload();await page.waitForSelector('#rig-dock');
         check(await page.evaluate(()=>!Plugins.rig_audio),'reload does not load optional filter');
+        await page.waitForFunction(()=>document.querySelector('[aria-label="ALE scan bank"]').value==='cothen_candidates');
+        check(await page.getByLabel('Scan across HF bands').isChecked()&&await page.getByLabel('Run scanner on server').isChecked(),'saved scan selections restore after a page reload');
+        check(await page.evaluate(()=>!window.owrxAleScanner.isRunning()),'restoring scan preferences does not start an unattended scan');
         const studio=page;const studioErrors=[];
         studio.on('pageerror',e=>studioErrors.push(e.message));
-        await studio.goto(`http://127.0.0.1:${server.address().port}/?studio-init=1`);
+        await studio.goto(`http://127.0.0.1:${server.address().port}/?studio-init=1`,{waitUntil:'domcontentloaded'});
         await studio.waitForSelector('body.rig-dock-active');
         await studio.waitForFunction(()=>window.studioFinished===true);
         await studio.waitForSelector('.rd-antennas button');
@@ -442,12 +666,12 @@ const server=http.createServer((req,res)=>{
         check(await studio.locator('.rd-antennas button').count()===3,'Optiplex-style async startup continues loading other plugins');
         check(studioErrors.length===0,'Optiplex-style startup has no browser errors: '+studioErrors.join('; '));
         await page.addInitScript(()=>{if(location.search.includes('map-test'))window.mapManager={};});
-        await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`);
+        await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`,{waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>Plugins._type==='map');
         check(await page.evaluate(()=>!window.owrxRigDockLoader&&!Plugins.rig_dock),'map plugin initialization does not load the receiver dock');
         const slow=await browser.newPage();const slowErrors=[];
         slow.on('pageerror',e=>slowErrors.push(e.message));
-        await slow.goto(`http://127.0.0.1:${server.address().port}/?delay-start=1`);
+        await slow.goto(`http://127.0.0.1:${server.address().port}/?delay-start=1`,{waitUntil:'domcontentloaded'});
         await slow.waitForResponse(r=>r.url().includes('rig_dock.css'),{timeout:10000}).catch(()=>{});
         await slow.waitForTimeout(300);
         check(await slow.evaluate(()=>!document.getElementById('rig-dock')&&!waterfall_setup_done),'dock waits while native scale is uninitialized');
