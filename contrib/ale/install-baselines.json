@@ -13,5 +13,6 @@
   "htdocs/lib/AleScanner.js": null,
   "owrx/connection.py": "88e8fbe76d7d1ccd34fa2595f7a2b123817f7eda",
   "owrx/ale_scan.py": null,
-  "owrx/ale_channels.json": null
+  "owrx/ale_channels.json": null,
+  "owrx/ale_log.py": null
 }

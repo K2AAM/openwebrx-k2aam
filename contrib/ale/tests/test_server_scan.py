@@ -56,7 +56,8 @@ class ServerScanTests(unittest.TestCase):
             chain.stop=lambda:setattr(chain,'stopped',True)
             chains.append(chain)
             return chain
-        scan=module.AleBackgroundScan(source,factory,clock=lambda:now[0],settle=0,retune_allowed=lambda:True)
+        journal=Mock(recent=Mock(return_value=[]),append=Mock(return_value=1))
+        scan=module.AleBackgroundScan(source,factory,clock=lambda:now[0],settle=0,retune_allowed=lambda:True,journal=journal)
         self.addCleanup(lambda:self.cleanup(scan))
         return source,chains,now,scan
     def cleanup(self,scan):

@@ -86,7 +86,12 @@ Ale2gMessagePanel.prototype.render = function() {
             '.ale-scan-controls button,.ale-scan-controls select,.ale-scan-controls input{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
             '.ale-scan-controls select option{color:#111;background:#fff}' +
             '.ale-scan-controls input[type=number]{width:48px}.ale-scan-channels{max-height:90px;overflow:auto}' +
-            '.ale-scan-channels label{display:inline-block;margin:3px 8px 3px 0}.ale-scan-status{overflow-wrap:anywhere}'
+            '.ale-scan-channels label{display:inline-block;margin:3px 8px 3px 0}.ale-scan-status{overflow-wrap:anywhere}' +
+            '.ale-log-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:4px 6px;font:12px system-ui;flex:0 0 auto}' +
+            '.ale-log-tools button{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
+            '.ale-log-status{overflow-wrap:anywhere;color:#a7bad0}.ale-heard{flex:0 1 auto;max-height:160px;overflow:auto;padding:4px 6px;font:12px system-ui}' +
+            '.ale-heard-list{list-style:none;padding:0;margin:5px 0}.ale-heard-list li{display:grid;grid-template-columns:90px 160px minmax(0,1fr) 80px;gap:8px;padding:4px 0;border-top:1px solid #ffffff12;overflow-wrap:anywhere}' +
+            '@media(max-width:620px){.ale-heard-list li{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ale-heard-list li span:nth-child(3){grid-column:1/2}}'
         ).appendTo('head');
     }
     const layout = $('<div class="ale-layout">').appendTo(this.el);
@@ -137,7 +142,8 @@ Ale2gMessagePanel.prototype.render = function() {
         me.serverWasRunning = me.serverScanner.running;
         if (me.serverScanner.running && me.scanner.running) me.scanner.stop('Server scanner owns this SDR');
         if (server.prop('checked') || me.serverScanner.running) updateControls(text);
-    }, event => me.pushMessage(event));
+        if (state && state.log_error && me.logWarning) me.logWarning(state.log_error);
+    }, event => me.pushMessage(event), () => me.el.find('tbody').empty());
     let loadedSource = null, preferences = {enabled:{}};
     const preferenceKey = 'owrx_ale_scan_preferences_v1';
     function currentSource() { return String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0]; }
@@ -159,6 +165,8 @@ Ale2gMessagePanel.prototype.render = function() {
     function loadPreferences() {
         const source = currentSource(); if (!source || source === loadedSource) return;
         loadedSource = source; preferences = {enabled:{}};
+        me.el.find('tbody').empty(); me.el.find('.ale-heard-list').empty();
+        if (me.refreshLog) me.refreshLog();
         try {
             const saved = JSON.parse(localStorage.getItem(preferenceKey) || '{}')[source];
             if (saved && typeof saved === 'object') preferences = {...saved,enabled:saved.enabled && typeof saved.enabled === 'object' ? saved.enabled : {}};
@@ -203,12 +211,83 @@ Ale2gMessagePanel.prototype.render = function() {
         this.serverScanner.destroy();
     });
     window.addEventListener('pageshow', () => this.serverScanner.resume());
+    const logTools = $('<div class="ale-log-tools">').appendTo(layout);
+    const exportLog = $('<button type="button">').text('Export CSV').appendTo(logTools);
+    const refreshLog = $('<button type="button">').text('Refresh log').appendTo(logTools);
+    const logStatus = $('<span class="ale-log-status" role="status">').text('Server scan log · loading…').appendTo(logTools);
+    const heard = $('<details class="ale-heard">').appendTo(layout);
+    const heardSummary = $('<summary>').text('Stations heard').appendTo(heard);
+    const heardList = $('<ul class="ale-heard-list" aria-label="Stations heard from server scans">').appendTo(heard);
+    let logBusy = false, lastLogSource = '', exportBusy = false;
+    async function updateLog() {
+        if (logBusy) return;
+        logBusy = true;
+        const source = currentSource();
+        if (source !== lastLogSource) { heardList.empty(); lastLogSource = source; }
+        try {
+            const state = await me.serverScanner.requestLog();
+            if (source !== currentSource()) return;
+            logStatus.text(me.serverScanner.state && me.serverScanner.state.log_error || state.total.toLocaleString()+' saved decodes');
+            logStatus.attr('title','Server scan log; newest '+state.retention.toLocaleString()+' receptions retained across receivers');
+            heardSummary.text('Stations heard · '+state.stations.length+(state.stations.length === state.station_limit ? ' most recent' : ''));
+            heardList.empty();
+            if (!state.stations.length) $('<li>').text('No source addresses logged yet.').appendTo(heardList);
+            for (const station of state.stations) {
+                const item = $('<li>').appendTo(heardList);
+                $('<strong>').text(station.address).appendTo(item);
+                $('<span>').text(new Date(station.timestamp).toISOString().replace('T',' ').slice(0,19)+' UTC').appendTo(item);
+                $('<span>').text(station.frequencies.map(f => (f/1000).toFixed(1)).join(', ')+' kHz').appendTo(item);
+                $('<span>').text(station.count+(station.count === 1 ? ' decode' : ' decodes')).appendTo(item);
+            }
+        } catch (error) { if (source === currentSource()) logStatus.text(error.message); }
+        finally { logBusy = false; if (source !== currentSource()) updateLog(); }
+    }
+    this.refreshLog = updateLog;
+    this.logWarning = text => logStatus.text(text);
+    refreshLog.on('click',updateLog);
+    heard.on('toggle', () => { if (heard.prop('open')) updateLog(); });
+    exportLog.on('click', async () => {
+        if (exportBusy) return;
+        exportBusy = true; exportLog.prop('disabled',true);
+        const source = currentSource();
+        try {
+            const chunks = ['UTC,Receiver,Frequency_Hz,From,To,Event,Message,Bank\r\n'];
+            let after = 0, through, count = 0, expected;
+            do {
+                if (source !== currentSource()) throw new Error('Receiver changed; export cancelled');
+                const page = await me.serverScanner.requestLog('export',{log_after:after,log_through:through});
+                if (expected === undefined) expected = page.total;
+                through = page.through;
+                for (const event of page.events) { chunks.push(aleLogCsvRow(event)); count++; }
+                if (count > 50000 || (page.more && page.after <= after)) throw new Error('Invalid log export response');
+                after = page.after;
+                logStatus.text('Exporting '+count.toLocaleString()+' decodes…');
+                if (!page.more) break;
+            } while (true);
+            if (count !== expected) throw new Error('Log retention changed during export; please retry');
+            if (source !== currentSource()) throw new Error('Receiver changed; export cancelled');
+            const url = URL.createObjectURL(new Blob(chunks,{type:'text/csv;charset=utf-8'}));
+            const link = document.createElement('a');
+            link.href = url; link.download = 'ALE-'+source.replace(/[^a-z0-9_-]/gi,'_')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+            document.body.append(link); link.click(); link.remove();
+            setTimeout(() => URL.revokeObjectURL(url),1000);
+            logStatus.text('Exported '+count.toLocaleString()+' retained decodes');
+        } catch (error) { logStatus.text(error.message); }
+        finally { exportBusy = false; exportLog.prop('disabled',false); }
+    });
+    this.logTimer = setInterval(() => { if (!document.hidden) updateLog(); },15000);
+    window.addEventListener('pagehide', () => { clearInterval(this.logTimer); this.logTimer = null; });
+    window.addEventListener('pageshow', () => {
+        if (!this.logTimer) this.logTimer = setInterval(() => { if (!document.hidden) updateLog(); },15000);
+        updateLog();
+    });
+    updateLog();
     layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Event</th><th>Message / details</th></tr></thead><tbody></tbody></table>'));
 };
 Ale2gMessagePanel.prototype.pushMessage = function(message) {
     if (message.test_audio && this.serverScanner.running) this.serverScanner.stop();
     if (this.serverScanner.running && !message.server_scan && !message.test_audio) return;
-    this.scanner.event(message);
+    if (!message.restored) this.scanner.event(message);
     if (message.event === 'activity') return;
     const row = $('<tr>');
     const events = {

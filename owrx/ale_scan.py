@@ -7,6 +7,7 @@ from pathlib import Path
 import threading
 import time
 import uuid
+from owrx.ale_log import get_log
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def native_retune_allowed():
 
 
 class AleBackgroundScan:
-    def __init__(self, source, factory=native_chain, clock=time.monotonic, settle=0.25, retune_allowed=native_retune_allowed):
+    def __init__(self, source, factory=native_chain, clock=time.monotonic, settle=0.25, retune_allowed=native_retune_allowed, journal=None):
         self.source = source
         self.factory = factory
         self.clock = clock
@@ -92,6 +93,17 @@ class AleBackgroundScan:
         self.rate = None
         self.index = -1
         self.reason = 'Stopped'
+        self.journal = journal
+        self.log_error = None
+        try:
+            if self.journal is None:
+                self.journal = get_log()
+            for message in self.journal.recent(source.getId()):
+                self.sequence += 1
+                self.history.append(dict(message, scan_seq=self.sequence, restored=True))
+        except Exception:
+            self.log_error = 'ALE log unavailable; check the server journal'
+            logger.exception('Cannot restore ALE reception log')
 
     def getClientClass(self):
         from owrx.source import SdrClientClass
@@ -178,6 +190,15 @@ class AleBackgroundScan:
             if message.get('event') != 'activity':
                 self.sequence += 1
                 saved = dict(message, server_scan=True, scan_seq=self.sequence)
+                try:
+                    if self.journal is None:
+                        self.journal = get_log()
+                    saved['log_id'] = self.journal.append(self.source.getId(), self.options['bank'], message)
+                    self.log_error = None
+                except Exception:
+                    if self.log_error is None:
+                        logger.exception('Cannot save ALE reception log')
+                    self.log_error = 'ALE log unavailable; check the server journal'
                 self.history.append(saved)
                 logger.info('ALE server decode: %s', json.dumps(saved))
 
@@ -274,7 +295,7 @@ class AleBackgroundScan:
             return {'available':True, 'session':self.session, 'running':self.running,
                     'status':self.status, 'frequency':self.frequency, 'bank':self.options['bank'] if self.options else None,
                     'sequence':self.sequence, 'events':[e.copy() for e in self.history if e['scan_seq'] > after],
-                    'options':self.options, 'source_id':self.source.getId()}
+                    'options':self.options, 'source_id':self.source.getId(), 'log_error':self.log_error}
 
 
 _registry = {}
@@ -285,6 +306,23 @@ def request(client, params):
     if not isinstance(params, dict) or client.sdr is None:
         raise ValueError('No receiver selected')
     action = params.get('action', 'status')
+    if action in ('log', 'export'):
+        request_id = params.get('request_id')
+        if not isinstance(request_id, str) or not request_id.isascii() or not request_id.isdigit() or len(request_id) > 12:
+            raise ValueError('Invalid log request identifier')
+        result = {'kind':'log', 'request_id':request_id, 'source_id':client.sdr.getId()}
+        try:
+            journal = get_log()
+            if action == 'log':
+                result.update(journal.summary(client.sdr.getId()))
+            else:
+                result.update(journal.page(client.sdr.getId(), params.get('log_after', 0), params.get('log_through')))
+        except ValueError:
+            result['error'] = 'Invalid ALE log request'
+        except Exception:
+            logger.exception('Cannot read ALE reception log')
+            result['error'] = 'ALE log unavailable; check the server journal'
+        return result
     if action not in ('start', 'stop', 'status'):
         raise ValueError('Unknown scanner action')
     after = params.get('after', 0)

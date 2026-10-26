@@ -92,6 +92,22 @@ class InstallerTests(unittest.TestCase):
     def test_server_upgrade_adds_verified_native_backup(self):
         self.server_upgrade_roundtrip()
 
+    def test_040_upgrade_adds_log_module_without_removing_reception_database(self):
+        original=self.snapshot()
+        installer.apply(self.plan(),self.state)
+        record=json.loads((self.state/'install.json').read_text())
+        log_path=self.package/'owrx/ale_log.py'
+        record['files']=[item for item in record['files'] if item['path']!=str(log_path)]
+        log_path.unlink();record['version']='0.4.0'
+        (self.state/'install.json').write_text(json.dumps(record))
+        database=self.root/'ale-log/receptions.sqlite3'
+        database.parent.mkdir();database.write_bytes(b'reception data')
+        installer.upgrade(self.package,self.web,self.binary,self.state,write=True,baselines=self.baselines)
+        self.assertTrue(log_path.exists())
+        installer.undo(self.state)
+        self.assertEqual(self.snapshot(),original)
+        self.assertEqual(database.read_bytes(),b'reception data')
+
     def test_antenna_server_upgrade_adds_verified_native_backup(self):
         self.antenna_fixture();self.server_upgrade_roundtrip()
 

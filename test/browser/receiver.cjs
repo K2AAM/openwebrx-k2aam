@@ -114,7 +114,7 @@ const server=http.createServer((req,res)=>{
         check(await cold.locator('#rig-decoder-tray').count()===0,'restoring stock controls removes the separate decoder tray');
         check(await cold.evaluate(()=>savedDecoderNodes.every(n=>n.parentElement===savedDecoderParents.get(n))),'cold-load decoder nodes return to their native positions');
         await cold.unroute('**/rig_dock.css?*');
-        await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`);
+        await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
         await cold.waitForSelector('#rig-dock-startup');
         await cold.evaluate(()=>{coldStartup.modes();coldStartup.features();coldStartup.profiles();});
         await cold.waitForTimeout(150);
@@ -123,7 +123,7 @@ const server=http.createServer((req,res)=>{
         await cold.waitForSelector('body.rig-dock-active:not(.rig-dock-loading)');
         check(await cold.locator('#rig-dock .webrx-actual-freq').textContent()==='7.074000 MHz','reverse startup message order settles without a refresh');
         await cold.route('**/rig_dock.css?*',route=>route.abort());
-        await cold.goto(`http://127.0.0.1:${server.address().port}/`);
+        await cold.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
         await cold.waitForFunction(()=>window.Plugins?.rig_dock?._script_loaded&&!document.body.classList.contains('rig-dock-loading'));
         check(await cold.locator('#openwebrx-panel-receiver').isVisible()&&await cold.locator('#rig-dock').count()===0,'stylesheet failure restores usable stock controls');
         check(await cold.locator('#rig-dock-startup').count()===0,'stylesheet failure removes the connecting notice');
@@ -133,7 +133,7 @@ const server=http.createServer((req,res)=>{
             return;
         }
         await page.bringToFront();
-        await page.goto(`http://127.0.0.1:${server.address().port}/`);
+        await page.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
         await page.waitForSelector('body.rig-dock-active');
         await page.waitForSelector('.rd-antennas button');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!Plugins.audio_filter&&!Plugins.rig_audio),'legacy plugins blocked and optional filter not loaded');
@@ -262,7 +262,7 @@ const server=http.createServer((req,res)=>{
         await page.locator('[aria-controls="rd-popover-audio"]').click();
         check(await page.getByText('Enable audio filter for this session',{exact:true}).locator('input').isChecked()===false,'audio starts bypassed');
         await page.getByRole('button',{name:'Filter settings…',exact:true}).click();
-        await page.waitForSelector('#rig-audio-master-state');
+        await page.waitForSelector('#af2-status');
         check(await page.evaluate(()=>!Plugins.rig_audio.isEnabled()&&routeLog.length===0),'loading settings leaves native audio route untouched');
         check(await page.evaluate(()=>AudioNode.prototype.connect===originalAudioConnect),'AudioNode prototype is unchanged');
         await page.getByRole('button',{name:'Enable',exact:true}).click();
@@ -292,6 +292,23 @@ const server=http.createServer((req,res)=>{
         await page.evaluate(()=>Plugins.toggleWindow('rig_audio',false));
         await page.waitForTimeout(600);
         check(await page.locator('[aria-controls="rd-popover-audio"]').innerText()==='Audio: Bypassed ▴','dock displays actual bypass state');
+        await page.evaluate(async()=>{
+            window.beforeNeuralAudio=audioEngine;
+            window.neuralContext=new AudioContext({sampleRate:48000});await neuralContext.resume();
+            const gainNode=neuralContext.createGain();gainNode.gain.value=.05;gainNode.connect(neuralContext.destination);
+            window.neuralOscillator=neuralContext.createOscillator();neuralOscillator.connect(gainNode);neuralOscillator.start();
+            audioEngine={audioContext:neuralContext,gainNode,isStarted:()=>true};
+            UI.setModulation('usb');Plugins.rig_audio.setEnabled(true);
+            RigAudioStudio.applyPreset('weak-dx-neural');
+        });
+        await page.waitForFunction(()=>RigAudioStudio.status().nrEngineEffective==='rnnoise',{},{timeout:20000});
+        check(await page.evaluate(()=>RigAudioStudio.status().routes.some(r=>r.rnnoiseState==='ready'&&r.nonzeroInputSamples>0)),'real bundled RNNoise model processes nonzero receiver audio in an AudioWorklet');
+        check(await page.evaluate(()=>AudioNode.prototype.connect===originalAudioConnect),'Studio RNNoise does not patch the global audio connection prototype');
+        await page.evaluate(()=>UI.setModulation('cw'));
+        await page.waitForFunction(()=>RigAudioStudio.status().mode==='cw');
+        check(await page.evaluate(()=>RigAudioStudio.status().nrEngineEffective==='classic'),'CW uses classical processing rather than speech suppression');
+        await page.evaluate(async()=>{Plugins.rig_audio.setEnabled(false);neuralOscillator.stop();await neuralContext.close();audioEngine=beforeNeuralAudio;UI.setModulation('lsb');});
+
         await page.locator('[aria-controls="rd-popover-more"]').click();
         check(await page.locator('#openwebrx-themes-listbox').isVisible(),'display settings available in More');
         check(await page.getByRole('button',{name:'Chat / log',exact:true}).count()===0,'chat launcher removed from More');
@@ -390,6 +407,37 @@ const server=http.createServer((req,res)=>{
         });
         check(await page.locator('#openwebrx-panel-ale2g-message tbody').innerText().then(s=>s.includes('BAS')&&s.includes('7102.0')),'ALE output preserves station and exact channel');
         check(await page.locator('#openwebrx-panel-ale2g-message tbody img').count()===0,'radio text cannot inject HTML into ALE output');
+        await page.evaluate(()=>{
+            ws.logEvents=Array.from({length:205},(_,i)=>({log_id:i+1,source_id:'sdrplay',timestamp:1792962000000+i,freq:11226000,source:'ADW',destination:'',event:'amd',message:i===0?'=SUM(1,2)':'Radio "text", line\nnext',bank:'hfgcs_candidates'}));
+            ws.logStations=[{address:'ADW',timestamp:1792962000204,count:204,frequencies:[11226000,15043000]},
+                {address:'<img src=x onerror=alert(1)>',timestamp:1792962000000,count:1,frequencies:[5708000]}];
+        });
+        await page.getByRole('button',{name:'Refresh log',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.ale-log-status').textContent.includes('205'));
+        await page.locator('.ale-heard > summary').click();
+        check(await page.locator('.ale-heard-list').innerText().then(s=>s.includes('ADW')&&s.includes('15043.0')&&s.includes('204 decodes')),'stations heard shows aggregated source addresses, channels and counts');
+        check(await page.locator('.ale-heard-list img').count()===0,'station summary escapes received addresses');
+        const csvDownloadPromise=page.waitForEvent('download');
+        await page.getByRole('button',{name:'Export CSV',exact:true}).click();
+        const csvDownload=await csvDownloadPromise;
+        const csvText=fs.readFileSync(await csvDownload.path(),'utf8');
+        check(csvDownload.suggestedFilename().endsWith('.csv')&&csvText.includes('Frequency_Hz'),'CSV download has frequency units and column headers');
+        check(csvText.includes('"' + "'=SUM(1,2)" + '"')&&csvText.includes('Radio ""text"", line'),'CSV quotes radio text and neutralizes spreadsheet formulas');
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='export').length)===2,'CSV export downloads every retained page');
+        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        check(await page.locator('.ale-heard-list li').count()===2,'Clear removes displayed messages without erasing the durable station summary');
+        await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
+        check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'heard stations and CSV controls fit phone width');
+        await page.screenshot({path:path.join(root,'test-results/ale-heard-mobile.png')});
+        await page.setViewportSize({width:1440,height:900});await page.waitForTimeout(150);
+        await page.screenshot({path:path.join(root,'test-results/ale-heard-desktop.png')});
+        await page.locator('.ale-heard > summary').click();
+        await page.evaluate(()=>{ws.logFailure=true;});
+        await page.getByRole('button',{name:'Refresh log',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.ale-log-status').textContent.includes('unavailable'));
+        check(await page.evaluate(()=>!alePanel.serverScanner.pending),'log failures do not change scanner control state');
+        await page.evaluate(()=>{ws.logFailure=false;});
+
         await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
         await page.evaluate(()=>{
@@ -412,7 +460,7 @@ const server=http.createServer((req,res)=>{
         if(await page.getByRole('button',{name:'Fit',exact:true}).getAttribute('aria-pressed')==='false') await page.getByRole('button',{name:'Fit',exact:true}).click();
         await page.screenshot({path:path.join(root,'test-results/ale-compact-desktop.png')});
         const compactHeight=await page.locator('#rig-decoder-tray').evaluate(n=>n.getBoundingClientRect().height);
-        check(compactHeight<260,'Fit bounds a few ALE rows instead of reserving a large empty pane');
+        check(compactHeight<340,'Fit bounds a few ALE rows instead of reserving a large empty pane');
         await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
         check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'ALE rows fit the phone width');
         await page.screenshot({path:path.join(root,'test-results/ale-compact-mobile.png')});
@@ -599,7 +647,7 @@ const server=http.createServer((req,res)=>{
         check(await page.evaluate(()=>!window.owrxAleScanner.isRunning()),'restoring scan preferences does not start an unattended scan');
         const studio=page;const studioErrors=[];
         studio.on('pageerror',e=>studioErrors.push(e.message));
-        await studio.goto(`http://127.0.0.1:${server.address().port}/?studio-init=1`);
+        await studio.goto(`http://127.0.0.1:${server.address().port}/?studio-init=1`,{waitUntil:'domcontentloaded'});
         await studio.waitForSelector('body.rig-dock-active');
         await studio.waitForFunction(()=>window.studioFinished===true);
         await studio.waitForSelector('.rd-antennas button');
@@ -607,12 +655,12 @@ const server=http.createServer((req,res)=>{
         check(await studio.locator('.rd-antennas button').count()===3,'Optiplex-style async startup continues loading other plugins');
         check(studioErrors.length===0,'Optiplex-style startup has no browser errors: '+studioErrors.join('; '));
         await page.addInitScript(()=>{if(location.search.includes('map-test'))window.mapManager={};});
-        await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`);
+        await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`,{waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>Plugins._type==='map');
         check(await page.evaluate(()=>!window.owrxRigDockLoader&&!Plugins.rig_dock),'map plugin initialization does not load the receiver dock');
         const slow=await browser.newPage();const slowErrors=[];
         slow.on('pageerror',e=>slowErrors.push(e.message));
-        await slow.goto(`http://127.0.0.1:${server.address().port}/?delay-start=1`);
+        await slow.goto(`http://127.0.0.1:${server.address().port}/?delay-start=1`,{waitUntil:'domcontentloaded'});
         await slow.waitForResponse(r=>r.url().includes('rig_dock.css'),{timeout:10000}).catch(()=>{});
         await slow.waitForTimeout(300);
         check(await slow.evaluate(()=>!document.getElementById('rig-dock')&&!waterfall_setup_done),'dock waits while native scale is uninitialized');

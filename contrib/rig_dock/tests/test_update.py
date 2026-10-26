@@ -37,7 +37,7 @@ class UpdateTests(unittest.TestCase):
         self.target.write_bytes(old)
         entry['sha256'] = installer.digest(old)
         css = next(item for item in record['files'] if Path(item['path']).name == 'rig_dock.css')
-        css_version = version if version in ('0.2.0', '0.2.1', '0.3.0') else '0.1.3'
+        css_version = version if version in ('0.2.0', '0.2.1', '0.3.0', '0.3.1') else '0.1.3'
         css_bytes = (PACKAGE / f'tests/fixtures/rig_dock_v{css_version}.css').read_bytes()
         Path(css['path']).write_bytes(css_bytes)
         css['sha256'] = installer.digest(css_bytes)
@@ -47,7 +47,7 @@ class UpdateTests(unittest.TestCase):
         return {str(p): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
 
     def test_supported_versions_update_and_uninstall(self):
-        for version in ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.2.0', '0.2.1', '0.3.0'):
+        for version in ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.2.0', '0.2.1', '0.3.0', '0.3.1'):
             with self.subTest(version=version):
                 self.use_old(version)
                 updater.update(self.state)
@@ -96,6 +96,45 @@ class UpdateTests(unittest.TestCase):
         updater.update(self.state)
         installer.uninstall(installer.plan_uninstall(self.state), self.state)
         self.assertEqual(init.read_bytes(), added)
+
+    def remove_model_assets(self):
+        record=json.loads(self.manifest.read_text())
+        extras={str(self.htdocs/'plugins/receiver'/relative) for relative in installer.FILES[3:]}
+        for item in record['files']:
+            if item['path'] in extras: Path(item['path']).unlink()
+        record['files']=[item for item in record['files'] if item['path'] not in extras]
+        self.manifest.write_text(json.dumps(record))
+
+    def test_pre_studio_update_adds_model_and_uninstall_removes_it(self):
+        self.remove_model_assets()
+        before=self.files()
+        updater.update(self.state,check=True)
+        self.assertEqual(self.files(),before)
+        updater.update(self.state)
+        for relative in installer.FILES[3:]:
+            self.assertEqual((self.htdocs/'plugins/receiver'/relative).read_bytes(),(installer.ASSETS/relative).read_bytes())
+        installer.uninstall(installer.plan_uninstall(self.state),self.state)
+        for relative in installer.FILES[3:]: self.assertFalse((self.htdocs/'plugins/receiver'/relative).exists())
+
+    def test_new_model_collision_stops_before_any_writes(self):
+        self.remove_model_assets()
+        target=self.htdocs/'plugins/receiver'/installer.FILES[3]
+        target.write_bytes(b'custom model')
+        before=self.files()
+        with self.assertRaises(installer.InstallError): updater.update(self.state)
+        self.assertEqual(self.files(),before)
+
+    def test_new_model_assets_roll_back_on_manifest_failure(self):
+        self.remove_model_assets()
+        manifest=self.manifest.read_bytes();dock=self.target.read_bytes()
+        write=updater.atomic
+        def fail_once(path,*args,**kwargs):
+            if path==self.manifest and not getattr(fail_once,'failed',False):
+                fail_once.failed=True;raise OSError('manifest failure')
+            return write(path,*args,**kwargs)
+        with patch.object(updater,'atomic',fail_once),self.assertRaises(OSError): updater.update(self.state)
+        self.assertEqual(self.manifest.read_bytes(),manifest);self.assertEqual(self.target.read_bytes(),dock)
+        for relative in installer.FILES[3:]: self.assertFalse((self.htdocs/'plugins/receiver'/relative).exists())
 
 
 if __name__ == '__main__':

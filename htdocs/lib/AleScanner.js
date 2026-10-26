@@ -217,9 +217,11 @@ const ALE_SCAN_BANKS = [
 
 // The browser observes and controls the background worker; it does not own it.
 class AleServerScanClient {
-    constructor(status, event) {
+    constructor(status, event, reset = () => {}) {
         this.status = status; this.event = event; this.running = false;
+        this.reset = reset;
         this.socket = null; this.session = null; this.sequence = 0; this.pending = false;
+        this.logRequests = new Map(); this.logSerial = 0;
         this.receive = this.receive.bind(this);
         this.timer = setInterval(() => this.poll(), 2000);
     }
@@ -272,16 +274,45 @@ class AleServerScanClient {
         })().finally(() => { this.handoff = null; });
         return this.handoff;
     }
+    requestLog(action = 'log', options = {}) {
+        const request_id = String(++this.logSerial);
+        const source = String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0];
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.logRequests.delete(request_id);
+                reject(new Error('No ALE log response: restart OWRX after upgrading'));
+            }, 12000);
+            this.logRequests.set(request_id, {resolve, reject, timer, source});
+            try { this.send(action, {...options, request_id}); }
+            catch (error) { clearTimeout(timer); this.logRequests.delete(request_id); reject(error); }
+        });
+    }
     receive(event) {
         if (typeof event.data !== 'string') return;
         let data;
         try { data = JSON.parse(event.data); } catch (_) { return; }
         if (data.type !== 'ale_scan_state' || !data.value) return;
         const state = data.value;
+        if (state.kind === 'log') {
+            const request = this.logRequests.get(state.request_id);
+            if (!request) return;
+            clearTimeout(request.timer); this.logRequests.delete(state.request_id);
+            const current = String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0];
+            if (request.source !== current || state.source_id !== current)
+                request.reject(new Error('Receiver changed; request cancelled'));
+            else if (state.error) request.reject(new Error(state.error));
+            else request.resolve(state);
+            return;
+        }
         this.pending = false;
         if (state.error) { this.handoffError = state.error; this.status(state.error); return; }
         if (!state.available) return;
-        if (state.session !== this.session) { this.session = state.session; this.sequence = 0; }
+        const selectedSource = String($('#openwebrx-sdr-profiles-listbox').val() || '').split('|')[0];
+        if (state.source_id !== selectedSource) return;
+        if (state.session !== this.session) {
+            if (this.session !== null || (Array.isArray(state.events) && state.events.length)) this.reset();
+            this.session = state.session; this.sequence = 0;
+        }
         this.running = !!state.running;
         this.state = state;
         if (Array.isArray(state.events)) for (const message of state.events) {
@@ -310,6 +341,23 @@ class AleServerScanClient {
         clearInterval(this.timer); this.timer = null;
         if (this.socket) this.socket.removeEventListener('message', this.receive);
         this.socket = null;
+        for (const request of this.logRequests.values()) {
+            clearTimeout(request.timer); request.reject(new Error('Receiver page closed'));
+        }
+        this.logRequests.clear();
         // Deliberately do not send stop when a tab is hidden, navigated or closed.
     }
+}
+
+function aleLogCsvCell(value) {
+    let text = String(value == null ? '' : value);
+    // Quoting alone does not prevent spreadsheets from executing radio-supplied formulas.
+    if (/^\s*[=+@-]|^[\t\r\n]/.test(text)) text = "'" + text;
+    return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function aleLogCsvRow(message) {
+    return [new Date(message.timestamp).toISOString(), message.source_id, message.freq,
+        message.source, message.destination, message.event, message.message, message.bank]
+        .map(aleLogCsvCell).join(',') + '\r\n';
 }

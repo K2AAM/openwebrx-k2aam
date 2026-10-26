@@ -57,6 +57,11 @@ jobs:
         run: python3 -m unittest discover -s contrib/rig_dock/tests -v
       - name: ALE scanner state and catalog tests
         run: node contrib/ale/tests/scanner.cjs
+      - name: Studio DSP and real RNNoise WASM tests
+        run: |
+          for script in contrib/rig_dock/tests/audio/*.cjs; do
+            node "$script"
+          done
       - name: Receiver browser tests
         run: npm run test:receiver
       - name: Mobile WebKit startup tests

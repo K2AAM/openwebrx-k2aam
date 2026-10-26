@@ -12,7 +12,7 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent.parent
 STATE = Path('/var/lib/openwebrx/ale2g')
-VERSION = '0.4.0'
+VERSION = '0.5.0'
 
 
 def digest(data):
@@ -128,7 +128,7 @@ def upgrade(package, htdocs, binary_target, state, write=False, baselines=None):
     manifest = state/'install.json'
     original_manifest = manifest.read_bytes()
     record = json.loads(original_manifest)
-    if record.get('version') not in ('0.1.0', '0.2.0', '0.3.0', VERSION):
+    if record.get('version') not in ('0.1.0', '0.2.0', '0.3.0', '0.4.0', VERSION):
         raise ValueError('Unsupported installed ALE version.')
     baselines = json.loads((HERE/'install-baselines.json').read_text()) if baselines is None else baselines
     wanted = {}

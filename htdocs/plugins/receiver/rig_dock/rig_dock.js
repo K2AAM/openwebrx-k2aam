@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.rig_dock;
-    plugin._version = '0.3.1';
+    plugin._version = '0.4.0';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
@@ -509,7 +509,8 @@
             const controls = $('.ale-scan-controls',ale), head = $('thead',ale), rows = all('tbody tr',ale);
             const rowHeight = rows.slice(-6).reduce((total,row) => total+row.getBoundingClientRect().height,0);
             requestedHeight = headerHeight+(controls ? Math.max(controls.getBoundingClientRect().height,controls.scrollHeight) : 0)+
-                (head ? head.getBoundingClientRect().height : 0)+Math.max(48,rowHeight)+12;
+                (head ? head.getBoundingClientRect().height : 0)+Math.max(48,rowHeight)+12+
+                all('.ale-log-tools,.ale-heard',ale).reduce((total,node)=>total+node.getBoundingClientRect().height,0);
         }
         const height = decoderCollapsed ? headerHeight : Math.min(maximum, Math.max(headerHeight + minimumBody, requestedHeight));
         const previous = refs.decoderTray.style.height;
@@ -524,7 +525,7 @@
         settleDecoderPanels();
         const active = decoderNodes.filter(decoderActive);
         const ale = active.find(node => node.id === 'openwebrx-panel-ale2g-message');
-        const fitSignature = ale && decoderFit ? all('tbody tr',ale).slice(-6).map(row => row.getBoundingClientRect().height).join(',') : '';
+        const fitSignature = ale && decoderFit ? all('tbody tr',ale).slice(-6).map(row => row.getBoundingClientRect().height).join(',')+':'+all('.ale-log-tools,.ale-heard',ale).map(node=>node.getBoundingClientRect().height).join(',') : '';
         const signature = active.map(node => node.id).join('|') + ':' + UI.getModulation()+':'+fitSignature;
         if (adopted || signature !== decoderSignature) {
             decoderSignature = signature;

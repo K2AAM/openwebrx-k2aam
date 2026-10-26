@@ -14,7 +14,10 @@ HERE = Path(__file__).resolve().parent
 ASSETS = HERE if (HERE / 'rig_dock/rig_dock.js').is_file() else HERE.parent.parent / 'htdocs/plugins/receiver'
 STATE_DEFAULT = Path('/var/lib/openwebrx/rig-dock')
 MARKER = b'/* BEGIN OWRX RIG DOCK'
-FILES = ('rig_dock/rig_dock.js', 'rig_dock/rig_dock.css', 'rig_audio/rig_audio.js')
+FILES = ('rig_dock/rig_dock.js', 'rig_dock/rig_dock.css', 'rig_audio/rig_audio.js',
+         'rig_audio/rnnoise-sync.js', 'rig_audio/RNNOISE-WASM-APACHE-LICENSE.txt',
+         'rig_audio/RNNOISE-BSD-LICENSE.txt', 'rig_audio/STUDIO-LICENSE.txt',
+         'rig_audio/PROVENANCE.md')
 
 
 class InstallError(Exception):

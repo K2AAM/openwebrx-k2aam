@@ -17,7 +17,7 @@ The check is read-only and requires supported versions of the eight native files
 
 If necessary, supply `--owrx-root /usr/lib/python3/dist-packages/owrx` and `--htdocs /usr/lib/python3/dist-packages/htdocs`. The Python root must have sibling `owrx` and `csdr` packages. Backups/state are in `/var/lib/openwebrx/ale2g` and the executable installs to `/usr/local/bin/owrx-ale`.
 
-## Upgrade an existing 0.1.0–0.3.0 ALE installation
+## Upgrade an existing 0.1.0–0.4.0 ALE installation
 
 ```bash
 git switch ale-scanlists
@@ -28,7 +28,7 @@ sudo /usr/bin/python3 contrib/ale/install.py --upgrade
 sudo systemctl restart openwebrx
 ```
 
-The upgrade checks every installed hash and original backup before writing. It preserves the original stock-file backups so uninstall still restores the pre-ALE installation. New backend files and the native connection handler are checked too, with an original-file backup retained for uninstall. The exact existing RSPdx antenna-switcher connection patch is recognized by removing its known hook and checking the remaining stock-file hash; the generated ALE connection handler retains that hook. Other edits stop the upgrade. Uninstall ALE before uninstalling the antenna switcher, so its original connection hash is restored first. Refresh the receiver after restart. The native receiver bundle and new scanner script use `ale=0.4.0` cache keys; the decoder executable remains version 0.1.0 because its demodulation code is unchanged.
+The upgrade checks every installed hash and original backup before writing. It preserves the original stock-file backups so uninstall still restores the pre-ALE installation. New backend files and the native connection handler are checked too, with an original-file backup retained for uninstall. The exact existing RSPdx antenna-switcher connection patch is recognized by removing its known hook and checking the remaining stock-file hash; the generated ALE connection handler retains that hook. Other edits stop the upgrade. Uninstall ALE before uninstalling the antenna switcher, so its original connection hash is restored first. Refresh the receiver after restart. The native receiver bundle and new scanner script use `ale=0.5.0` cache keys; the decoder executable remains version 0.1.0 because its demodulation code is unchanged.
 
 ## Apply the accompanying RIG Dock update
 
@@ -40,6 +40,16 @@ sudo /usr/bin/python3 contrib/rig_dock/update.py
 ```
 
 Reload the receiver after both updates. For a fresh dock install, follow [the RIG instructions](../rig_dock/README.md). Keep the receiver trial on OptiplexSDR before upgrading the remote SDRplay installation.
+
+## Persistent server scan log (0.5.0)
+
+Server scan decodes are committed to SQLite at `<core.data_directory>/ale-log/receptions.sqlite3` (normally `/var/lib/openwebrx/ale-log/receptions.sqlite3`). No additional Python package is required. The newest 50,000 receptions are retained across all receiver IDs; SQLite reuses deleted pages. This is bounded history, not an unlimited archive. Back up this directory for longer retention. The installer does not precreate it as root; the OWRX service creates it in its writable data directory. ALE uninstall leaves reception data in place.
+
+**Stations heard** is collapsed by default and shows the latest 50 source addresses for the selected SDR, with full UTC last-heard time, up to 45 frequencies and a retained-decode count. A destination alone is not counted as heard. Counts refer to decoder events, not independently verified transmissions; repeated decoded soundings remain separate records. The summary refreshes every 15 seconds or with Refresh log. **Clear** affects only displayed message rows.
+
+**Export CSV** downloads the selected receiver's retained log in bounded 200-event pages. It includes UTC, receiver ID, exact hertz, source, destination, event, message and bank. Text is CSV-quoted and spreadsheet-formula prefixes are neutralized in the exported copy; original radio text stays intact in SQLite. The export fixes its end cursor, excludes new arrivals, and asks for a retry if retention removed rows while downloading. Log and export requests use the existing receiver WebSocket, so no separate HTTP download endpoint or Cloudflare cache entry is involved. Any receiver visitor can read that receiver's retained log, matching the existing reception display.
+
+Activity signals, TEST AUDIO, stale callbacks and other SDRs' events are excluded. This first log records the **server scanner**; separate manual/browser decoder sessions are not added. Disk/permission/database failures show an unavailable message and are logged by OWRX, while live scanning and the in-memory message stream continue. Successful later writes clear the scanner's logging error. Restarting restores messages without starting scanning or retuning the radio.
 
 ## Reference audio in the actual OWRX message panel
 
@@ -66,7 +76,7 @@ After restarting, select **ALE 2G (experimental)** from Modes. The scanner contr
 
 1. Expand **ALE scanner**, then select HFN, HFL, COTHEN candidates, or HFGCS candidates. On a small phone, increase the decoder tray Height to make room for the controls.
 2. Expand **Channels / skip** to uncheck unwanted entries.
-3. Leave **Run on server — continues with tab closed** enabled. It owns a separate decoder and retains the last 250 decoded messages in memory; reconnect to see them. Leave **Scan across HF bands** unchecked to scan only entries whose entire USB passband fits inside the current SDR capture. A narrow capture may contain only one bank entry, or none.
+3. Leave **Run on server — continues with tab closed** enabled. It owns a separate decoder and retains the newest 50,000 decoded receptions on disk across receivers; reconnect to see the latest 250 for this SDR, including after an OWRX restart. Leave **Scan across HF bands** unchecked to scan only entries whose entire USB passband fits inside the current SDR capture. A narrow capture may contain only one bank entry, or none.
 4. Check **Scan across HF bands (retunes SDR)** to scan beyond the current capture. Retuning changes the SDR capture available to connected browsers. Server control checks the receiver magic key and center-frequency permission, and each hardware hop rechecks the server retune permission. The optional browser scanner uses the native `setfrequency` request. It does not bypass permissions or alter profiles.
 5. Start with a **10-second dwell** and click **Start ALE scan**. Dwell is adjustable from 3–60 seconds and is experimental, not a validated optimum.
 
@@ -78,7 +88,7 @@ The scanner shows tuning/scanning/activity/decoded/stop status. It holds on deco
 
 With server scanning enabled, hiding or closing the tab only detaches its display. Click **Stop** to end the scanner. Receiver profile, sample-rate or unexpected source-center changes stop it, as do source failure/shutdown or revoked retune permission. Scheduled profile changes can also stop it after listeners leave; the scanner does not override native schedules. Updated RIG mode selection, Tune, step buttons and stock Scan stop the ALE scanner and wait for its acknowledgement before taking manual control. Other native controls still require stopping the scanner first. An observing ALE tab follows the scanned frequency when its capture has caught up.
 
-The scanner does not resume automatically after an OWRX restart. Its 250-message history lasts for the server process lifetime; decoded messages are also written to the normal openwebrx journal, subject to system log retention. The backend does not retain browser connections. Uncheck **Run on server** for the older browser scanner, which stops on hidden tab, disconnect, manual tuning/mode/profile change, or failed tuning. An already-sent hardware retune cannot be recalled by Stop. The stock signal-level scanner is stopped when ALE scanning starts; do not run both simultaneously.
+The scanner does not resume automatically after an OWRX restart. Its latest 250 persisted receptions are restored to the display after restart; decoded messages are also written to the normal openwebrx journal, subject to system log retention. The backend does not retain browser connections. Uncheck **Run on server** for the older browser scanner, which stops on hidden tab, disconnect, manual tuning/mode/profile change, or failed tuning. An already-sent hardware retune cannot be recalled by Stop. The stock signal-level scanner is stopped when ALE scanning starts; do not run both simultaneously.
 
 The optional utility frequencies are historical monitoring candidates, not verified current assignments or guaranteed activity. User observations are still needed to choose a productive subset and dwell. Live receiver testing has recovered an ADW sounding on 11226 kHz; the operator also reports PLA and HAW addresses. These are decoded addresses, not independently verified station identities. Hold/resume performance still needs on-air evaluation. **3G ALE is not implemented.**
 
@@ -119,7 +129,7 @@ The source's 15-second calling/preamble duration is not a scanner dwell setting.
 
 ## Remaining scanner work
 
-The server scanner can continue without a browser and retains recent decoded messages. Custom-channel editing, export, durable station history, and validated weak-signal/dwell behavior remain future work. Dedicated 2G ALE modems may scan 2–5 channels/second; this implementation still uses 3–60-second dwell, a fresh acquisition chain per hop and a provisional 250 ms hardware-settle delay. Fast scanning is not implemented or measured. Stock OWRX bookmark Scanner remains separate and does not automatically load this catalog.
+The server scanner can continue without a browser and retains recent decoded messages. Custom-channel editing, server scan preferences/reboot resume, and validated weak-signal/dwell behavior remain future work. Dedicated 2G ALE modems may scan 2–5 channels/second; this implementation still uses 3–60-second dwell, a fresh acquisition chain per hop and a provisional 250 ms hardware-settle delay. Fast scanning is not implemented or measured. Stock OWRX bookmark Scanner remains separate and does not automatically load this catalog.
 
 ## Maintenance
 

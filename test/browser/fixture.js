@@ -86,6 +86,19 @@ window.setupFixture = function () {
         send(value){const packet=JSON.parse(value);this.sent.push(packet); if(packet.type==='setantenna')this.selected=packet.params.antenna;
             if(packet.type==='ale_scan') {
                 const p=packet.params;
+                if(p.action==='log'||p.action==='export') {
+                    const events=this.logEvents||[];
+                    let value={kind:'log',request_id:p.request_id,source_id:'sdrplay'};
+                    if(this.logFailure)value.error='ALE log unavailable; check the server journal';
+                    else if(p.action==='log')value={...value,total:events.length,retention:50000,station_limit:50,stations:this.logStations||[]};
+                    else {
+                        const through=p.log_through===undefined?(events.at(-1)?.log_id||0):p.log_through;
+                        const eligible=events.filter(e=>e.log_id>(p.log_after||0)&&e.log_id<=through);
+                        const page=eligible.slice(0,200);
+                        value={...value,events:page,through,after:page.at(-1)?.log_id||p.log_after||0,more:eligible.length>200,total:events.filter(e=>e.log_id<=through).length};
+                    }
+                    setTimeout(()=>this.reply({type:'ale_scan_state',value}),5);return;
+                }
                 if(p.action==='start') {
                     this.scanState={...this.scanState,running:true,status:'Scanning · server',frequency:p.channels[0],bank:p.bank,options:p};
                     this.reply({type:'config',value:{center_freq:p.channels[0],start_mod:'usb'}});

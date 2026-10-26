@@ -6,9 +6,10 @@ from pathlib import Path
 import tempfile
 from install import ASSETS, FILES, STATE_DEFAULT, InstallError, atomic, digest, plan_uninstall
 
-VERSION = '0.3.1'
+VERSION = '0.4.0'
 
 OLD_JS = {
+    '97699aa8ba2e2fe892fcb36eb4ccf8af1d8d0a4324de534a41548c57bebaac2e',
     'fc58a04c6e947c0f3ec17a6dac0d5043e937dd9e305e4c431d537d53fde42b0c',
     'fd7ecfcc4e1ee60585fa770aa73990c82531fff1769340cac86ee2b3a37b0a39',
     '22f3514650389fef4dc570499d3230ba2a05a6b221ff59e5333792ddced66cd3',
@@ -33,6 +34,15 @@ def update(state=STATE_DEFAULT, check=False):
     for relative in FILES:
         matches = [item for item in record['files']
                    if Path(item['path']).as_posix().endswith('/' + relative)]
+        if not matches and relative in FILES[3:]:
+            init=next(item for item in record['files'] if item.get('init'))
+            path=Path(init['path']).parent/relative
+            if path.exists() or path.is_symlink():
+                raise InstallError('Refusing to overwrite new asset: '+str(path))
+            new=(ASSETS/relative).read_bytes()
+            record['files'].append({'path':str(path),'sha256':digest(new),'backup':None,'mode':0o644,'init':False})
+            changes.append((path,None,new,0o644))
+            continue
         if len(matches) != 1:
             raise InstallError('Expected one installed asset for ' + relative)
         item = matches[0]
@@ -52,14 +62,18 @@ def update(state=STATE_DEFAULT, check=False):
     backup = Path(tempfile.mkdtemp(prefix=f'update-backup-v{VERSION}-', dir=state))
     atomic(backup / 'install.json', saved)
     for path, old, _, _ in changes:
-        atomic(backup / path.name, old)
+        if old is not None:
+            atomic(backup / path.name, old)
     try:
         for path, _, new, mode in changes:
             atomic(path, new, mode)
         atomic(manifest, (json.dumps(record, indent=2) + '\n').encode())
     except Exception:
         for path, old, _, mode in changes:
-            atomic(path, old, mode)
+            if old is None:
+                path.unlink(missing_ok=True)
+            else:
+                atomic(path, old, mode)
         atomic(manifest, saved)
         raise
     print(f'RIG Dock updated to v{VERSION}. Reload the receiver page; no OWRX restart needed.')
