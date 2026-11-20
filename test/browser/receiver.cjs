@@ -749,11 +749,44 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         check(await con.evaluate(()=>{const rows=[...document.querySelectorAll('#openwebrx-panel-wsjt-message tbody tr')];return rows.length===2&&rows[0].classList.contains('rd-cq')&&!rows[1].classList.contains('rd-cq');}),'CQ calls are highlighted in the FT8 list');
         check(await con.locator('.rd-decoder-tabs .rd-tab').evaluateAll(tabs=>tabs.map(t=>t.textContent+':'+t.getAttribute('aria-selected')).join()==='FT8:true,Aircraft:false,Packet:false,ALE:false'),'decoder tabs list the families this receiver offers, with the current one selected');
         check(await con.locator('#rd-popover-bandpass').count()===1&&await con.locator('[aria-controls="rd-popover-bandpass"]').innerText().then(t=>/^Filter \d/.test(t)),'the filter button shows the current filter width');
+        check(await con.evaluate(()=>['.rd-profiles select','.rd-step select'].every(q=>{const n=document.querySelector('#k2aam-dock '+q),c=getComputedStyle(n);return Math.round(n.getBoundingClientRect().height)===40&&c.appearance==='none'&&c.backgroundImage.includes('svg');})),'profile and step dropdowns are drawn at button height with their own arrow');
+        check(await con.evaluate(()=>{const c=getComputedStyle(document.querySelector('#openwebrx-panel-wsjt-message tbody tr.rd-cq'));return c.backgroundColor==='rgb(23, 58, 46)'&&c.boxShadow.includes('inset');}),'CQ rows carry a visible tint and edge marker');
+        check(await con.locator('.rd-decoder-modes .rd-family-more').count()===0,'a short mode family shows every mode with no More button');
+        await con.evaluate(()=>{['jt65','jt9','fst4'].forEach(m=>Modes.modes.push(new Mode({modulation:m,name:m.toUpperCase(),type:'digimode',squelch:false,underlying:['usb'],secondaryFft:true})));});
+        await con.waitForSelector('.rd-decoder-modes .rd-family-more');
+        check(await con.locator('.rd-decoder-modes .rd-family-mode').count()===4&&await con.locator('.rd-family-more').innerText()==='More','a long mode family shows four modes and a More button');
+        await con.locator('.rd-family-more').click();
+        check(await con.locator('.rd-decoder-modes .rd-family-mode').count()===7&&await con.locator('.rd-family-more').innerText()==='Fewer','More reveals the rest of the family');
+        await con.locator('.rd-family-more').click();
         await con.screenshot({path:path.join(root,'test-results/k2aam-console-desktop.png')});
         await con.locator('.rd-decoder-tabs .rd-tab',{hasText:'Aircraft'}).click();
         await con.waitForFunction(()=>UI.getModulation()==='hfdl');
         await con.waitForFunction(()=>document.querySelectorAll('.rd-decoder-modes .rd-family-mode').length>=4);
         check(await con.locator('.rd-decoder-modes .rd-family-mode').evaluateAll(n=>n.map(b=>b.textContent+':'+b.getAttribute('aria-pressed')).join()).then(t=>t.startsWith('HFDL:true')&&t.includes('ACARS:false')&&t.includes('ADSB:false')),'the Aircraft tab switches to HFDL and offers the other aircraft modes');
+        await con.evaluate(()=>{const h=$('#openwebrx-panel-hfdl-message').hfdlMessagePanel();
+            h.pushMessage({mode:'HFDL',timestamp:Date.now(),flight:'UAL123',aircraft:'N12345',lat:41.5,lon:-52.25,altitude:36000,type:'Position',color:'#3366CC'});
+            h.pushMessage({mode:'HFDL',timestamp:Date.now(),flight:'DAL45',icao:'A1B2C3',type:'Logon request',message:'FREE TEXT <b>NOT MARKUP</b>'});});
+        await con.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-hfdl-message tbody tr').length===3);
+        const report=await con.evaluate(()=>{const rows=[...document.querySelectorAll('#openwebrx-panel-hfdl-message tbody tr')],r=rows[0],q=c=>r.querySelector('td.'+c).getBoundingClientRect();
+            const time=q('timestamp'),flight=q('flight'),craft=q('aircraft'),data=q('data'),note=rows[2].querySelector('td.message');
+            return {grid:getComputedStyle(r).display,height:Math.round(r.getBoundingClientRect().height),firstLine:Math.abs(flight.top-craft.top)<2&&flight.left>=time.right-1&&craft.right>flight.right,
+                secondLine:data.top>=flight.bottom-1&&Math.abs(data.left-flight.left)<2,timeFits:r.querySelector('td.timestamp').scrollWidth<=r.querySelector('td.timestamp').clientWidth+1,stripe:getComputedStyle(r).backgroundColor,ink:getComputedStyle(r.querySelector('td.flight')).color,
+                position:r.querySelector('td.data').textContent.includes('41.5000'),noteWide:note.getBoundingClientRect().width>250,noteText:note.textContent,noteMarkup:!!note.querySelector('b'),
+                header:getComputedStyle(document.querySelector('#openwebrx-panel-hfdl-message thead')).display};});
+        check(report.grid==='grid'&&report.header==='none'&&report.firstLine&&report.secondLine&&report.timeFits&&report.height>=36&&report.height<=64,'an aircraft report is a two-line entry: time, flight and aircraft, then position '+JSON.stringify(report));
+        check(report.stripe==='rgb(51, 102, 204)'&&report.ink==='rgb(230, 234, 240)'&&report.position,'the per-aircraft colour shows as an edge stripe and the text stays readable');
+        check(report.noteWide&&report.noteText==='FREE TEXT <b>NOT MARKUP</b>'&&!report.noteMarkup,'free text sits under its report and is shown as text');
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-aircraft.png')});
+        await con.locator('.rd-decoder-modes .rd-family-mode',{hasText:'ADSB'}).click();
+        await con.waitForFunction(()=>UI.getModulation()==='adsb');
+        await con.evaluate(()=>$('#openwebrx-panel-adsb-message').adsbMessagePanel().pushMessage({mode:'ADSB-LIST',aircraft:[
+            {flight:'UAL123',icao:'A1B2C3',altitude:36000,speed:450,course:90,squawk:'1200',rssi:-12},{flight:'DAL45',aircraft:'N54321',altitude:12000,vspeed:-800,speed:280}]}));
+        await con.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-adsb-message tbody tr').length===2);
+        const adsb=await con.evaluate(()=>{const r=document.querySelector('#openwebrx-panel-adsb-message tbody tr'),c=getComputedStyle(r);
+            return {grid:c.display,fill:c.backgroundColor,ink:getComputedStyle(r.querySelector('td.flight')).color,alt:getComputedStyle(r.querySelector('td.altitude'),'::before').content,
+                below:r.querySelector('td.altitude').getBoundingClientRect().top>=r.querySelector('td.flight').getBoundingClientRect().bottom-1,panel:getComputedStyle(document.getElementById('openwebrx-panel-adsb-message')).display};});
+        check(adsb.grid==='grid'&&adsb.fill==='rgba(0, 0, 0, 0)'&&adsb.ink==='rgb(230, 234, 240)'&&adsb.alt.includes('Alt')&&adsb.below&&adsb.panel!=='none','ADS-B lists one readable entry per aircraft with labelled altitude and speed '+JSON.stringify(adsb));
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-adsb.png')});
         await con.locator('.rd-decoder-modes .rd-family-mode',{hasText:'ACARS'}).click();
         await con.waitForFunction(()=>UI.getModulation()==='acars');
         await con.locator('.rd-decoder-tabs .rd-tab',{hasText:'FT8'}).click();
@@ -761,7 +794,6 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         await con.locator('.rd-decoder-tabs .rd-tab',{hasText:'Aircraft'}).click();
         await con.waitForFunction(()=>UI.getModulation()==='acars');
         check(true,'a tab returns to the mode last used in that family');
-        await con.screenshot({path:path.join(root,'test-results/k2aam-console-aircraft.png')});
         await con.getByRole('button',{name:'Side panel',exact:true}).click();
         await con.waitForTimeout(300);
         check(await con.evaluate(()=>{const t=document.getElementById('k2aam-decoder-tray'),r=t.getBoundingClientRect(),d=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect();

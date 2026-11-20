@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.8.0';
+    plugin._version = '0.8.1';
     // "console" is a second arrangement of the same controls: one receiver
     // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
     const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
@@ -18,7 +18,7 @@
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
     let decoderNodes = [], decoderSignature = '', decoderCollapsed = false, decoderPercent = 28;
     let decoderIFPreference = null, decoderFit = true, decoderSide = true, tabSignature = '';
-    const lastFamilyMode = {};
+    const lastFamilyMode = {}, familyExpanded = {};
     let startupNotice, startupHidden, startupVisibility;
     const refs = {};
     const $ = (selector, root) => (root || document).querySelector(selector);
@@ -723,7 +723,7 @@
         const available = modes(), current = UI.getModulation();
         const shown = families.map(([title, ids]) => ({title, items: ids.map(id => available.find(mode => mode.modulation === id)).filter(Boolean)}))
             .filter(family => family.items.length);
-        const signature = JSON.stringify([current, shown.map(family => [family.title, family.items.map(mode => mode.modulation)])]);
+        const signature = JSON.stringify([current, familyExpanded, shown.map(family => [family.title, family.items.map(mode => mode.modulation)])]);
         if (signature === tabSignature) return;
         tabSignature = signature;
         refs.decoderTabs.replaceChildren(); refs.decoderModes.replaceChildren();
@@ -737,12 +737,23 @@
                 UI.setModulation(wanted.modulation); tick();
             })));
             refs.decoderTabs.append(tab);
-            if (selected && family.items.length > 1) family.items.forEach(mode => {
+            if (!selected || family.items.length < 2) return;
+            // A long family shows its first four modes (and the current one); the rest are behind More.
+            const expanded = !!familyExpanded[family.title] || family.items.length <= 5;
+            const visible = expanded ? family.items :
+                family.items.filter((mode, index) => index < 4 || mode.modulation === current);
+            visible.forEach(mode => {
                 const item = el('button', 'rd-button rd-family-mode', mode.name); item.type = 'button';
                 item.setAttribute('aria-pressed', String(mode.modulation === current));
                 item.addEventListener('click', () => safely(() => manualControl(() => { UI.setModulation(mode.modulation); tick(); })));
                 refs.decoderModes.append(item);
             });
+            if (family.items.length > 5) {
+                const more = el('button', 'rd-button rd-family-more', expanded ? 'Fewer' : 'More'); more.type = 'button';
+                more.setAttribute('aria-expanded', String(expanded));
+                more.addEventListener('click', () => { familyExpanded[family.title] = !expanded; renderDecoderTabs(); reserveSpace(); });
+                refs.decoderModes.append(more);
+            }
         });
         refs.decoderModes.hidden = !refs.decoderModes.children.length;
     }

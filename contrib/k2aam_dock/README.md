@@ -20,7 +20,12 @@ described below, laid out differently:
   decoders back below the waterfall. With no decoder running the waterfall has the full width.
 - **Decoder tabs:** FT8, Aircraft, Packet and ALE, limited to what the receiver offers. A tab
   switches to the mode last used in that family; a family with several modes (HFDL, VDL2, ACARS,
-  ADS-B) shows a button for each. CQ calls are highlighted in the FT8 list.
+  ADS-B) shows a button for each; a family with more than five shows four and a **More** button.
+  CQ calls are highlighted in the FT8 list.
+- **Aircraft lists:** HFDL, VDL2, ACARS and UAT reports are two-line entries (time, flight and
+  aircraft, then position or message type, with free text beneath). ADS-B shows one entry per
+  aircraft with labelled altitude, speed and squawk. These are the native lists restyled, so the
+  flight, aircraft and map links work as before.
 - **Phone:** tuning, meter, mode/filter/step/bands, volume, squelch, noise reduction and profile
   are always shown; recording, bookmarks, antenna and waterfall settings are behind **Controls**.
 
