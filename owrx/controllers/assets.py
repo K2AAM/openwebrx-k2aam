@@ -6,6 +6,7 @@ import os
 import importlib.resources
 from abc import ABCMeta, abstractmethod
 import gzip
+import hashlib
 
 import logging
 
@@ -67,6 +68,13 @@ class AssetsController(GzipMixin, ModificationAwareController, metaclass=ABCMeta
 
     def serve_file(self, file, content_type=None):
         try:
+            # Plugin files are checked by content, not by date. A package build
+            # stamps every file with the same date (the changelog's), so after
+            # an update "not modified since" would stay true and browsers would
+            # keep the old plugin indefinitely.
+            if str(file).startswith("plugins"):
+                return self.serve_plugin_file(file, content_type)
+
             modified = self.getModified(file)
 
             if not self.wasModified(file):
@@ -79,12 +87,27 @@ class AssetsController(GzipMixin, ModificationAwareController, metaclass=ABCMeta
 
             if content_type is None:
                 (content_type, encoding) = mimetypes.guess_type(self.getFilePath(file))
-            # Plugin files are revalidated on every load, so an updated plugin
-            # shows up at once instead of after the hour other assets are cached.
-            max_age = 0 if str(file).startswith("plugins") else 3600
-            self.send_response(data, content_type=content_type, last_modified=modified, max_age=max_age)
+            self.send_response(data, content_type=content_type, last_modified=modified, max_age=3600)
         except FileNotFoundError:
             self.send_response("file not found", code=404)
+
+    def serve_plugin_file(self, file, content_type=None):
+        f = self.openFile(file)
+        data = f.read()
+        f.close()
+
+        etag = '"{0}"'.format(hashlib.sha1(data).hexdigest())
+        offered = self.handler.headers["If-None-Match"] if "If-None-Match" in self.handler.headers else ""
+        # A proxy that recompresses the file may mark the tag as weak (W/"...")
+        known = [tag.strip()[2:] if tag.strip().startswith("W/") else tag.strip() for tag in offered.split(",")]
+        if etag in known:
+            self.send_response("", code=304, content_type=None, max_age=0, headers={"ETag": etag})
+            return
+
+        if content_type is None:
+            (content_type, encoding) = mimetypes.guess_type(self.getFilePath(file))
+        # max-age=0: the browser keeps its copy but asks before each use
+        self.send_response(data, content_type=content_type, max_age=0, headers={"ETag": etag})
 
     def indexAction(self):
         filename = self.request.matches.group(1)
