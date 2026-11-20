@@ -18,8 +18,8 @@ const server=http.createServer((req,res)=>{
     const url=req.url.split('?')[0];let data,type;
     if(url==='/'){data=html;type='text/html';}
     else if(url==='/static/plugins/receiver/init.js'){
-        // The station file as shipped.
-data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
+        // The station file as shipped, minus third-party plugins fetched from the internet.
+data=read('htdocs/plugins/receiver/init.js').replace(/\/\/ BEGIN remote plugins[\s\S]*?\/\/ END remote plugins/,'');type='application/javascript';
     }
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.js'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.js');type='application/javascript';}
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.css'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.css');type='text/css';}

@@ -11,6 +11,14 @@ load is decided by `htdocs/plugins/receiver/init.js`; none is forced by the fork
 | `ale` | ALE message panel, bank scanner controls, reception log and CSV export. | This fork's ALE backend |
 | `rsp_antenna` | Antenna buttons for an RSPdx. | This fork's antenna handler and a config file |
 
+## Community plugins
+
+`init.js` also loads a set of plugins from the 0xAF collection (`utils`, `notify`, `screenshot`,
+`freq_scanner`, `tune_precise` and others) straight from `0xaf.github.io` on every page view, as
+this station did before the fork. They are third-party code that updates without review here. Edit
+the list between the "remote plugins" markers in `init.js` to change it. The browser tests strip
+that block, so those plugins are not covered by the tests.
+
 ## Choosing the interface
 
 `ui_select` loads the dock unless the visitor has picked something else. The choice is stored in the
