@@ -1,0 +1,2230 @@
+/*
+ * rig_skin: dark receiver front-panel theme for OpenWebRX+.
+ * All rules are scoped to body.theme-rig so the skin only applies
+ * when the "Rig" theme is selected.
+ */
+
+body.theme-rig {
+    --theme-color1: #0d1013;
+    --theme-color2: #171b1f;
+    --theme-gradient-color1: #1d2126;
+    --theme-gradient-color2: #101316;
+    --rig-legend: #cfd4d9;
+    --rig-lcd: #f2f5f7;
+    --rig-lcd-glow: rgba(215, 232, 255, 0.35);
+    --rig-lcd-dim: #93a0ab;
+}
+
+/* Front panel and dialogs share the rig look. Dialogs keep their own
+   fixed centered positioning from the stock CSS; only the panel is
+   relative (it anchors the dial and screens). */
+body.theme-rig .openwebrx-panel,
+body.theme-rig .openwebrx-dialog {
+    /* prevent mobile browsers from inflating text out of the layout */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* flat panel metal, a plain gradient, no grain texture image */
+    background: linear-gradient(165deg, #24282d 0%, #17191d 45%, #0f1114 100%);
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+                0 0 0 1px #060708,
+                0 6px 18px rgba(0, 0, 0, 0.65);
+    color: var(--rig-legend);
+}
+
+body.theme-rig .openwebrx-panel {
+    position: relative;
+}
+
+/* Wider front panel, the stock 259px is too narrow for a rig face */
+body.theme-rig #openwebrx-panel-receiver {
+    width: 364px !important;
+}
+
+/* sliders and listboxes grow with the panel in the fluid layout; their
+   rows are block containers in the stock CSS, so slider rows become flex */
+body.theme-rig #openwebrx-panel-receiver .openwebrx-panel-line:has(.openwebrx-panel-slider) {
+    display: flex;
+    align-items: center;
+    column-gap: 4px;
+}
+
+body.theme-rig #openwebrx-panel-receiver .openwebrx-panel-slider {
+    width: 135px;
+    flex: 1 1 auto;
+    min-width: 90px;
+}
+
+body.theme-rig #openwebrx-panel-receiver .openwebrx-panel-listbox {
+    width: 135px;
+    flex: 1 1 auto;
+    min-width: 90px;
+}
+
+/* Corner screws on the receiver panel */
+body.theme-rig #openwebrx-panel-receiver::before,
+body.theme-rig #openwebrx-panel-receiver::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #565d66, #23272b 70%, #0c0e10);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.8),
+                0 1px 0 rgba(255, 255, 255, 0.06);
+}
+body.theme-rig #openwebrx-panel-receiver::before { left: 4px; }
+body.theme-rig #openwebrx-panel-receiver::after { right: 4px; }
+
+/* Flat-top rectangular keys with bright legends, like an Icom front
+   panel: near-square corners, a matte face and a crisp edge light */
+/* Matte rig keys: a gentle top-to-bottom shade with a thin top
+   highlight, one soft shadow. Flat and modern, but with enough
+   dimension to read like a real key. Lighter to paint than the old
+   multi-layer shadow stack and sheen overlay. */
+body.theme-rig .openwebrx-button {
+    position: relative;
+    background: linear-gradient(180deg, #31363c 0%, #262a2f 100%);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
+                0 1px 2px rgba(0, 0, 0, 0.5);
+    color: var(--rig-legend);
+    text-shadow: none;
+}
+
+body.theme-rig .openwebrx-button:hover {
+    background: linear-gradient(180deg, #3a4046 0%, #2d3238 100%);
+    color: #e8ecef;
+    filter: none;
+}
+
+/* icon keys (display row, slider buttons) carry white glyphs; dim them
+   to the same matte level as the printed legends */
+body.theme-rig #openwebrx-panel-receiver .openwebrx-button svg,
+body.theme-rig #openwebrx-panel-receiver .openwebrx-button img {
+    filter: brightness(0.8);
+}
+
+body.theme-rig #openwebrx-panel-receiver .openwebrx-button:hover svg,
+body.theme-rig #openwebrx-panel-receiver .openwebrx-button:hover img,
+body.theme-rig #openwebrx-panel-receiver .openwebrx-button.highlighted svg,
+body.theme-rig #openwebrx-panel-receiver .openwebrx-button.highlighted img {
+    filter: brightness(1);
+}
+
+body.theme-rig .openwebrx-button:active {
+    transform: translateY(1px);
+}
+
+/* Pressed / engaged: lit blue key with a crisp edge, like a backlit
+   rig button */
+body.theme-rig .openwebrx-button:active,
+body.theme-rig .openwebrx-button.highlighted,
+body.theme-rig .openwebrx-demodulator-button.highlighted {
+    background: linear-gradient(180deg, #1a4fb0 0%, #123f8f 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                inset 0 0 0 1px #2a6adf;
+    color: #ffffff;
+    text-shadow: none;
+    filter: none;
+}
+
+/* mode keys use the same legend size as the keys around the dial */
+body.theme-rig .openwebrx-demodulator-button {
+    font-size: 8pt;
+    letter-spacing: 1px;
+    line-height: 19px;
+}
+
+/* every mode key carries an LED bar like physical keys; only the
+   active one is lit */
+body.theme-rig .openwebrx-demodulator-button::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    width: 14px;
+    height: 3px;
+    margin-left: -7px;
+    border-radius: 2px;
+    background: #24301f;
+    box-shadow: 0 0 0 1px #0a0c09,
+                inset 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+body.theme-rig .openwebrx-demodulator-button.highlighted::before {
+    background: #3adb4a;
+    box-shadow: 0 0 5px rgba(60, 220, 80, 0.8);
+}
+
+
+/* hide the stock bookmark ribbon in the LCD corner, the MW key covers it */
+body.theme-rig #openwebrx-panel-receiver .openwebrx-bookmark-button {
+    display: none;
+}
+
+/* mode and filter readout, top right of the LCD */
+#owrx-rig-info {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-info {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    width: 100%;
+    margin-bottom: 4px;
+    font-family: 'roboto-mono', monospace;
+}
+
+.owrx-rig-info-mode {
+    display: inline-block;
+    background: #1d5fae;
+    color: #ffffff;
+    border-radius: 3px;
+    padding: 0 6px;
+    font-size: 11pt;
+    font-weight: bold;
+}
+
+/* Two equal VFO boxes as the main readout: A/B tag, frequency in MHz,
+   and a corner RX badge; the active box glows and lights its RX green. */
+.owrx-rig-vfo-strip {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin: 2px 0 6px 0;
+    font-family: 'roboto-mono', monospace;
+}
+
+.owrx-rig-vfo-box {
+    flex: 1 1 0;
+    min-width: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 4px 4px 6px 2px;
+    border-bottom: 2px solid #23303c;
+    cursor: pointer;
+}
+
+/* active VFO: a bright underline, no box or shadow, so redraws stay cheap
+   and the number stays responsive while tuning */
+.owrx-rig-vfo-box.active {
+    border-bottom-color: #2f7fd6;
+}
+
+/* A/B and RX chips stacked in a narrow left column, freeing the rest of
+   the box width for the frequency digits */
+.owrx-rig-vfo-labels {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-right: 6px;
+}
+
+.owrx-rig-vfo-tag,
+.owrx-rig-vfo-rx {
+    padding: 1px 4px;
+    border-radius: 2px;
+    text-align: center;
+    font-size: 7pt;
+    font-weight: bold;
+}
+
+.owrx-rig-vfo-tag {
+    background: #17222e;
+    color: #6a7d90;
+}
+
+.owrx-rig-vfo-box.active .owrx-rig-vfo-tag {
+    background: #2f7fd6;
+    color: #ffffff;
+}
+
+.owrx-rig-vfo-freq {
+    flex: 1 1 auto;
+    text-align: right;
+    color: var(--rig-lcd-dim);
+    /* heavy Icom-style digits; tabular figures keep every digit the
+       same width so the per-digit wheel targets stay put */
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    font-size: 20pt;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.owrx-rig-vfo-box.active .owrx-rig-vfo-freq {
+    color: #ffffff;
+}
+
+/* per-digit tuning: the hovered digit of the active readout lights up
+   and the wheel spins it by its place value */
+.owrx-rig-vfo-box.active .owrx-rig-digit:hover {
+    color: #5db8ff;
+    text-shadow: 0 0 8px rgba(93, 184, 255, 0.7);
+    cursor: ns-resize;
+}
+
+.owrx-rig-vfo-rx {
+    background: #16201a;
+    color: #46524a;
+}
+
+.owrx-rig-vfo-box.active .owrx-rig-vfo-rx {
+    background: #3adb4a;
+    color: #000000;
+}
+
+.owrx-rig-info-filter,
+.owrx-rig-info-step {
+    color: var(--rig-lcd-dim);
+    font-size: 8pt;
+}
+
+.owrx-rig-info-rit {
+    color: #3adb4a;
+    font-size: 8pt;
+    font-weight: bold;
+}
+
+/* Frequency display as a backlit LCD window */
+/* the readout and scope columns share the LCD width evenly; below
+   ~700px of panel width the scope column wraps underneath as before */
+body.theme-rig #openwebrx-panel-receiver .frequencies {
+    flex: 1 1 340px;
+    min-width: 0;
+}
+
+body.theme-rig #owrx-rig-lcd-right {
+    flex: 1 1 340px;
+    min-width: 0;
+}
+
+body.theme-rig #openwebrx-panel-receiver .frequencies-container {
+    position: relative;
+    /* pure black, flat: a real LCD reads crisp, and a plain fill under
+       the redrawing canvases avoids the uneven resampling that showed
+       as a moving glare on some GPUs (issue #13) */
+    background: #000000;
+    border-radius: 5px;
+    /* a crisp 1px inner edge only, no soft inset glow */
+    box-shadow: inset 0 0 0 1px #000000,
+                0 1px 0 rgba(255, 255, 255, 0.05);
+    padding: 6px 8px 2px 8px;
+    flex-wrap: wrap;
+    column-gap: 10px;
+    /* power on: the LCD fades up first when the rig theme comes alive */
+    animation: owrx-rig-poweron 0.55s ease-out both;
+}
+
+@keyframes owrx-rig-poweron {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* then the dial, then the control sections, a beat apart each, like a
+   rig booting section by section */
+body.theme-rig #owrx-rig-knob-line {
+    animation: owrx-rig-poweron 0.5s ease-out 0.25s both;
+}
+
+body.theme-rig #openwebrx-panel-receiver .openwebrx-section {
+    animation: owrx-rig-poweron 0.5s ease-out 0.5s both;
+}
+
+/* extra readouts (S units, squelch, clock), wide layout only */
+#owrx-rig-extra {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-extra {
+    display: block;
+    color: var(--rig-lcd-dim);
+    font-family: 'roboto-mono', monospace;
+    font-size: 9pt;
+    margin-top: 8px;
+    white-space: pre;
+}
+
+/* drag grip along the panel's top edge, with a small handle bar */
+#owrx-rig-grip {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-grip {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 60px;
+    right: 60px;
+    height: 14px;
+    cursor: move;
+    touch-action: none;
+    z-index: 5;
+}
+
+body.theme-rig #owrx-rig-grip::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 4px;
+    width: 44px;
+    height: 5px;
+    margin-left: -22px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #3a4046, #23272b);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15),
+                0 1px 1px rgba(0, 0, 0, 0.6);
+}
+
+/* expand chevron, top left of the panel; large screens only */
+#owrx-rig-expand {
+    display: none;
+}
+
+@media (min-width: 900px) {
+    body.theme-rig #owrx-rig-expand {
+        display: block;
+        position: absolute;
+        top: 3px;
+        left: 16px;
+        z-index: 6;
+        padding: 0 7px;
+        border-radius: 3px;
+        background: #10161b;
+        box-shadow: 0 0 0 1px #1d242b;
+        color: #93a0ab;
+        font-size: 7pt;
+        font-weight: bold;
+        letter-spacing: 1px;
+        line-height: 13px;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    body.theme-rig #owrx-rig-expand:hover {
+        color: #ffffff;
+    }
+
+    /* wide layout: the sections (LCD, dial and keys, modes, controls,
+       display) are modular blocks that flow into two balanced columns */
+    body.theme-rig #openwebrx-panel-receiver.rig-wide {
+        width: 744px !important;
+        column-count: 2;
+        column-gap: 16px;
+    }
+
+    /* each section stays in one piece when the columns balance */
+    body.theme-rig #openwebrx-panel-receiver.rig-wide > * {
+        break-inside: avoid;
+    }
+}
+
+/* the VFO boxes are the readout; the stock display rides inside the active
+   box only to provide click-to-type entry, so hide its digits but keep the
+   input group usable */
+body.theme-rig .owrx-rig-vfo-box .webrx-actual-freq {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+}
+
+body.theme-rig .owrx-rig-vfo-box .webrx-actual-freq .input-group {
+    pointer-events: auto;
+}
+
+body.theme-rig .owrx-rig-vfo-box .webrx-actual-freq > div:first-child {
+    display: none !important;
+}
+
+body.theme-rig .owrx-rig-vfo-box .webrx-actual-freq .input-group {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 6px;
+    background: #0a0f13;
+    border-radius: 5px;
+}
+
+body.theme-rig .owrx-rig-vfo-box .webrx-actual-freq .input-group input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: transparent;
+    color: var(--rig-lcd);
+    border: none;
+    font-family: 'roboto-mono', monospace;
+    font-size: 15pt;
+    text-align: right;
+}
+
+body.theme-rig .owrx-rig-vfo-box .webrx-actual-freq .input-group select {
+    flex: 0 0 auto;
+    background: #121820;
+    color: var(--rig-legend);
+    border: 1px solid #060708;
+    border-radius: 3px;
+    margin-left: 6px;
+}
+
+body.theme-rig #owrx-rig-info .webrx-mouse-freq {
+    color: var(--rig-lcd-dim);
+    font-family: 'roboto-mono', monospace;
+    font-size: 8pt;
+    margin-right: auto;
+}
+
+/* Segmented S-meter inside the frequency LCD, replacing the bar meter */
+#owrx-rig-meter {
+    display: none;
+    margin: 4px 0 2px 0;
+    line-height: 0;
+    /* long press switches the meter face on touch devices; keep the
+       browser's selection callout out of the way */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+body.theme-rig #owrx-rig-meter {
+    display: block;
+}
+
+body.theme-rig #openwebrx-smeter {
+    display: none;
+}
+
+/* the LCD canvases follow their column, so the layout is fluid at any
+   panel width; the aspect ratio comes from the canvas backing size */
+#owrx-rig-meter canvas {
+    width: 100%;
+    height: auto;
+}
+
+/* band scope strip: narrow spectrum centered on the tuned frequency */
+#owrx-rig-bscope,
+#owrx-rig-bscope-bar {
+    display: none;
+    margin: 4px 0 2px 0;
+    line-height: 0;
+}
+
+body.theme-rig #owrx-rig-bscope.visible {
+    display: block;
+}
+
+#owrx-rig-bscope canvas {
+    width: 100%;
+    height: auto;
+    cursor: crosshair;
+}
+
+body.theme-rig #owrx-rig-bscope-bar.visible {
+    display: block;
+    color: #5c6670;
+    font-size: 7pt;
+    letter-spacing: 1px;
+    line-height: 12px;
+    text-align: center;
+    border: 1px solid #1a2026;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+/* audio scope strip below the meter, shown on demand */
+#owrx-rig-scope {
+    display: none;
+    margin: 4px 0 2px 0;
+    line-height: 0;
+}
+
+body.theme-rig #owrx-rig-scope.visible {
+    display: block;
+}
+
+#owrx-rig-scope canvas {
+    width: 100%;
+    height: auto;
+}
+
+body.theme-rig #openwebrx-smeter-db {
+    color: var(--rig-lcd);
+    text-shadow: 0 0 6px var(--rig-lcd-glow);
+}
+
+body.theme-rig #openwebrx-clock-utc {
+    color: var(--rig-lcd-dim);
+}
+
+/* Inputs and listboxes */
+body.theme-rig .openwebrx-panel select,
+body.theme-rig .openwebrx-panel input:not([type=range]):not([type=checkbox]),
+body.theme-rig .openwebrx-dialog select,
+body.theme-rig .openwebrx-dialog input:not([type=range]):not([type=checkbox]) {
+    background: linear-gradient(180deg, #101316 0%, #1a1e22 100%);
+    color: var(--rig-legend);
+    border: 1px solid #060708;
+    border-radius: 3px;
+}
+
+body.theme-rig .openwebrx-panel select option,
+body.theme-rig .openwebrx-dialog select option {
+    background-color: #14171a;
+}
+
+/* Sliders: recessed groove with a round metal thumb */
+body.theme-rig .openwebrx-panel-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 16px;
+    background: transparent;
+}
+
+body.theme-rig .openwebrx-panel-slider::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #04070a 0%, #14191d 100%);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+body.theme-rig .openwebrx-panel-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a5058, #24282c 65%, #17191c);
+    box-shadow: 0 0 0 1px #060708,
+                inset 0 1px 1px rgba(255, 255, 255, 0.25),
+                0 2px 3px rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+}
+
+body.theme-rig .openwebrx-panel-slider::-moz-range-track {
+    height: 5px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #04070a 0%, #14191d 100%);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+body.theme-rig .openwebrx-panel-slider::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    border: none;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a5058, #24282c 65%, #17191c);
+    box-shadow: 0 0 0 1px #060708,
+                inset 0 1px 1px rgba(255, 255, 255, 0.25),
+                0 2px 3px rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+}
+
+/* Section dividers as engraved panel legends */
+body.theme-rig .openwebrx-section-divider {
+    border-bottom: 1px solid #060708;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+    color: #9aa3ab;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Main dial: chrome bezel and a glossy black dome with a deep
+   finger cup */
+#owrx-rig-knob-line {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-knob-line {
+    display: flex;
+    /* keys spread out with the fluid width, like a real wide front panel */
+    justify-content: space-evenly;
+    align-items: center;
+    gap: 9px;
+    padding: 0 0 4px 0;
+    /* a little air between the LCD and the dial row */
+    margin-top: 4px;
+}
+
+/* key columns flanking the dial */
+#owrx-rig-keys-left,
+#owrx-rig-keys-right,
+#owrx-rig-keys-right2 {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+}
+
+.owrx-rig-key {
+    width: 52px;
+    padding: 10px 4px 5px 4px;
+    text-align: center;
+    font-size: 8pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+/* invisible select covering the TS key, opens the native step picker */
+.owrx-rig-ts-select {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    border: none;
+}
+
+.owrx-rig-key-led {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 14px;
+    height: 4px;
+    margin-left: -7px;
+    border-radius: 2px;
+    background: #24301f;
+    box-shadow: 0 0 0 1px #0a0c09,
+                inset 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+.owrx-rig-key.highlighted .owrx-rig-key-led {
+    background: #3adb4a;
+    box-shadow: 0 0 6px rgba(60, 220, 80, 0.8),
+                inset 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+
+/* engaged LOCK blinks as a warning */
+@keyframes owrx-rig-led-blink {
+    0%, 55% { opacity: 1; }
+    56%, 100% { opacity: 0.15; }
+}
+
+.owrx-rig-key-lock.highlighted .owrx-rig-key-led {
+    animation: owrx-rig-led-blink 1.2s step-end infinite;
+}
+
+/* running SCAN blinks fast */
+.owrx-rig-key-scan.highlighted .owrx-rig-key-led {
+    animation: owrx-rig-led-blink 0.5s step-end infinite;
+}
+
+/* dual watch parked on the other VFO blinks fast */
+.owrx-rig-key-dw.dw-active .owrx-rig-key-led {
+    animation: owrx-rig-led-blink 0.5s step-end infinite;
+}
+
+/* the dial is the centerpiece: it grows into whatever space the key
+   columns leave free, up to a sensible cap */
+#owrx-rig-knob {
+    position: relative;
+    flex: 1 1 140px;
+    min-width: 104px;
+    max-width: 240px;
+    aspect-ratio: 1;
+    height: auto;
+    border-radius: 50%;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#owrx-rig-knob.grabbing {
+    cursor: grabbing;
+}
+
+#owrx-rig-knob.locked {
+    cursor: not-allowed;
+}
+
+/* gunmetal bezel, subdued instead of mirror chrome, to match the
+   matte keys */
+.owrx-rig-knob-ring {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 210deg,
+        #8f959b 0deg, #575c62 30deg, #33373c 70deg, #75797f 110deg,
+        #a2a8ae 140deg, #54585e 180deg, #2e3237 220deg, #7e8389 260deg,
+        #979da3 300deg, #5b6066 340deg, #8f959b 360deg);
+    box-shadow: 0 0 0 1px #000000,
+                0 6px 14px rgba(0, 0, 0, 0.8),
+                0 2px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* matte rubber face with a soft sheen, like an Icom tuning dial */
+.owrx-rig-knob-face {
+    position: absolute;
+    /* bezel and finger cup keep their proportions at any dial size */
+    top: 7%;
+    left: 7%;
+    right: 7%;
+    bottom: 7%;
+    border-radius: 50%;
+    background:
+        linear-gradient(155deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 42%),
+        radial-gradient(circle at 38% 30%, #33373c 0%, #26292d 40%, #191b1e 70%, #0e1012 100%);
+    box-shadow: 0 0 0 1px #08090a,
+                inset 0 1px 1px rgba(255, 255, 255, 0.08),
+                inset 0 -2px 5px rgba(0, 0, 0, 0.5);
+    will-change: transform;
+}
+
+.owrx-rig-knob-dimple {
+    position: absolute;
+    left: 50%;
+    top: 10%;
+    width: 21%;
+    height: 21%;
+    margin-left: -10.5%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 32%, #000000 45%, #101214 75%, #303439 98%);
+    box-shadow: inset 0 5px 9px rgba(0, 0, 0, 0.95),
+                inset 0 -2px 3px rgba(255, 255, 255, 0.10),
+                inset 2px 0 4px rgba(0, 0, 0, 0.6),
+                0 1px 1px rgba(255, 255, 255, 0.05);
+}
+
+/* waterfall zoom pair, two half-width keys in one key slot */
+.owrx-rig-zoom-row {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+}
+
+.owrx-rig-zoom-key {
+    width: 28px;
+    text-align: center;
+    font-size: 10pt;
+    font-weight: bold;
+    padding: 4px 0 6px 0;
+}
+
+/* arrows turn green while RIT owns them, matching the RIT key LED */
+body.theme-rig .owrx-rig-zoom-key.owrx-rig-rit-arrow {
+    color: #3adb4a;
+}
+
+/* RIT step menu: small popup anchored to the RIT key, right-click to open */
+.owrx-rig-rit-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    margin-bottom: 4px;
+    z-index: 20;
+    background: linear-gradient(180deg, #101316 0%, #1a1e22 100%);
+    border: 1px solid #060708;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+}
+
+.owrx-rig-rit-menu.open {
+    display: block;
+}
+
+/* variant that drops downward, for keys near the top of a column */
+.owrx-rig-rit-menu.owrx-rig-menu-down {
+    bottom: auto;
+    top: 100%;
+    margin-bottom: 0;
+    margin-top: 4px;
+}
+
+.owrx-rig-rit-menu-item {
+    padding: 4px 12px;
+    font-size: 8pt;
+    color: var(--rig-legend);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.owrx-rig-rit-menu-item:hover {
+    background: #23303c;
+}
+
+.owrx-rig-rit-menu-item.sel {
+    color: #3adb4a;
+}
+
+/* propagation screen: band conditions and MUF map in an LCD window */
+#owrx-rig-prop {
+    display: none;
+    margin: 6px 0 2px 0;
+}
+
+body.theme-rig #owrx-rig-prop.visible {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    background: linear-gradient(180deg, #04070a 0%, #0a0f13 70%, #0d1216 100%);
+    border-radius: 5px;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.9),
+                inset 0 0 2px #000000,
+                0 1px 0 rgba(255, 255, 255, 0.05);
+    padding: 6px;
+}
+
+.owrx-rig-prop-view {
+    display: none;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.owrx-rig-prop-view.active {
+    display: block;
+}
+
+.owrx-rig-prop-view img {
+    width: 100%;
+    border-radius: 3px;
+}
+
+.owrx-rig-prop-cap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'roboto-mono', monospace;
+    font-size: 8pt;
+    color: #5db8ff;
+    padding: 3px 2px 1px 2px;
+}
+
+.owrx-rig-prop-label {
+    cursor: pointer;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* prev/next arrows: clearly tappable little buttons so it is obvious the
+   screen has several views */
+.owrx-rig-prop-nav {
+    flex: 0 0 auto;
+    cursor: pointer;
+    color: #cfd4d9;
+    background: #10161b;
+    box-shadow: 0 0 0 1px #1d242b;
+    border-radius: 3px;
+    padding: 0 6px;
+    font-size: 11pt;
+    line-height: 15px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.owrx-rig-prop-nav:hover {
+    color: #ffffff;
+    background: #1d5fae;
+}
+
+.owrx-rig-prop-hide {
+    flex: 0 0 auto;
+    color: #5c6670;
+    cursor: pointer;
+}
+
+/* custom band conditions view */
+.owrx-rig-bands {
+    font-family: 'roboto-mono', monospace;
+    padding: 4px 6px 2px 6px;
+}
+
+.owrx-rig-bands-head {
+    color: var(--rig-lcd);
+    text-shadow: 0 0 6px var(--rig-lcd-glow);
+    font-size: 13pt;
+    font-weight: bold;
+    white-space: pre;
+    margin-bottom: 8px;
+}
+
+.owrx-rig-band-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    color: #cfd4d9;
+    font-size: 9pt;
+}
+
+.owrx-rig-band-row .bname {
+    width: 72px;
+    flex: 0 0 auto;
+}
+
+.owrx-rig-cond-hdr {
+    flex: 1;
+    text-align: center;
+    color: var(--rig-lcd-dim);
+    font-size: 7pt;
+    letter-spacing: 1px;
+}
+
+.owrx-rig-cond {
+    flex: 1;
+    text-align: center;
+    border-radius: 3px;
+    font-size: 8pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 3px 0;
+    background: #14181c;
+    color: #5c6670;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.owrx-rig-cond.good {
+    background: #0d3317;
+    color: #3adb4a;
+    text-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+.owrx-rig-cond.fair {
+    background: #332a0d;
+    color: #f0c040;
+    text-shadow: 0 0 6px rgba(240, 192, 64, 0.6);
+}
+
+.owrx-rig-cond.poor {
+    background: #330f0d;
+    color: #ff4a33;
+    text-shadow: 0 0 6px rgba(255, 74, 51, 0.6);
+}
+
+/* NCDXF beacon view */
+.owrx-rig-beacons {
+    font-family: 'roboto-mono', monospace;
+    padding: 4px 6px 2px 6px;
+}
+
+.owrx-rig-beacon-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 9pt;
+    color: #cfd4d9;
+    margin: 4px 0;
+}
+
+.owrx-rig-beacon-row .bfreq {
+    flex: 0 0 auto;
+    min-width: 52px;
+    color: #5db8ff;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.owrx-rig-beacon-row .bfreq:hover {
+    color: #9fd4ff;
+    text-decoration: underline;
+}
+
+.owrx-rig-beacon-row .bcall {
+    flex: 0 0 auto;
+    min-width: 62px;
+    color: #f2f5f7;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.owrx-rig-beacon-row .bwhere {
+    flex: 1 1 30px;
+    min-width: 0;
+    color: var(--rig-lcd-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.owrx-rig-beacon-row .bslot {
+    flex: 0 0 auto;
+    text-align: right;
+    color: var(--rig-lcd-dim);
+    white-space: nowrap;
+}
+
+.owrx-rig-beacon-row.listening,
+.owrx-rig-beacon-row.listening span {
+    color: #3adb4a;
+    text-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+/* beacon radar: band chips and the 18-beacon graded list */
+.owrx-rig-radar-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.owrx-rig-radar-label {
+    color: #93a0ab;
+    font-size: 8pt;
+    letter-spacing: 2px;
+    margin-right: 2px;
+}
+
+.owrx-rig-radar-list {
+    columns: 2;
+    column-gap: 12px;
+}
+
+.owrx-rig-radar-list .owrx-rig-beacon-row {
+    break-inside: avoid;
+}
+
+.owrx-rig-beacon-row .bsnr {
+    flex: 0 0 auto;
+    min-width: 44px;
+    text-align: right;
+    white-space: nowrap;
+    color: #5c6670;
+}
+
+.owrx-rig-beacon-row .bsnr.good {
+    color: #3adb4a;
+    text-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+.owrx-rig-beacon-row .bsnr.fair {
+    color: #f0c040;
+}
+
+/* satellite passes screen */
+#owrx-rig-sats {
+    display: none;
+    margin: 6px 0 2px 0;
+}
+
+body.theme-rig #owrx-rig-sats.visible {
+    display: block;
+    background: linear-gradient(180deg, #04070a 0%, #0a0f13 70%, #0d1216 100%);
+    border-radius: 5px;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.9),
+                inset 0 0 2px #000000,
+                0 1px 0 rgba(255, 255, 255, 0.05);
+    padding: 6px 8px;
+}
+
+.owrx-rig-sats-head {
+    font-family: 'roboto-mono', monospace;
+    color: var(--rig-lcd);
+    text-shadow: 0 0 6px var(--rig-lcd-glow);
+    font-size: 10pt;
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+.owrx-rig-sat-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: 'roboto-mono', monospace;
+    font-size: 8pt;
+    color: #cfd4d9;
+    margin: 3px 0;
+}
+
+.owrx-rig-sat-row .swhen {
+    flex: 0 0 auto;
+    min-width: 88px;
+    color: var(--rig-lcd-dim);
+    white-space: nowrap;
+}
+
+.owrx-rig-sat-row .sname {
+    flex: 1 1 30px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.owrx-rig-sat-row .sel {
+    flex: 0 0 auto;
+    min-width: 30px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.owrx-rig-sat-row .sel.good { color: #3adb4a; }
+.owrx-rig-sat-row .sel.fair { color: #f0c040; }
+.owrx-rig-sat-row .sel.low { color: #5c6670; }
+
+.owrx-rig-sat-row .sdur {
+    flex: 0 0 auto;
+    min-width: 38px;
+    text-align: right;
+    color: var(--rig-lcd-dim);
+    white-space: nowrap;
+}
+
+.owrx-rig-sat-row .sfreq {
+    flex: 0 0 auto;
+    min-width: 90px;
+    text-align: right;
+    color: #5db8ff;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* the source caption must never crowd the MIN and HIDE controls */
+#owrx-rig-sats .owrx-rig-prop-cap span:first-child {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 55%;
+}
+
+.owrx-rig-sat-row .sfreq:hover {
+    color: #9fd4ff;
+    text-decoration: underline;
+}
+
+.owrx-rig-sat-row.active,
+.owrx-rig-sat-row.active span {
+    color: #3adb4a;
+    text-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+/* Narrow phone screens: let the panel fit the viewport, scale the LCD
+   canvases and compact the dial row */
+@media (max-width: 430px) {
+    body.theme-rig #openwebrx-panel-receiver {
+        width: calc(100vw - 30px) !important;
+    }
+
+    body.theme-rig #owrx-rig-knob-line {
+        gap: 6px;
+    }
+
+    .owrx-rig-key {
+        width: 46px;
+    }
+
+    .owrx-rig-zoom-key {
+        width: 25px;
+    }
+}
+
+/* Auto-fit fallback: when even the minimum zoom cannot fit the rig
+   (very short landscape screens), the panel scrolls inside a capped
+   height set by the fit code */
+body.theme-rig #openwebrx-panel-receiver.rig-overflow {
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* overflow drops the flex-item min-height to 0 and the zero-height
+       panel column would crush the panel; keep its capped size instead */
+    flex-shrink: 0;
+}
+
+/* dark thin scrollbars on the skin's own scroll areas */
+body.theme-rig #openwebrx-panel-receiver.rig-overflow,
+.owrx-rig-dx-list,
+.owrx-rig-satwin-list {
+    scrollbar-width: thin;
+    scrollbar-color: #2e343b #0d1013;
+}
+
+body.theme-rig #openwebrx-panel-receiver.rig-overflow::-webkit-scrollbar,
+.owrx-rig-dx-list::-webkit-scrollbar,
+.owrx-rig-satwin-list::-webkit-scrollbar {
+    width: 7px;
+}
+
+body.theme-rig #openwebrx-panel-receiver.rig-overflow::-webkit-scrollbar-thumb,
+.owrx-rig-dx-list::-webkit-scrollbar-thumb,
+.owrx-rig-satwin-list::-webkit-scrollbar-thumb {
+    background: #2e343b;
+    border-radius: 4px;
+}
+
+body.theme-rig #openwebrx-panel-receiver.rig-overflow::-webkit-scrollbar-track,
+.owrx-rig-dx-list::-webkit-scrollbar-track,
+.owrx-rig-satwin-list::-webkit-scrollbar-track {
+    background: #0d1013;
+}
+
+/* Touch browsers hijack drags they mistake for page scrolls (worst in
+   the iOS Chrome shell). The rig page never needs to scroll itself,
+   so lock the document while the theme is up and give the browser
+   nothing to claim. */
+html:has(body.theme-rig) {
+    overscroll-behavior: none;
+}
+
+body.theme-rig {
+    overscroll-behavior: none;
+    overflow: hidden;
+}
+
+/* The whole LCD screen paints on its own compositor layer. The meter
+   and scopes redraw many times a second; without an isolating layer
+   the browser recomposites the textured panel behind them, and on some
+   GPUs that recomposite sweeps top to bottom as a faint moving glare
+   (issue #13). Promoting the screen keeps those repaints self
+   contained. The inner canvases get their own layers too. */
+body.theme-rig #openwebrx-panel-receiver .frequencies-container {
+    transform: translateZ(0);
+    isolation: isolate;
+    contain: paint;
+}
+
+body.theme-rig #owrx-rig-meter canvas,
+body.theme-rig #owrx-rig-bscope canvas,
+body.theme-rig #owrx-rig-scope canvas {
+    will-change: transform;
+}
+
+/* running version, bottom-left like the print on a front panel */
+#owrx-rig-version {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-version {
+    display: block;
+    position: absolute;
+    right: 10px;
+    bottom: 2px;
+    color: rgba(160, 170, 180, 0.45);
+    font-family: 'roboto-mono', monospace;
+    font-size: 7pt;
+    line-height: 1;
+    text-decoration: none;
+    user-select: none;
+}
+
+body.theme-rig #owrx-rig-version:hover {
+    color: rgba(200, 212, 222, 0.9);
+}
+
+/* DX cluster and SAT tracking windows; their banner buttons and the
+   windows themselves only show while the rig theme is active */
+#owrx-rig-dx-button,
+#owrx-rig-sat-button,
+#owrx-rig-watch-button {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-dx-button,
+body.theme-rig #owrx-rig-sat-button,
+body.theme-rig #owrx-rig-watch-button {
+    display: block;
+}
+
+#owrx-rig-dx,
+#owrx-rig-satwin,
+.owrx-rig-watch {
+    display: none;
+    position: fixed;
+    left: 10px;
+    top: 90px;
+    z-index: 1001;
+    width: 400px;
+    max-width: calc(100vw - 20px);
+    padding: 8px;
+    background: linear-gradient(165deg, #24282d 0%, #17191d 45%, #0f1114 100%);
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+                0 0 0 1px #060708,
+                0 6px 18px rgba(0, 0, 0, 0.65);
+    color: #cfd4d9;
+    font-family: 'roboto-mono', monospace;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+body.theme-rig #owrx-rig-dx.visible,
+body.theme-rig #owrx-rig-satwin.visible,
+body.theme-rig .owrx-rig-watch {
+    display: block;
+}
+
+/* the SAT window opens beside the DX window, not on top of it */
+#owrx-rig-satwin {
+    left: 30px;
+    top: 120px;
+}
+
+.owrx-rig-dx-hdr {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 0 2px 6px 2px;
+    cursor: move;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.owrx-rig-dx-title {
+    color: #93a0ab;
+    font-size: 9pt;
+    letter-spacing: 2px;
+}
+
+.owrx-rig-dx-chip {
+    font-size: 8pt;
+    padding: 1px 7px;
+    border-radius: 3px;
+    color: #93a0ab;
+    background: #10161b;
+    box-shadow: 0 0 0 1px #1d242b;
+    cursor: pointer;
+}
+
+.owrx-rig-dx-chip.on {
+    background: #1d5fae;
+    color: #ffffff;
+}
+
+.owrx-rig-dx-count {
+    margin-left: auto;
+    color: #93a0ab;
+    font-size: 8pt;
+    white-space: pre;
+}
+
+.owrx-rig-dx-close {
+    color: #93a0ab;
+    font-size: 9pt;
+    cursor: pointer;
+    padding: 0 2px;
+}
+
+.owrx-rig-dx-close:hover {
+    color: #ffffff;
+}
+
+.owrx-rig-dx-lcd {
+    position: relative;
+    background: linear-gradient(180deg, #04070a 0%, #0a0f13 70%, #0d1216 100%);
+    border-radius: 5px;
+    padding: 8px;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.9), inset 0 0 2px #000000;
+}
+
+/* callsign tooltip floating over the map on hover */
+.owrx-rig-dx-tip {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    z-index: 5;
+    padding: 3px 6px;
+    background: rgba(4, 10, 16, 0.92);
+    box-shadow: 0 0 0 1px #2e4a57, 0 2px 6px rgba(0, 0, 0, 0.6);
+    border-radius: 3px;
+    color: #f2f5f7;
+    font-family: 'roboto-mono', monospace;
+    font-size: 8pt;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.owrx-rig-dx-tip.show {
+    display: block;
+}
+
+#owrx-rig-dx canvas,
+#owrx-rig-satwin canvas,
+.owrx-rig-watch canvas {
+    display: block;
+    width: 100%;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+/* the activity chart canvas is the second canvas; hidden by default,
+   swaps places with the map + list when ACT is on. Scoped under the id
+   to beat the base "#owrx-rig-dx canvas { display:block }" rule. */
+#owrx-rig-dx .owrx-rig-dx-lcd > canvas + canvas {
+    display: none;
+}
+
+#owrx-rig-dx .owrx-rig-dx-lcd.activity > canvas:first-child {
+    display: none;
+}
+
+#owrx-rig-dx .owrx-rig-dx-lcd.activity .owrx-rig-dx-list {
+    display: none;
+}
+
+#owrx-rig-dx .owrx-rig-dx-lcd.activity > canvas + canvas {
+    display: block;
+}
+
+.owrx-rig-dx-list {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 7px;
+    font-size: 8.5pt;
+    display: block;
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.owrx-rig-dx-list tr {
+    display: flex;
+    cursor: pointer;
+}
+
+.owrx-rig-dx-list td {
+    padding: 2.5px 4px;
+    white-space: nowrap;
+    color: #93a0ab;
+}
+
+.owrx-rig-dx-list tr:hover td {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.owrx-rig-dx-list td.age { flex: 0 0 26px; text-align: right; }
+.owrx-rig-dx-list td.call {
+    flex: 1 1 72px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #f2f5f7;
+    font-weight: bold;
+    text-shadow: 0 0 6px rgba(215, 232, 255, 0.35);
+}
+.owrx-rig-dx-list td.freq { flex: 0 0 56px; text-align: right; }
+.owrx-rig-dx-list td.freq.inwin { color: #f2f5f7; }
+.owrx-rig-dx-list td.mode { flex: 0 0 30px; color: #5aa8ff; }
+.owrx-rig-dx-list td.brg { flex: 0 0 76px; text-align: right; }
+.owrx-rig-dx-list td.cty {
+    flex: 0 0 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.owrx-rig-dx-list tr.listening td,
+.owrx-rig-dx-list tr.listening td.call,
+.owrx-rig-dx-list tr.listening td.mode {
+    color: #3adb4a;
+    text-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+/* pass list under the SAT tracking map */
+.owrx-rig-satwin-list {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 7px;
+    font-size: 8pt;
+    display: block;
+    max-height: 150px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.owrx-rig-satwin-list tr {
+    display: flex;
+    cursor: pointer;
+}
+
+.owrx-rig-satwin-list td {
+    padding: 2.5px 4px;
+    white-space: nowrap;
+    color: #93a0ab;
+}
+
+.owrx-rig-satwin-list tr:hover td {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.owrx-rig-satwin-list td.name {
+    flex: 0 0 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #f2f5f7;
+    font-weight: bold;
+}
+.owrx-rig-satwin-list td.when { flex: 1 1 auto; }
+.owrx-rig-satwin-list td.dur { flex: 0 0 36px; text-align: right; }
+.owrx-rig-satwin-list td.el { flex: 0 0 34px; text-align: right; }
+.owrx-rig-satwin-list td.freq { flex: 0 0 90px; text-align: right; color: #5aa8ff; }
+.owrx-rig-satwin-list td.freq span { display: block; }
+.owrx-rig-satwin-list td.freq span:hover { color: #f2f5f7; }
+
+.owrx-rig-satwin-list tr.active td {
+    color: #3adb4a;
+    text-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+.owrx-rig-dx-foot {
+    display: flex;
+    color: #5b656e;
+    font-size: 7.5pt;
+    padding: 5px 2px 0 2px;
+}
+
+.owrx-rig-dx-foot span:last-child {
+    margin-left: auto;
+}
+
+/* corner grip for resizing the DX window */
+.owrx-rig-dx-grip {
+    position: absolute;
+    right: 1px;
+    bottom: 1px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background:
+        linear-gradient(135deg, transparent 50%, #4a545e 50%, #4a545e 56%,
+            transparent 56%, transparent 66%, #4a545e 66%, #4a545e 72%,
+            transparent 72%, transparent 82%, #4a545e 82%, #4a545e 88%,
+            transparent 88%);
+    border-bottom-right-radius: 8px;
+}
+
+.owrx-rig-dx-grip:hover {
+    filter: brightness(1.5);
+}
+
+/* DX spot chips on the top ribbon, beside the stock bookmarks; the
+   strip exists only visually while the rig theme is active */
+#owrx-rig-spots {
+    display: none;
+}
+
+body.theme-rig #owrx-rig-spots {
+    display: block;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 13px;
+    pointer-events: none;
+    /* above the stock bookmark flags, so the chips stay clickable */
+    z-index: 5;
+}
+
+.owrx-rig-spot {
+    position: absolute;
+    bottom: 0;
+    padding: 0 4px;
+    pointer-events: auto;
+    cursor: pointer;
+    background: rgba(8, 13, 18, 0.92);
+    box-shadow: 0 0 0 1px #2e4a57;
+    border-radius: 2px;
+    color: #5db8ff;
+    font-family: 'roboto-mono', monospace;
+    font-size: 9px;
+    line-height: 12px;
+    white-space: nowrap;
+}
+
+.owrx-rig-spot:hover {
+    background: #1d5fae;
+    color: #ffffff;
+}
+
+/* Top banner follows the rig look: the photo backdrop and the glowing
+   white icons make way for a dark metal bar with silver icons. When
+   the receiver details are expanded the dark bar steps aside, so the
+   station photo shows like on the stock themes. */
+@supports selector(:has(*)) {
+    body.theme-rig .webrx-top-container:not(:has(.openwebrx-description-container.expanded)) {
+        background-image: none;
+        background-color: #17191d;
+        background: linear-gradient(180deg, #262b31 0%, #17191d 70%, #101215 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                    inset 0 -1px 0 #000000;
+    }
+}
+
+/* browsers without :has keep the bar dark in both states */
+@supports not selector(:has(*)) {
+    body.theme-rig .webrx-top-container {
+        background-image: none;
+        background-color: #17191d;
+        background: linear-gradient(180deg, #262b31 0%, #17191d 70%, #101215 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                    inset 0 -1px 0 #000000;
+    }
+}
+
+body.theme-rig .webrx-top-bar {
+    background: none;
+}
+
+body.theme-rig .webrx-top-logo {
+    filter: brightness(0.85);
+}
+
+body.theme-rig .webrx-rx-avatar {
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px #060708, 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+body.theme-rig .webrx-rx-title {
+    color: #e8ecef;
+}
+
+body.theme-rig .webrx-rx-desc {
+    color: #93a0ab;
+}
+
+body.theme-rig .openwebrx-main-buttons {
+    color: #b6bec6;
+    text-shadow: none;
+    font-size: 8pt;
+    letter-spacing: 0.5px;
+}
+
+body.theme-rig .openwebrx-main-buttons .button {
+    border-radius: 6px;
+    padding: 3px 0 4px 0;
+}
+
+body.theme-rig .openwebrx-main-buttons .button img,
+body.theme-rig .openwebrx-main-buttons .button svg {
+    height: 28px;
+    margin-top: 2px;
+    filter: brightness(0.78);
+}
+
+body.theme-rig .openwebrx-main-buttons .button:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+}
+
+body.theme-rig .openwebrx-main-buttons .button:hover img,
+body.theme-rig .openwebrx-main-buttons .button:hover svg {
+    filter: brightness(1.05);
+}
+
+body.theme-rig .openwebrx-main-buttons .button:active {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+body.theme-rig #owrx-rig-dx-button.highlighted,
+body.theme-rig #owrx-rig-sat-button.highlighted {
+    background: rgba(29, 95, 174, 0.35);
+    color: #ffffff;
+}
+
+/* watch windows: pocket receivers for the eyes */
+.owrx-rig-watch {
+    width: 236px;
+    padding: 6px;
+}
+
+.owrx-rig-watch .owrx-rig-dx-hdr {
+    gap: 6px;
+    padding: 0 2px 5px 2px;
+    cursor: move;
+    align-items: center;
+}
+
+.owrx-rig-watch-tag {
+    background: #1d5fae;
+    color: #ffffff;
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 9pt;
+    font-weight: bold;
+}
+
+.owrx-rig-watch-freq {
+    font-size: 11pt;
+    font-weight: bold;
+    color: var(--rig-lcd);
+    text-shadow: 0 0 6px var(--rig-lcd-glow);
+    cursor: pointer;
+}
+
+.owrx-rig-watch-mode {
+    font-size: 8pt;
+    color: #5aa8ff;
+}
+
+.owrx-rig-watch-spk {
+    margin-left: auto;
+    cursor: pointer;
+    font-size: 11pt;
+    filter: grayscale(1) brightness(0.8);
+}
+
+.owrx-rig-watch.playing .owrx-rig-watch-spk {
+    filter: none;
+}
+
+.owrx-rig-watch.playing .owrx-rig-watch-tag {
+    background: #1d8a2e;
+    box-shadow: 0 0 6px rgba(60, 220, 80, 0.6);
+}
+
+.owrx-rig-watch-input {
+    width: 74px;
+    background: #0a0f13;
+    color: var(--rig-lcd);
+    border: 1px solid #2e4a57;
+    border-radius: 3px;
+    font: bold 10pt 'roboto-mono', monospace;
+    padding: 0 3px;
+}
+
+/* a short note, captioned along the bottom of the watch's little LCD */
+.owrx-rig-watch-note {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    padding: 1px 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--rig-lcd);
+    font: 9pt 'roboto-mono', monospace;
+    line-height: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.owrx-rig-watch-note-input {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: calc(100% - 16px);
+    box-sizing: border-box;
+    background: #0a0f13;
+    color: var(--rig-lcd);
+    border: 1px solid #2e4a57;
+    border-radius: 3px;
+    font: 9pt 'roboto-mono', monospace;
+    padding: 0 4px;
+    outline: none;
+}
+
+/* activity: the letter blinks red while there is a signal in the
+   channel; the playing window keeps its steady green instead */
+@keyframes owrx-rig-watch-act {
+    0%, 100% { background: #b02a1e; box-shadow: 0 0 7px rgba(255, 65, 48, 0.8); }
+    50% { background: #5a1812; box-shadow: none; }
+}
+
+.owrx-rig-watch.act:not(.playing) .owrx-rig-watch-tag {
+    animation: owrx-rig-watch-act 1s step-end infinite;
+}
+
+/* Numeric keypad for touch frequency entry, over the LCD */
+.owrx-rig-kp-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1002;
+    background: rgba(0, 0, 0, 0.25);
+    align-items: center;
+    justify-content: center;
+}
+
+.owrx-rig-kp-overlay.visible {
+    display: flex;
+}
+
+.owrx-rig-kp {
+    position: relative;
+    width: 260px;
+    padding: 10px;
+    background: linear-gradient(180deg, #3a4046 0%, #2a2f34 100%);
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px #0a0c0e, 0 12px 34px rgba(0, 0, 0, 0.6);
+    font-family: 'roboto-mono', monospace;
+    color: #e8ecef;
+}
+
+/* header doubles as the drag handle */
+.owrx-rig-kp-head {
+    display: flex;
+    align-items: baseline;
+    padding: 0 2px 8px 2px;
+    cursor: move;
+    touch-action: none;
+}
+
+.owrx-rig-kp-overlay:focus {
+    outline: none;
+}
+
+.owrx-rig-kp-title {
+    font-size: 8.5pt;
+    letter-spacing: 2px;
+    color: #93a0ab;
+}
+
+.owrx-rig-kp-head .owrx-rig-dx-close {
+    margin-left: auto;
+}
+
+.owrx-rig-kp-dispwrap {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 6px;
+    background: #000000;
+    border-radius: 5px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    box-shadow: inset 0 0 0 1px #000;
+}
+
+.owrx-rig-kp-disp {
+    font-size: 20pt;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--rig-lcd);
+}
+
+.owrx-rig-kp-disp.placeholder {
+    color: #3d474f;
+}
+
+.owrx-rig-kp-unit {
+    font-size: 9pt;
+    color: #5aa8ff;
+}
+
+.owrx-rig-kp-keys {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.owrx-rig-kp-foot {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.owrx-rig-kp-key {
+    text-align: center;
+    padding: 12px 0;
+    font-size: 13pt;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #454b52 0%, #363b41 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4);
+    color: #eef2f5;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    /* fast taps must not be read as a double-tap zoom on iOS */
+    touch-action: manipulation;
+}
+
+.owrx-rig-kp-key:active {
+    background: linear-gradient(180deg, #1a4fb0 0%, #123f8f 100%);
+    color: #ffffff;
+}
+
+.owrx-rig-kp-go {
+    color: #5aa8ff;
+    font-size: 10.5pt;
+}
+
+.owrx-rig-kp-ce {
+    color: #f0a0a0;
+    font-size: 9.5pt;
+    letter-spacing: 1px;
+}
+
+/* big Enter button under the pad */
+.owrx-rig-kp-enter {
+    margin-top: 8px;
+    text-align: center;
+    padding: 13px 0;
+    font-size: 12pt;
+    letter-spacing: 2px;
+    font-weight: bold;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #1a8a2e 0%, #126522 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+    color: #ffffff;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.owrx-rig-kp-enter:active {
+    background: linear-gradient(180deg, #23a83c 0%, #178029 100%);
+}
+
+/* band name as a badge in the status line, matching the mode badge */
+body.theme-rig .owrx-rig-extra-band {
+    display: inline-block;
+    margin-right: 10px;
+    padding: 0 6px;
+    border-radius: 3px;
+    background: #1d5fae;
+    color: #ffffff;
+    font-weight: bold;
+}
+
+body.theme-rig .owrx-rig-extra-band:empty {
+    display: none;
+}
+
+/* brief centered message over the LCD, e.g. "out of range" */
+#owrx-rig-flash {
+    display: none;
+    position: absolute;
+    left: 50%;
+    top: 40%;
+    transform: translate(-50%, -50%);
+    z-index: 6;
+    padding: 6px 14px;
+    background: rgba(176, 42, 30, 0.92);
+    color: #ffffff;
+    border-radius: 5px;
+    font-family: 'roboto-mono', monospace;
+    font-size: 10pt;
+    letter-spacing: 1px;
+    pointer-events: none;
+}
+
+body.theme-rig #owrx-rig-flash.show {
+    display: block;
+}
+
+
+
+/* bottom status bars (audio buffer/output, network, CPU, clients) styled
+   to match the rig: flat dark tracks with a green fill, rig mono font */
+body.theme-rig #openwebrx-panel-status .openwebrx-progressbar {
+    background-color: #0c1216;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px #05080a;
+    font-family: 'roboto-mono', monospace;
+    font-size: 7.5pt;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.9);
+    color: #cfd4d9;
+}
+
+body.theme-rig #openwebrx-panel-status .openwebrx-progressbar-bar {
+    background: linear-gradient(180deg, #1d8a2e, #14611f);
+    border-radius: 4px;
+}
+
+body.theme-rig #openwebrx-panel-status .openwebrx-progressbar--over .openwebrx-progressbar-bar {
+    background: linear-gradient(180deg, #ff5148, #b02a1e);
+}
+
+/* Windows on the host's plugin window API (OpenWebRX+ ext-windows): the
+   skin's content sits inside a host window, so its own frame rules step
+   aside, and the host window takes the rig look under this theme. The
+   skin's host windows stay hidden on the stock themes. */
+body.theme-rig #owrx-rig-dx.owrx-rig-hosted,
+body.theme-rig #owrx-rig-satwin.owrx-rig-hosted,
+body.theme-rig .owrx-rig-watch.owrx-rig-hosted {
+    display: block;
+    position: static;
+    width: auto;
+    max-width: none;
+    padding: 6px 8px 8px 8px;
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.owrx-rig-hosted > .owrx-rig-dx-hdr {
+    cursor: default;
+}
+
+/* the host header already carries the title and the close */
+.owrx-rig-hosted > .owrx-rig-dx-hdr > .owrx-rig-dx-title,
+.owrx-rig-hosted > .owrx-rig-dx-hdr > .owrx-rig-dx-close,
+.owrx-rig-hosted > .owrx-rig-dx-grip {
+    display: none;
+}
+
+body:not(.theme-rig) .owrx-rig-hostwin {
+    display: none !important;
+}
+
+body.theme-rig .openwebrx-plugin-window {
+    background: linear-gradient(165deg, #24282d 0%, #17191d 45%, #0f1114 100%);
+    border: 1px solid #060708;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
+                0 6px 18px rgba(0, 0, 0, 0.65);
+    color: #cfd4d9;
+}
+
+body.theme-rig .openwebrx-plugin-header {
+    background: #10161b;
+    color: #93a0ab;
+    font-family: 'roboto-mono', monospace;
+    font-size: 8.5pt;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #060708;
+}
+
+body.theme-rig .openwebrx-plugin-header .openwebrx-plugin-close {
+    background: none;
+    color: #93a0ab;
+}
+
+body.theme-rig .openwebrx-plugin-body {
+    padding: 0;
+    overflow: hidden;
+}
+
+
+/* parked watches: hidden together, remembered, one click brings them back */
+body.theme-rig .owrx-rig-watch.parked {
+    display: none;
+}
+
+/* full-page shield while one of the skin's drags runs */
+.owrx-rig-drag-shield {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+}
+
+/* the SAT reload chip turns while the orbits download */
+/* a round arrow in a square box, so it turns around its own center */
+.owrx-rig-spin {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    vertical-align: -1px;
+    transform-origin: 50% 50%;
+}
+
+.owrx-rig-spin svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.owrx-rig-dx-chip.busy .owrx-rig-spin {
+    animation: owrx-rig-spin 1s linear infinite;
+}
+
+@keyframes owrx-rig-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* a newer build is on the server */
+body.theme-rig #owrx-rig-version.update {
+    color: #3adb4a;
+    cursor: pointer;
+}
+
+/* Phones (touch, up to 600 px wide): the rig docks across the bottom at
+   real size and scrolls. The log and status panels start closed there
+   (rig_skin.js) and open over the rig from the Chat and Status buttons.
+   Only those two rise above the rig: the mode information panels stay
+   under it, or they would cover the mode buttons that close them */
+body.theme-rig.rig-phone #openwebrx-panel-log,
+body.theme-rig.rig-phone #openwebrx-panel-status {
+    position: relative;
+    z-index: 3;
+}
+
+/* edge to edge on a phone: no side margins, only the top corners round,
+   and the page behind is plain dark instead of the background picture */
+body.theme-rig.rig-phone #openwebrx-panel-receiver {
+    box-sizing: border-box;
+    margin: 0;
+    border-radius: 10px 10px 0 0;
+}
+
+body.theme-rig.rig-phone #webrx-canvas-background {
+    background-image: none;
+    background-color: #0e1114;
+}
+
+/* in the scrolling phone panel the version print sits after the last
+   row instead of floating over the keys */
+body.theme-rig.rig-phone #owrx-rig-version {
+    position: static;
+    text-align: right;
+    padding: 4px 2px 2px;
+}
+
+/* a finger-sized grip on a phone; it sets the rig's height there */
+body.theme-rig.rig-phone #owrx-rig-grip {
+    height: 22px;
+    left: 30%;
+    right: 30%;
+    cursor: ns-resize;
+}
+
+/* the banner has three more buttons with the rig (DX, SAT, WATCH) than a
+   phone has room for: the row scrolls sideways instead of pushing Help
+   and Status off the left edge */
+body.theme-rig.rig-phone .openwebrx-main-buttons {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+/* the receiver name has no room on a phone bar (the stock page squeezes it
+   to nothing too); the receiver photo icon stays */
+body.theme-rig.rig-phone .webrx-top-bar .webrx-rx-texts {
+    display: none;
+}
+
+body.theme-rig.rig-phone .openwebrx-main-buttons::-webkit-scrollbar {
+    display: none;
+}
+
+/* the buttons keep their width and the row scrolls, labels never squeeze */
+body.theme-rig.rig-phone .openwebrx-main-buttons > * {
+    flex-shrink: 0;
+}
+
+/* on a phone the mode information panels sit in the rig's scroll, under
+   its controls, full width (rig_skin.js moves them there and back) */
+body.theme-rig.rig-phone #owrx-rig-phone-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+body.theme-rig.rig-phone #owrx-rig-phone-info > .openwebrx-panel {
+    width: auto !important;
+    max-width: none !important;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+/* a decode table wider than the phone (ADS-B, ACARS, packet...) scrolls
+   sideways inside its panel, header and rows together; the rows keep
+   their own up and down scroll */
+body.theme-rig.rig-phone #owrx-rig-phone-info > .openwebrx-message-panel {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #2e343b #0d1013;
+}

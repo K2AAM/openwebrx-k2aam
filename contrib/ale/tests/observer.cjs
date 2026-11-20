@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
-const script=fs.readFileSync(path.join(__dirname,'../../../htdocs/lib/AleScanner.js'),'utf8');
+const script=fs.readFileSync(path.join(__dirname,'../../../htdocs/plugins/receiver/ale/ale.js'),'utf8');
 const storage=new Map(),timers=new Set(),sent=[],listeners=new Set();
 let mode='ale2g',source='sdr',frequency=7102000,nextTimer=0,denyStorage=false,autoStop=false;
 const state={available:true,source_id:'sdr',session:'scan-one',running:true,status:'Scanning',frequency,sequence:0,events:[]};

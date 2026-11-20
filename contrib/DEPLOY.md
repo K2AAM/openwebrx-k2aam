@@ -1,8 +1,8 @@
 # Deploying this fork on a fresh receiver
 
-This fork is installed as its own `openwebrx` package. The `install.py` / `update.py` scripts under
-`contrib/ale` and `contrib/rig_dock` patch a *stock* OpenWebRX+ 1.2.126 installation and are not
-used here; they refuse to run against other versions.
+This fork is installed as its own `openwebrx` package. The receiver plugins it ships (dock, RIG
+skin, interface chooser, ALE) are enabled in `htdocs/plugins/receiver/init.js`; see
+[plugins](PLUGINS.md).
 
 ## 1. Stock dependencies
 
@@ -22,7 +22,8 @@ sudo apt-mark hold openwebrx
 ```
 
 The hold stops `apt upgrade` from replacing the fork with the next upstream release. Settings,
-profiles and bookmarks in `/var/lib/openwebrx` are left alone.
+profiles and bookmarks in `/var/lib/openwebrx` are left alone. The package installs its own
+`plugins/receiver/init.js`, so keep station edits to that file in your clone and rebuild.
 
 ## 3. ALE decoder binary
 

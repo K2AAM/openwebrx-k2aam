@@ -1,13 +1,14 @@
-/* RIG Dock for OpenWebRX+ 1.2.126. MIT License. */
+/* RIG Dock: compact receiver dock and shared decoder tray for OpenWebRX+.
+ * Optional plugin; load with Plugins.load('rig_dock') or through ui_select. MIT License. */
 (function () {
     'use strict';
     const plugin = Plugins.rig_dock;
-    plugin._version = '0.4.0';
+    plugin._version = '0.5.0';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
     let panel, dock, popup, opener, observer, socket, timer;
-    let cpu = null, clients = null, moved = [], listeners = [], audioPromise;
+    let cpu = null, clients = null, moved = [], listeners = [];
     let modeSignature = '', mounted = false, chatWasVisible = false;
     let pendingTune = null, centerChangesAllowed = null;
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
@@ -365,37 +366,6 @@
                 throw new Error('Cutoff must be between −100000 and 100000 Hz.');
             d.setBandpass({low_cut: low, high_cut: high}); closePopup(true);
         }), 'rd-primary'));
-        pop.node.append(el('p', 'rd-note', 'This is OWRX’s receive bandpass. The optional audio filter has its own bypass.'));
-    }
-    async function audio() {
-        if (Plugins.rig_audio && Plugins.rig_audio.setEnabled) return Plugins.rig_audio;
-        if (!audioPromise) audioPromise = Plugins.load('rig_audio').then(() => {
-            if (!Plugins.rig_audio || !Plugins.rig_audio.setEnabled)
-                throw new Error('The optional audio filter could not load.');
-            return Plugins.rig_audio;
-        }).catch(error => { audioPromise = null; throw error; });
-        return audioPromise;
-    }
-    function buildAudio(toolbar) {
-        const pop = popover('audio', 'Audio filter', 'Audio: Bypassed ▴');
-        refs.audioTrigger = pop.trigger; toolbar.append(pop.trigger);
-        refs.audioEnable = checkbox(pop.node, 'Enable audio filter for this session', () => {});
-        // Async enable is explicit; no filter script or audio nodes load at startup.
-        on(refs.audioEnable, 'change', async () => {
-            const desired = refs.audioEnable.checked;
-            refs.audioEnable.disabled = true;
-            try { const filter = await audio(); filter.setEnabled(desired); message(''); }
-            catch (error) { message(error.message); }
-            finally { refs.audioEnable.disabled = false; tick(); }
-        });
-        pop.node.append(el('p', 'rd-note', 'Bypass keeps the normal OWRX audio path. Filter choices are remembered; processing starts off on each page load.'));
-        const settings = button('Filter settings…', async () => {
-            settings.disabled = true;
-            try { await audio(); Plugins.toggleWindow('rig_audio', true); closePopup(false); }
-            catch (error) { message(error.message); }
-            finally { settings.disabled = false; }
-        });
-        pop.node.append(settings);
     }
     function buildMore(toolbar) {
         const pop = popover('more', 'More controls'); toolbar.append(pop.trigger); refs.more = pop.node; refs.moreTrigger = pop.trigger;
@@ -695,10 +665,6 @@
         const currentMode = modes().find(m => m.modulation === selectedMode);
         refs.modeTrigger.textContent = (currentMode ? currentMode.name : selectedMode.toUpperCase() || 'Mode') + ' ▴';
         refs.modeTrigger.disabled = !connected;
-        const activeAudio = !!(Plugins.rig_audio && Plugins.rig_audio.isEnabled && Plugins.rig_audio.isEnabled());
-        refs.audioTrigger.textContent = 'Audio: ' + (activeAudio ? 'On' : 'Bypassed') + ' ▴';
-        refs.audioTrigger.classList.toggle('rd-active', activeAudio);
-        if (!refs.audioEnable.disabled) refs.audioEnable.checked = activeAudio;
         const ant = $('.rsp-antenna', refs.antennas);
         refs.antennas.hidden = !ant || ant.hidden;
         const status = ant && $('.rsp-antenna-status', ant);
@@ -734,9 +700,7 @@
         panel = $('#openwebrx-panel-receiver');
         if (!panel || typeof UI === 'undefined') throw new Error('RIG Dock: receiver controls were not found.');
         if (Plugins.rig_skin && Plugins.rig_skin._script_loaded)
-            throw new Error('RIG Dock: disable rig_skin and reload before using the dock.');
-        if (Plugins.audio_filter && Plugins.audio_filter._script_loaded)
-            throw new Error('RIG Dock: disable the original audio_filter and reload to start bypassed.');
+            throw new Error('RIG Dock: the RIG skin is loaded. Choose one interface and reload.');
         mounted = true;
         dock = el('div', 'rig-dock-ui'); dock.id = 'rig-dock';
         panel.append(dock);
@@ -755,7 +719,7 @@
         move($('.openwebrx-nr-toggle', panel), nr); move($('#openwebrx-panel-nr'), nr);
         const step = group(toolbar, 'Step'); move($('#openwebrx-tuning-step-listbox'), step);
         step.append(button('−', () => safely(() => manualControl(() => tuneBySteps(-1)))), button('+', () => safely(() => manualControl(() => tuneBySteps(1)))));
-        buildBandpass(toolbar); buildWaterfall(toolbar); buildAudio(toolbar);
+        buildBandpass(toolbar); buildWaterfall(toolbar);
         const nativeRecord = $('.openwebrx-record-button', panel);
         refs.record = button('● Record', () => safely(() => { UI.toggleRecording(); tick(); }));
         // Native UI.toggleRecording gates recording on a visible control with
@@ -830,7 +794,6 @@
         });
         decoderNodes = []; decoderSignature = '';
         closePopup(false);
-        if (Plugins.rig_audio && Plugins.rig_audio.setEnabled) Plugins.rig_audio.setEnabled(false);
         clearInterval(timer); if (observer) observer.disconnect();
         if (socket) socket.removeEventListener('message', receive);
         socket = null; cpu = clients = null;

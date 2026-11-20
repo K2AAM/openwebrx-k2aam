@@ -15,8 +15,7 @@ body.rig-dock-active #openwebrx-panel-receiver {
 body.rig-dock-active #openwebrx-panel-receiver > :not(.rig-dock-ui) { display: none !important; }
 body.rig-dock-active #openwebrx-panel-status,
 body.rig-dock-active [data-toggle-panel='openwebrx-panel-status'],
-body.rig-dock-active [data-toggle-panel='openwebrx-panel-receiver'],
-body.rig-dock-active #plugin-button-rig_audio { display: none !important; }
+body.rig-dock-active [data-toggle-panel='openwebrx-panel-receiver'] { display: none !important; }
 #rig-dock *, .rd-popover * { box-sizing: border-box; }
 #rig-dock { padding: 7px 14px 0; }
 .rd-main, .rd-toolbar, .rd-footer, .rd-group, .rd-tune-form, .rd-popover-heading { display: flex; align-items: center; }
@@ -163,7 +162,6 @@ body.rig-dock-active #openwebrx-panel-receiver select, .rd-popover input:not([ty
 .rd-popover #openwebrx-panel-plugins { position: static !important; display: flex; flex-wrap: wrap; width: 100%; gap: 5px; }
 .rd-popover .openwebrx-plugin-button { position: static !important; margin: 0; background: #26394e; }
 .rd-return { position: fixed; bottom: 10px; right: 10px; z-index: 1200; padding: 10px 14px; background: #132135; color: #b2eafa; border: 1px solid #638ba5; border-radius: 5px; cursor: pointer; }
-.rig-audio-bypass { padding: 7px; margin-bottom: 6px; background: #172c3b; color: #a7e9ef; font: 12px system-ui, sans-serif; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 @media (max-width: 1100px) {
     .rd-main { gap: 10px; }
     .rd-frequency .webrx-actual-freq { font-size: 24px !important; }
