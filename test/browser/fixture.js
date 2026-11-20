@@ -100,8 +100,9 @@ window.setupFixture = function () {
                     setTimeout(()=>this.reply({type:'ale_scan_state',value}),5);return;
                 }
                 if(p.action==='start') {
-                    this.scanState={...this.scanState,running:true,status:'Scanning · server',frequency:p.channels[0],bank:p.bank,options:p};
-                    this.reply({type:'config',value:{center_freq:p.channels[0],start_mod:'usb'}});
+                    this.scanState={...this.scanState,running:true,status:p.across?'Scanning · server':'Watching '+p.channels.length+' channels · server',frequency:p.across?p.channels[0]:null,watching:p.channels,hops:!!p.across,retunes:!!p.across,bank:p.bank,options:p};
+                    // Only a scan that leaves the current view moves the simulated SDR.
+                    if(p.across)this.reply({type:'config',value:{center_freq:p.channels[0],start_mod:'usb'}});
                 }
                 if(p.action==='stop')this.scanState={...this.scanState,running:false,status:'Stopped'};
                 setTimeout(()=>this.reply({type:'ale_scan_state',value:{...this.scanState,events:this.scanState.events.filter(e=>e.scan_seq>(p.after||0))}}),5);

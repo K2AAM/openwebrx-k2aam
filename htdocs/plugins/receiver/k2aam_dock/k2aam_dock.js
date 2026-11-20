@@ -114,7 +114,7 @@
     }
     function manualControl(action) {
         const scan = window.owrxAleScanner;
-        if (scan && scan.isRunning()) return scan.takeControl().then(action);
+        if (scan && (scan.blocksManual ? scan.blocksManual() : scan.isRunning())) return scan.takeControl().then(action);
         return action();
     }
     function positionPopup() {
@@ -307,7 +307,7 @@
                 held = true;
                 const scan = window.owrxAleScanner;
                 repeat = setInterval(() => {
-                    if (scan && scan.isRunning()) return stop();
+                    if (scan && (scan.blocksManual ? scan.blocksManual() : scan.isRunning())) return stop();
                     try { tuneBySteps(direction); } catch (error) { stop(); message(error.message || String(error)); }
                 }, 110);
             }, 400);

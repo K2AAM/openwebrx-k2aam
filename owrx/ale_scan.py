@@ -101,11 +101,61 @@ def _update_saved(path, source_id, entry):
         logger.exception('Cannot update saved ALE scan state')
 
 
+# One decoder runs per watched channel, so a group is bounded for CPU's sake.
+MAX_PARALLEL = 16
+# Fraction of the capture trusted when planning a retune; the edges roll off.
+USABLE = 0.9
+# Identical decodes this close together are one reception with a repeat count.
+REPEAT_WINDOW = 15
+
+
+class ScanStopped(ValueError):
+    """A condition retrying cannot fix; the scan ends."""
+
+
+def passband_fits(frequency, center, rate, usable=1.0):
+    half = rate*usable/2
+    return center-half < frequency+600 and frequency+2650 < center+half
+
+
+def choose_center(cluster, rate):
+    """A dial frequency from the cluster as SDR center: its own carrier sits at
+    0 Hz audio, outside every 600-2650 Hz decoder passband."""
+    middle = (cluster[0]+600+cluster[-1]+2650)/2
+    for candidate in sorted(cluster, key=lambda f: abs(f-middle)):
+        if all(passband_fits(f, candidate, rate, USABLE) for f in cluster) and \
+                not any(f+600 <= candidate <= f+2650 for f in cluster):
+            return candidate
+    return cluster[0] if len(cluster) == 1 else None
+
+
+def plan_groups(channels, rate, center, across, parallel=MAX_PARALLEL):
+    """Split channels into groups that are decoded simultaneously.
+
+    Channels inside the current capture come first and need no retune. With
+    across, the rest are clustered so each cluster fits one capture.
+    """
+    local = [f for f in channels if passband_fits(f, center, rate)]
+    groups = [(center, local[i:i+parallel]) for i in range(0, len(local), parallel)]
+    if across:
+        cluster = []
+        for frequency in sorted(f for f in channels if f not in local):
+            if cluster and (len(cluster) >= parallel or choose_center(cluster+[frequency], rate) is None):
+                groups.append((choose_center(cluster, rate), cluster))
+                cluster = []
+            cluster.append(frequency)
+        if cluster:
+            groups.append((choose_center(cluster, rate), cluster))
+    return groups
+
+
 class AleBackgroundScan:
-    def __init__(self, source, factory=native_chain, clock=time.monotonic, settle=0.25, retune_allowed=native_retune_allowed, journal=None, state=None, startup=10):
+    def __init__(self, source, factory=native_chain, clock=time.monotonic, settle=0.25, retune_allowed=native_retune_allowed,
+                 journal=None, state=None, startup=10, retry_delays=(2, 5, 15, 30, 60)):
         # state: path (or callable returning one) of the resume file; None keeps nothing.
         self.state = state
         self.startup = startup
+        self.retry_delays = tuple(retry_delays)
         self.source = source
         self.factory = factory
         self.clock = clock
@@ -122,9 +172,10 @@ class AleBackgroundScan:
         self.status = 'Stopped'
         self.frequency = None
         self.options = None
-        self.chain = None
+        self.groups = []
+        self.chains = {}
         self.subscription = None
-        self.active = False
+        self.active = set()
         self.hold_started = None
         self.release_at = 0
         self.deadline = 0
@@ -135,6 +186,10 @@ class AleBackgroundScan:
         self.reason = 'Stopped'
         self.journal = journal
         self.log_error = None
+        self.last_key = None
+        self.last_entry = None
+        self.last_time = 0
+        self.unique = 0
         try:
             if self.journal is None:
                 self.journal = get_log()
@@ -153,7 +208,7 @@ class AleBackgroundScan:
         return SdrClientClass.USER
 
     def onStateChange(self, state):
-        if getattr(state, 'name', '') in ('STOPPING', 'STOPPED') and self.chain is not None:
+        if getattr(state, 'name', '') in ('STOPPING', 'STOPPED') and self.chains:
             self.stop('Stopped: SDR stopped')
 
     def onBusyStateChange(self, state):
@@ -195,14 +250,18 @@ class AleBackgroundScan:
                 if not channels:
                     raise ValueError('No selected channels fit the capture; enable Scan across HF bands')
                 self.options = dict(options, channels=channels)
+            self.groups = plan_groups(self.options['channels'], self.rate, self.expected_center, self.options['across'])
+            if not self.groups or any(center is None for center, _ in self.groups):
+                raise ValueError('Selected channels cannot be arranged for this SDR sample rate')
             self.index = -1
             self.frequency = None
             self.cancel.clear()
             self.running = True
             self.reason = 'Stopped'
             self.status = 'Server scanner starting…'
-            logger.info('ALE server scanner starting: receiver=%s bank=%s dwell=%s across=%s',
-                        self.source.getId(), self.options['bank'], self.options['dwell'], self.options['across'])
+            logger.info('ALE server scanner starting: receiver=%s bank=%s channels=%s groups=%s dwell=%s across=%s',
+                        self.source.getId(), self.options['bank'], len(self.options['channels']), len(self.groups),
+                        self.options['dwell'], self.options['across'])
             # Saved with the options as requested, so a resumed scan re-derives its channel list.
             _update_saved(self.state, self.source.getId(), {'options': options, 'profile': self.profile})
             self.thread = threading.Thread(target=self.run, name='ALE-scan-'+self.source.getId(), daemon=True)
@@ -217,85 +276,138 @@ class AleBackgroundScan:
                 self.status = 'Stopping server scanner…'
 
     def fits(self, frequency, center):
-        return center-self.rate/2 < frequency+600 and frequency+2650 < center+self.rate/2
+        return passband_fits(frequency, center, self.rate)
+
+    def hops(self):
+        """True when the scan moves between groups rather than watching one."""
+        return len(self.groups) > 1
+
+    def retunes(self):
+        return len({center for center, _ in self.groups}) > 1
 
     def event(self, generation, message):
         with self.lock:
-            if not self.running or self.cancel.is_set() or generation != self.generation or message.get('freq') != self.frequency:
+            frequency = message.get('freq')
+            if not self.running or self.cancel.is_set() or generation != self.generation or frequency not in self.chains:
                 return
             if message.get('test_audio'):
                 return
             now = self.clock()
             if message.get('event') == 'activity':
-                self.active = message['active']
-                if not self.active and self.hold_started is None:
-                    return
+                if message['active']:
+                    self.active.add(frequency)
+                else:
+                    self.active.discard(frequency)
+                    if self.hold_started is None:
+                        return
             if self.hold_started is None:
                 self.hold_started = now
             self.release_at = now+3
-            self.status = ('Activity / hold' if message.get('event') == 'activity' else 'Decoded / hold') + f' · {self.frequency/1000:.1f} kHz · server'
-            if message.get('event') != 'activity':
-                self.sequence += 1
-                saved = dict(message, server_scan=True, scan_seq=self.sequence)
+            self.frequency = frequency
+            self.status = ('Activity' if message.get('event') == 'activity' else 'Decoded') + \
+                (' / hold' if self.hops() else '') + f' · {frequency/1000:.1f} kHz · server'
+            if message.get('event') == 'activity':
+                return
+            key = (frequency, message.get('event'), message.get('source'), message.get('destination'), message.get('message'))
+            if key == self.last_key and self.last_entry is not None and now-self.last_time <= REPEAT_WINDOW:
+                # The same words again within one transmission: count, don't relog.
+                entry = self.last_entry
                 try:
-                    if self.journal is None:
-                        self.journal = get_log()
-                    saved['log_id'] = self.journal.append(self.source.getId(), self.options['bank'], message)
-                    self.log_error = None
-                except Exception:
-                    if self.log_error is None:
-                        logger.exception('Cannot save ALE reception log')
-                    self.log_error = 'ALE log unavailable; check the server journal'
-                self.history.append(saved)
-                logger.info('ALE server decode: %s', json.dumps(saved))
+                    self.history.remove(entry)
+                except ValueError:
+                    pass
+                self.sequence += 1
+                entry['repeats'] += 1
+                entry['scan_seq'] = self.sequence
+                entry['timestamp_last'] = message.get('timestamp')
+                self.history.append(entry)
+                self.last_time = now
+                return
+            self.sequence += 1
+            self.unique += 1
+            saved = dict(message, server_scan=True, scan_seq=self.sequence, repeats=1, uid=f'{self.session}-{self.unique}')
+            try:
+                if self.journal is None:
+                    self.journal = get_log()
+                saved['log_id'] = self.journal.append(self.source.getId(), self.options['bank'], message)
+                self.log_error = None
+            except Exception:
+                if self.log_error is None:
+                    logger.exception('Cannot save ALE reception log')
+                self.log_error = 'ALE log unavailable; check the server journal'
+            self.history.append(saved)
+            self.last_key, self.last_entry, self.last_time = key, saved, now
+            logger.info('ALE server decode: %s', json.dumps(saved))
 
     def ready_to_advance(self):
+        if not self.hops():
+            return False
         now = self.clock()
         if self.hold_started is not None:
             return now-self.hold_started >= 120 or (not self.active and now >= self.release_at)
         return now >= self.deadline
 
-    def close_chain(self):
+    def close_chains(self):
         with self.lock:
             self.generation += 1
-            chain, self.chain = self.chain, None
-        if chain is not None:
-            chain.stop()
+            chains, self.chains = self.chains, {}
+        for chain in chains.values():
+            try:
+                chain.stop()
+            except Exception:
+                logger.exception('ALE scanner DSP cleanup failed')
 
-    def next_channel(self):
-        self.close_chain()
+    def next_group(self):
+        self.close_chains()
         with self.lock:
             if self.cancel.is_set():
                 return
-            self.index = (self.index+1) % len(self.options['channels'])
-            self.frequency = self.options['channels'][self.index]
-            frequency = self.frequency
-            self.active = False
+            self.index = (self.index+1) % len(self.groups)
+            center, channels = self.groups[self.index]
+            self.active = set()
             self.hold_started = None
             self.release_at = 0
-            self.status = f'Tuning {frequency/1000:.1f} kHz · server'
-            retune = not self.fits(frequency, self.source.getProps()['center_freq'])
+            self.frequency = channels[0] if self.hops() else None
+            self.status = f'Tuning {channels[0]/1000:.1f} kHz · server' if len(channels) == 1 else \
+                f'Tuning {len(channels)} channels near {center/1e6:.3f} MHz · server'
+            retune = self.source.getProps()['center_freq'] != center
             if retune:
                 if not self.options['across']:
-                    raise ValueError('Channel no longer fits the capture')
-                self.expected_center = frequency
+                    raise ScanStopped('Channel no longer fits the capture')
+                self.expected_center = center
             generation = self.generation
         if retune:
             if not self.retune_allowed():
-                raise ValueError('Server no longer allows SDR retuning')
-            self.source.setCenterFreq(frequency)
+                raise ScanStopped('Server no longer allows SDR retuning')
+            self.source.setCenterFreq(center)
             if self.cancel.wait(self.settle):
                 return
         if self.cancel.is_set():
             return
         if self.source.getProps()['center_freq'] != self.expected_center:
             raise ValueError('SDR center did not settle at the requested frequency')
-        chain = self.factory(self.source, frequency, lambda message:self.event(generation,message))
+        chains = {}
+        try:
+            for frequency in channels:
+                chains[frequency] = self.factory(self.source, frequency, lambda message: self.event(generation, message))
+        except Exception:
+            for chain in chains.values():
+                chain.stop()
+            raise
         with self.lock:
-            self.chain = chain
-            self.deadline = self.clock()+self.options['dwell']
-            if self.hold_started is None:
-                self.status = f'Scanning {self.index+1}/{len(self.options["channels"])} · {frequency/1000:.1f} kHz · server'
+            if self.cancel.is_set() or generation != self.generation:
+                stale, chains = chains, {}
+            else:
+                stale = {}
+                self.chains = chains
+                self.deadline = self.clock()+self.options['dwell']
+                if self.hold_started is None:
+                    count = len(channels)
+                    what = f'{channels[0]/1000:.1f} kHz' if count == 1 else f'{count} channels'
+                    self.status = (f'Scanning {self.index+1}/{len(self.groups)} · {what} · server' if self.hops()
+                                   else f'Watching {what} · server')
+        for chain in stale.values():
+            chain.stop()
 
     def run(self):
         attached = False
@@ -309,19 +421,41 @@ class AleBackgroundScan:
                     return
                 if self.clock() >= deadline:
                     raise ValueError('SDR startup timed out')
-            self.next_channel()
-            while not self.cancel.wait(0.05):
+            attempt = 0
+            advance = True
+            while not self.cancel.is_set():
+                if advance:
+                    try:
+                        self.next_group()
+                        attempt = 0
+                    except ScanStopped:
+                        raise
+                    except Exception as error:
+                        # A brief SDR or DSP hiccup: try the same group again, a few times.
+                        if attempt >= len(self.retry_delays):
+                            raise
+                        delay = self.retry_delays[attempt]
+                        attempt += 1
+                        self.close_chains()
+                        with self.lock:
+                            self.index -= 1
+                            self.status = f'Retrying in {delay:g} s: {error}'
+                        logger.warning('ALE server scanner retry %s/%s for %s: %s', attempt, len(self.retry_delays),
+                                       self.source.getId(), error)
+                        if self.cancel.wait(delay):
+                            return
+                        continue
+                if self.cancel.wait(0.05):
+                    break
                 with self.lock:
                     advance = self.ready_to_advance()
-                if advance:
-                    self.next_channel()
         except Exception as error:
             self.reason = 'Stopped: '+str(error)
             logger.exception('ALE background scanner failed')
         finally:
             self.cancel.set()
             try:
-                self.close_chain()
+                self.close_chains()
             except Exception:
                 logger.exception('ALE scanner DSP cleanup failed')
             try:
@@ -343,9 +477,12 @@ class AleBackgroundScan:
 
     def snapshot(self, after=0):
         with self.lock:
+            watching = list(self.groups[self.index][1]) if self.running and 0 <= self.index < len(self.groups) else []
             return {'available':True, 'session':self.session, 'running':self.running,
                     'stopping':self.running and self.cancel.is_set(),
                     'status':self.status, 'frequency':self.frequency, 'bank':self.options['bank'] if self.options else None,
+                    'watching':watching, 'groups':len(self.groups), 'hops':self.running and self.hops(),
+                    'retunes':self.running and self.retunes(),
                     'sequence':self.sequence, 'events':[e.copy() for e in self.history if e['scan_seq'] > after],
                     'options':self.options, 'source_id':self.source.getId(), 'log_error':self.log_error}
 
