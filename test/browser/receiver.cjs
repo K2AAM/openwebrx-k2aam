@@ -407,6 +407,18 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             const cells=[...document.querySelector('#openwebrx-panel-ale2g-message tbody tr').children];
             return head.every((th,i)=>Math.abs(th.getBoundingClientRect().left-cells[i].getBoundingClientRect().left)<1);
         }),'all ALE column headings align with their data');
+        await page.evaluate(()=>{document.querySelector('.ale-log').open=true;});
+        await page.getByLabel('ALE addresses to watch').fill('jnr, zz*');
+        check(await page.evaluate(()=>[...document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr')].map(r=>r.children[2].textContent+':'+r.classList.contains('ale-watched')).join()==='ADW:false,JNR:true,OFF:false'),'watchlist highlights matching addresses only');
+        await page.getByLabel('Show only watched ALE addresses').check();
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr:visible').count()===1,'Only watched hides other decodes without deleting them');
+        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',timestamp:Date.now(),freq:8992000,source:'ZZ9',destination:'',event:'sounding_this_was',message:'[Sounding THIS WAS] [From: ZZ9]'}));
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr:visible').count()===2,'a new decode from a watched wildcard address is shown and highlighted');
+        await page.evaluate(()=>document.querySelector('#openwebrx-panel-ale2g-message tbody tr:last-child').remove());
+        await page.getByLabel('Show only watched ALE addresses').uncheck();
+        await page.getByLabel('ALE addresses to watch').fill('');
+        check(await page.evaluate(()=>document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr.ale-watched').length===0&&JSON.parse(localStorage.getItem('owrx_ale_watch_v1')).list===''),'clearing the watchlist removes highlights and is remembered');
+        await page.evaluate(()=>{document.querySelector('.ale-log').open=false;});
         await page.getByRole('button',{name:'Fit',exact:true}).click();
         // Fit starts enabled on a fresh browser; exercise toggling back on explicitly.
         if(await page.getByRole('button',{name:'Fit',exact:true}).getAttribute('aria-pressed')==='false') await page.getByRole('button',{name:'Fit',exact:true}).click();
@@ -576,9 +588,9 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
                 await page.reload();await page.waitForSelector('#k2aam-dock');
                 check(await page.evaluate(()=>document.querySelector('#k2aam-dock .rd-expand').getAttribute('aria-expanded')==='false'&&
                     ['.rd-profiles','.rd-actions','[aria-controls="rd-popover-bandpass"]'].every(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height===0)),'phone dock starts compact');
-                check(await page.evaluate(()=>['.rd-frequency .webrx-actual-freq','[aria-controls="rd-popover-mode"]','.rd-volume','.rd-footer'].every(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height>0)),'compact dock keeps frequency, mode, volume and status');
+                check(await page.evaluate(()=>['.rd-frequency .webrx-actual-freq','.rd-meter #openwebrx-smeter','[aria-controls="rd-popover-mode"]','.rd-volume','.rd-footer'].every(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height>0)),'compact dock keeps frequency, S-meter, mode, volume and status');
                 const compactDock=await page.locator('#openwebrx-panel-receiver').evaluate(n=>n.getBoundingClientRect().height);
-                check(compactDock<=170,'compact phone dock is at most 170 px tall ('+Math.round(compactDock)+')');
+                check(compactDock<=190,'compact phone dock is at most 190 px tall ('+Math.round(compactDock)+')');
                 check(await page.locator('#k2aam-dock .rd-nudge').evaluateAll(nodes=>nodes.length===2&&nodes.every(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth;})),'step buttons are full-size touch targets');
                 const beforeNudge=await page.evaluate(()=>UI.getFrequency());
                 await page.getByRole('button',{name:'Tune up one step',exact:true}).click();
@@ -615,7 +627,54 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             await page.keyboard.press('Escape');
             if(width===390)await page.screenshot({path:path.join(root,'test-results/k2aam-dock-mobile.png')});
         }
-        await page.setViewportSize({width:1440,height:900});
+        // Landscape phone: compact single row by height.
+        await page.setViewportSize({width:844,height:390});await page.waitForTimeout(150);
+        await page.locator('#k2aam-dock .rd-expand').click();await page.waitForTimeout(250);
+        const landscape=await page.evaluate(()=>({dock:document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height,
+            record:document.querySelector('#k2aam-dock .openwebrx-record-button').getBoundingClientRect().height,
+            nudges:[...document.querySelectorAll('#k2aam-dock .rd-nudge')].every(n=>n.getBoundingClientRect().width>=40),
+            overflow:document.documentElement.scrollWidth>innerWidth+1}));
+        check(landscape.dock<=110&&landscape.record===0&&landscape.nudges&&!landscape.overflow,'landscape phone dock is one compact row with step buttons '+JSON.stringify(landscape));
+        await page.screenshot({path:path.join(root,'test-results/k2aam-dock-landscape.png')});
+        await page.locator('#k2aam-dock .rd-expand').click();
+        await page.setViewportSize({width:1440,height:900});await page.waitForTimeout(250);
+        check(await page.evaluate(()=>{const m=document.querySelector('#k2aam-dock .rd-main .rd-meter #openwebrx-smeter').getBoundingClientRect(),f=document.querySelector('#k2aam-dock .rd-frequency').getBoundingClientRect();
+            return m.width>=60&&m.height>=10&&m.left>=f.right&&Math.abs((m.top+m.bottom)/2-(f.top+f.bottom)/2)<24&&!document.querySelector('.rd-footer #openwebrx-smeter');}),'S-meter sits beside the frequency on desktop');
+        check(await page.evaluate(()=>['.openwebrx-mute-button','.openwebrx-squelch-auto','.openwebrx-nr-toggle'].every(q=>{const n=document.querySelector('#k2aam-dock '+q),r=n.getBoundingClientRect(),c=getComputedStyle(n);return Math.round(r.width)===30&&Math.round(r.height)===30&&c.borderTopWidth==='1px';})),'native mute, squelch and NR buttons match the dock button style');
+        // Bands
+        await page.evaluate(()=>{UI.setModulation('usb');center_freq=7100000;UI.getDemodulatorPanel().setCenterFrequency(center_freq);});
+        await page.waitForFunction(()=>!UI.getDemodulatorPanel().centerFreqTimeout&&UI.getDemodulator());
+        await page.locator('[aria-controls="rd-popover-bands"]').click();
+        check(await page.locator('#rd-popover-bands .rd-band').count()===20,'Bands lists amateur, broadcast and time-signal entries');
+        await page.locator('#rd-popover-bands').getByRole('button',{name:'40m',exact:true}).click();
+        check(await page.evaluate(()=>UI.getFrequency()===7150000&&UI.getModulation()==='lsb'&&document.getElementById('openwebrx-sdr-profiles-listbox').value==='sdrplay|40m'),'a band inside the current view tunes and sets its mode without changing profile');
+        const changesBefore=await page.evaluate(()=>profilesChanged);
+        await page.locator('[aria-controls="rd-popover-bands"]').click();
+        await page.locator('#rd-popover-bands').getByRole('button',{name:'20m',exact:true}).click();
+        check(await page.evaluate(before=>document.getElementById('openwebrx-sdr-profiles-listbox').value==='sdrplay|20m'&&profilesChanged===before+1&&ws.sent.filter(p=>p.type==='setfrequency'&&p.params.frequency===14200000).length===0,changesBefore),'a band outside the view selects the profile named for it instead of retuning the SDR');
+        await page.evaluate(()=>{center_freq=14150000;UI.getDemodulatorPanel().setCenterFrequency(center_freq);});
+        await page.waitForFunction(()=>UI.getFrequency()===14200000&&UI.getModulation()==='usb',{},{timeout:5000});
+        check(true,'after the profile starts the dock lands on the band frequency and mode');
+        await page.evaluate(()=>{window.k2aam_bandRequests=ws.sent.filter(p=>p.type==='setfrequency').length;});
+        await page.locator('[aria-controls="rd-popover-bands"]').click();
+        await page.locator('#rd-popover-bands').getByRole('button',{name:'MW',exact:true}).click();
+        await page.waitForTimeout(200);
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='setfrequency').length===k2aam_bandRequests+1&&ws.sent.filter(p=>p.type==='setfrequency').pop().params.frequency===1000000)||await page.locator('.rd-message').innerText().then(t=>/center frequency/i.test(t)),'a band with no matching profile falls back to the native retune request or explains why it cannot');
+        await page.evaluate(()=>Plugins.k2aam_dock&&document.querySelector('.rd-tune-form')&&document.querySelectorAll('.rd-popover:not([hidden]) .rd-close').forEach(b=>b.click()));
+        await page.waitForTimeout(150);
+        await page.evaluate(()=>{const stop=[...document.querySelectorAll('#rd-popover-tune button')].find(b=>b.textContent==='Stop waiting');if(stop&&!stop.hidden)stop.click();
+            const l=document.getElementById('openwebrx-sdr-profiles-listbox');l.value='sdrplay|40m';center_freq=7100000;UI.getDemodulatorPanel().setCenterFrequency(center_freq);});
+        await page.waitForFunction(()=>!UI.getDemodulatorPanel().centerFreqTimeout&&UI.getDemodulator());
+        // Bookmarks
+        await page.evaluate(()=>{bookmarks.bookmarks={server:[{name:'<img src=x onerror="window.bookmarkXss=1">W1AW',frequency:7047500,modulation:'cw'},{name:'40m FT8',frequency:7074000,modulation:'usb'}],local:[{name:'40m FT8',frequency:7074000,modulation:'usb'},{name:'broken'}]};});
+        await page.locator('[aria-controls="rd-popover-bookmarks"]').click();
+        await page.waitForFunction(()=>document.querySelectorAll('#rd-popover-bookmarks .rd-bookmark').length===2);
+        check(await page.evaluate(()=>!document.querySelector('#rd-popover-bookmarks img')&&!window.bookmarkXss&&document.querySelector('#rd-popover-bookmarks .rd-bookmark-name').textContent.includes('<img')),'bookmark names render as text; duplicates and malformed entries are dropped');
+        await page.getByLabel('Search bookmarks').fill('ft8');
+        await page.waitForFunction(()=>document.querySelectorAll('#rd-popover-bookmarks .rd-bookmark').length===1);
+        await page.locator('#rd-popover-bookmarks .rd-bookmark').click();
+        check(await page.evaluate(()=>UI.getFrequency()===7074000&&UI.getModulation()==='usb'&&!window.bookmarkXss&&document.getElementById('rd-popover-bookmarks').hidden),'choosing a bookmark tunes, sets its mode and closes the list');
+        await page.evaluate(()=>{bookmarks.bookmarks={};UI.setModulation('ft8');});
         await page.evaluate(()=>{
             const node=document.createElement('div');node.className='openwebrx-panel openwebrx-message-panel';node.id='removed-decoder';
             document.getElementById('openwebrx-panels-container-left').append(node);window.removedDecoder=node;

@@ -3,14 +3,14 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.6.0';
+    plugin._version = '0.7.0';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/k2aam_dock/k2aam_dock.js').replace(/[^/]*$/, '');
     let panel, dock, popup, opener, observer, socket, timer;
     let cpu = null, clients = null, moved = [], listeners = [];
     let modeSignature = '', mounted = false, chatWasVisible = false;
-    let pendingTune = null, centerChangesAllowed = null;
+    let pendingTune = null, centerChangesAllowed = null, pendingBand = null;
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
     let decoderNodes = [], decoderSignature = '', decoderCollapsed = false, decoderPercent = 28;
     let decoderIFPreference = null, decoderFit = true;
@@ -388,6 +388,132 @@
             if (pendingTune) finishTune('Tuning stopped because the receiver or profile changed.');
         });
     }
+    // Default band buttons. An operator can replace the list before loading the
+    // plugin: window.k2aam_dock_config = { bands: [{label, frequency, mode, group}] }
+    const defaultBands = [
+        ['160m', 1900000, 'lsb', 'Amateur'], ['80m', 3750000, 'lsb', 'Amateur'], ['60m', 5358500, 'usb', 'Amateur'],
+        ['40m', 7150000, 'lsb', 'Amateur'], ['30m', 10120000, 'cw', 'Amateur'], ['20m', 14200000, 'usb', 'Amateur'],
+        ['17m', 18130000, 'usb', 'Amateur'], ['15m', 21300000, 'usb', 'Amateur'], ['12m', 24950000, 'usb', 'Amateur'],
+        ['10m', 28400000, 'usb', 'Amateur'],
+        ['MW', 1000000, 'am', 'Broadcast'], ['49m', 6100000, 'am', 'Broadcast'], ['41m', 7300000, 'am', 'Broadcast'],
+        ['31m', 9700000, 'am', 'Broadcast'], ['25m', 11800000, 'am', 'Broadcast'], ['19m', 15400000, 'am', 'Broadcast'],
+        ['16m', 17700000, 'am', 'Broadcast'],
+        ['WWV 5', 5000000, 'am', 'Time'], ['WWV 10', 10000000, 'am', 'Time'], ['WWV 15', 15000000, 'am', 'Time']
+    ].map(([label, frequency, mode, group]) => ({label, frequency, mode, group}));
+    function bandList() {
+        const configured = window.k2aam_dock_config && window.k2aam_dock_config.bands;
+        if (!Array.isArray(configured)) return defaultBands;
+        return configured.filter(band => band && typeof band.label === 'string' && band.label.length <= 16 &&
+            Number.isSafeInteger(band.frequency) && band.frequency > 0).slice(0, 60)
+            .map(band => ({label: band.label, frequency: band.frequency,
+                mode: typeof band.mode === 'string' ? band.mode : '', group: typeof band.group === 'string' ? band.group : 'Bands'}));
+    }
+    function setMode(mode) {
+        if (mode && UI.getModulation() !== mode && modes().some(item => item.modulation === mode)) UI.setModulation(mode);
+    }
+    function profileFor(band) {
+        // A profile named for the band ("40m", "40 m SSB") is preferred over moving the SDR.
+        const metres = /^(\d+)m$/i.exec(band.label);
+        const pattern = metres ? new RegExp('(^|[^0-9.])' + metres[1] + '\\s*m(?![a-z0-9])', 'i') :
+            new RegExp('(^|[^a-z0-9])' + band.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i');
+        return all('option', $('#openwebrx-sdr-profiles-listbox')).find(option => pattern.test(option.textContent));
+    }
+    function finishBand(error) {
+        pendingBand = null;
+        if (error) message(error);
+    }
+    function goBand(band) {
+        finishBand('');
+        if (inCapture(band.frequency)) {
+            UI.toggleScanner(false); setMode(band.mode);
+            if (UI.setFrequency(band.frequency, false) === false) throw new Error('The receiver could not tune there.');
+            closePopup(true); return;
+        }
+        const listbox = $('#openwebrx-sdr-profiles-listbox'), option = profileFor(band);
+        if (option && option.value !== listbox.value) {
+            UI.toggleScanner(false);
+            pendingBand = {band, profile: option.value, deadline: Date.now() + 10000};
+            listbox.value = option.value;
+            listbox.dispatchEvent(new Event('change', {bubbles: true}));
+            closePopup(true); return;
+        }
+        // No profile is named for this band: ask the server to move the SDR.
+        setMode(band.mode);
+        tuneFrequency(band.frequency);
+    }
+    function settleBand() {
+        if (!pendingBand) return;
+        const listbox = $('#openwebrx-sdr-profiles-listbox');
+        if (listbox.value !== pendingBand.profile) return finishBand('');
+        if (Date.now() > pendingBand.deadline) return finishBand('The ' + pendingBand.band.label + ' profile did not start. Check the receiver.');
+        if (!inCapture(pendingBand.band.frequency) || !receiverReady()) return;
+        const band = pendingBand.band; pendingBand = null;
+        safely(() => {
+            setMode(band.mode);
+            if (UI.setFrequency(band.frequency, false) === false) throw new Error('The receiver could not tune there.');
+        });
+    }
+    function buildBands(toolbar) {
+        const pop = popover('bands', 'Bands', 'Bands ▴'); toolbar.append(pop.trigger);
+        const groups = new Map();
+        bandList().forEach(band => { if (!groups.has(band.group)) groups.set(band.group, []); groups.get(band.group).push(band); });
+        groups.forEach((items, title) => {
+            pop.node.append(el('div', 'rd-menu-label', title));
+            const grid = el('div', 'rd-mode-grid rd-band-grid');
+            items.forEach(band => {
+                const item = button(band.label, () => safely(() => manualControl(() => goBand(band))), 'rd-band');
+                item.title = (band.frequency / 1e6).toFixed(3) + ' MHz' + (band.mode ? ' · ' + band.mode.toUpperCase() : '');
+                item.dataset.frequency = String(band.frequency);
+                grid.append(item);
+            });
+            pop.node.append(grid);
+        });
+        pop.node.append(el('p', 'rd-note', 'A band outside the current view switches to a profile named for it, or asks the receiver to retune. Either way it changes the SDR for everyone listening.'));
+        refs.bandsPopup = pop.node;
+    }
+    function bookmarkList() {
+        const store = typeof bookmarks !== 'undefined' && bookmarks && bookmarks.bookmarks;
+        if (!store || typeof store !== 'object') return [];
+        const seen = new Set();
+        return Object.values(store).reduce((list, items) => list.concat(Array.isArray(items) ? items : []), [])
+            .filter(item => item && typeof item.name === 'string' && Number.isFinite(item.frequency) && item.frequency > 0)
+            .filter(item => { const key = item.frequency + '|' + item.name; if (seen.has(key)) return false; seen.add(key); return true; })
+            .sort((a, b) => a.frequency - b.frequency);
+    }
+    function renderBookmarks() {
+        const term = refs.bookmarkSearch.value.trim().toLowerCase();
+        const items = bookmarkList().filter(item => (item.name + ' ' + (item.frequency / 1e3).toFixed(1)).toLowerCase().includes(term));
+        const signature = JSON.stringify([term, items.map(item => [item.name, item.frequency, item.modulation])]);
+        if (signature === refs.bookmarkList.dataset.signature) return;
+        refs.bookmarkList.dataset.signature = signature;
+        refs.bookmarkList.replaceChildren();
+        items.slice(0, 200).forEach(item => {
+            const row = el('button', 'rd-button rd-bookmark'); row.type = 'button';
+            // Bookmark names can come from other users; text only.
+            row.append(el('span', 'rd-bookmark-freq', (item.frequency / 1e3).toFixed(1)), el('span', 'rd-bookmark-name', item.name));
+            if (item.modulation) row.append(el('span', 'rd-bookmark-mode', String(item.modulation).toUpperCase()));
+            row.addEventListener('click', () => safely(() => manualControl(() => {
+                UI.toggleScanner(false);
+                // Not UI.tuneBookmark: it renders the bookmark name as HTML.
+                if (item.modulation) UI.setModulation(item.modulation, item.underlying);
+                if (UI.setFrequency(item.frequency, false) === false) throw new Error('The receiver could not tune to that bookmark.');
+                closePopup(true); tick();
+            })));
+            refs.bookmarkList.append(row);
+        });
+        if (!items.length) refs.bookmarkList.append(el('p', 'rd-note', term ? 'No matching bookmarks.' : 'No bookmarks in this profile.'));
+        else if (items.length > 200) refs.bookmarkList.append(el('p', 'rd-note', 'Showing the first 200. Search to narrow the list.'));
+    }
+    function buildBookmarks(toolbar) {
+        const pop = popover('bookmarks', 'Bookmarks', 'Bookmarks ▴'); toolbar.append(pop.trigger);
+        refs.bookmarkSearch = el('input', 'rd-search');
+        refs.bookmarkSearch.type = 'search'; refs.bookmarkSearch.placeholder = 'Find a bookmark…';
+        refs.bookmarkSearch.setAttribute('aria-label', 'Search bookmarks');
+        refs.bookmarkList = el('div', 'rd-bookmark-list');
+        pop.node.append(refs.bookmarkSearch, refs.bookmarkList);
+        on(refs.bookmarkSearch, 'input', renderBookmarks);
+        refs.bookmarksPopup = pop.node;
+    }
     function buildWaterfall(toolbar) {
         const pop = popover('waterfall', 'Waterfall'); toolbar.append(pop.trigger);
         refs.waterfallPopup = pop.node;
@@ -514,7 +640,7 @@
         const hasResults = active.some(node => node !== digimodes);
         refs.decoderTray.dataset.text = String(hasText);
         refs.decoderTray.dataset.results = String(hasResults);
-        const showIF = decoderIFPreference === null ? !(innerWidth <= 620 && (hasResults || hasText)) : decoderIFPreference;
+        const showIF = decoderIFPreference === null ? !((innerWidth <= 620 || innerHeight <= 500) && (hasResults || hasText)) : decoderIFPreference;
         const changedIF = refs.decoderTray.classList.contains('rd-if-hidden') === showIF;
         refs.decoderTray.classList.toggle('rd-if-hidden', !showIF);
         refs.decoderIF.setAttribute('aria-pressed', String(showIF));
@@ -742,6 +868,10 @@
             }
             if (underlying.length) refs.underlying.value = UI.getUnderlying();
         }
+        settleBand();
+        if (popup === refs.bookmarksPopup) renderBookmarks();
+        if (popup === refs.bandsPopup) all('.rd-band', refs.bandsPopup).forEach(item =>
+            item.setAttribute('aria-pressed', String(Math.abs(UI.getFrequency() - Number(item.dataset.frequency)) < 1)));
         if (popup === refs.waterfallPopup && typeof Waterfall !== 'undefined') {
             refs.wfAuto.checked = !!Waterfall.measure_minmax_continuous;
             refs.spectrum.checked = !!UI.spectrum;
@@ -761,6 +891,8 @@
         const main = el('div', 'rd-main'), toolbar = el('div', 'rd-toolbar'), footer = el('div', 'rd-footer');
         dock.append(main, toolbar, footer);
         buildTune(main);
+        const meter = el('span', 'rd-meter'); move($('#openwebrx-smeter'), meter); move($('#openwebrx-smeter-db'), meter);
+        meter.title = 'Signal strength'; main.append(meter);
         const profiles = group(main); profiles.classList.add('rd-profiles');
         native('#openwebrx-sdr-profiles-listbox', profiles, 'Receiver / profile');
         buildMode(main);
@@ -774,7 +906,7 @@
         move($('.openwebrx-nr-toggle', panel), nr); move($('#openwebrx-panel-nr'), nr);
         const step = group(toolbar, 'Step'); move($('#openwebrx-tuning-step-listbox'), step);
         step.append(button('−', () => safely(() => manualControl(() => tuneBySteps(-1)))), button('+', () => safely(() => manualControl(() => tuneBySteps(1)))));
-        buildBandpass(toolbar); buildWaterfall(toolbar);
+        buildBands(toolbar); buildBookmarks(toolbar); buildBandpass(toolbar); buildWaterfall(toolbar);
         const nativeRecord = $('.openwebrx-record-button', panel);
         refs.record = button('● Record', () => safely(() => { UI.toggleRecording(); tick(); }));
         // Native UI.toggleRecording gates recording on a visible control with
@@ -788,10 +920,9 @@
         refs.connection = el('span', 'rd-connection', 'Connecting');
         refs.cpu = el('span'); refs.clients = el('span'); refs.clock = el('span', 'rd-clock');
         refs.antennaStatus = el('span', 'rd-antenna-status');
-        const meter = el('span', 'rd-meter'); move($('#openwebrx-smeter'), meter); move($('#openwebrx-smeter-db'), meter);
         refs.aleStatus = button('ALE', () => safely(() => window.owrxAleScanner.takeControl()), 'rd-ale-status');
         refs.aleStatus.title = 'Stop the ALE scanner and take manual control'; refs.aleStatus.hidden = true;
-        footer.append(refs.connection, meter, refs.cpu, refs.clients, refs.antennaStatus, refs.aleStatus, refs.clock);
+        footer.append(refs.connection, refs.cpu, refs.clients, refs.antennaStatus, refs.aleStatus, refs.clock);
         refs.message = el('div', 'rd-message'); refs.message.hidden = true; refs.message.setAttribute('role', 'status'); dock.append(refs.message);
         buildDecoders();
         const chat = $('#openwebrx-panel-log');
@@ -839,7 +970,7 @@
     };
     plugin.destroy = function (showReturn) {
         const decoderSet = new Set(decoderNodes);
-        finishTune('');
+        finishTune(''); pendingBand = null;
         if (decoderObserver) decoderObserver.disconnect();
         if (decoderFrame !== null) cancelAnimationFrame(decoderFrame);
         decoderFrame = null; clearTimeout(decoderCanvasTimer);

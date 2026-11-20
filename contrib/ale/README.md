@@ -9,13 +9,34 @@ and install the `owrx-ale` decoder. The browser side is the `ale` receiver plugi
 (`htdocs/plugins/receiver/ale/ale.js`), loaded from `init.js`. It works with the dock, the RIG skin
 and stock controls. See [plugins](../PLUGINS.md).
 
+## Who can run the scanner
+
+Starting or stopping a server scan requires the receiver magic key, supplied in the page URL as
+`#key=...`. An empty magic key locks scanner control. The setting "Allow anyone to start and stop
+the ALE scanner" (Settings → General, stored as `ale_scan_public`) opens it to every visitor.
+Scanner status, decodes and the log stay readable without the key.
+
+## Resume after a service restart
+
+A running server scan is recorded in `<data directory>/ale-log/scan-state.json`. If the service
+stops while it is running, the scan starts again a few seconds after the next start, on the same
+profile, bank, channels and dwell. A scan that was stopped by hand, or that ended because the
+profile, SDR or permissions changed, is not resumed. Resume is skipped, with a log line, when the
+decoder is missing, the receiver or profile no longer exists, or retuning is no longer allowed.
+
+## Watchlist
+
+Open **Log** in the ALE panel and type addresses in **Watch**, separated by commas or spaces;
+`*` matches any run of characters (`K2*`). Decodes to or from a watched address are highlighted,
+and **Only watched** hides the rest without discarding them. The list is kept in the browser.
+
 ## Mobile return and idle scheduling (0.5.1)
 
 Keep **Run on server — continues with tab closed** checked. An active server scan now reserves native receiver occupancy, preventing the idle profile scheduler from switching it to another profile after the last browser disconnects. This uses the native active-client classification and does not create a browser/WebSocket connection or change the profile schedule configuration. Explicit Stop, profile changes, source disable/failure and revoked retune permission still stop the scan. Normal idle scheduling resumes after the worker releases the receiver.
 
 An observing tab records its source ID and scanner session in tab-local sessionStorage. When that tab reloads or reconnects with a profile's AM default, it rejoins the same still-running scanner after checking the acknowledged capture. It never sends Start or a hardware retune merely to restore the display. Other receiver IDs, unrelated scanner sessions and tabs that did not opt into following are left alone. Manual Stop/control clears the intent; stopped/stopping workers are not rejoined. Storage denial degrades to the current document's observer behavior. Returning online/visible or restoring a page prompts a fresh status request.
 
-The older browser scanner still stops when the tab is hidden. Server scans still do not restart automatically after an OWRX service restart: select ALE and start a new server scan after installing an update. Scanner start/stop reasons now go to the normal journal at INFO level. For a continuing problem, collect:
+The older browser scanner still stops when the tab is hidden. Scanner start/stop reasons now go to the normal journal at INFO level. For a continuing problem, collect:
 
 ```bash
 sudo journalctl -u openwebrx --since "15 minutes ago" --no-pager | grep -Ei 'ALE server scanner|ALE background scanner failed'

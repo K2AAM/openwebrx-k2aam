@@ -400,10 +400,20 @@ function aleLogCsvRow(message) {
         .map(aleLogCsvCell).join(',') + '\r\n';
 }
 
+// Watchlist: addresses separated by commas or spaces; * matches any run of characters.
+function aleWatchMatcher(text) {
+    const patterns = String(text || '').toUpperCase().split(/[\s,;]+/).filter(Boolean).slice(0, 50).map(token =>
+        new RegExp('^' + token.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$'));
+    return function (address) {
+        const value = String(address || '').toUpperCase();
+        return !!value && patterns.some(pattern => pattern.test(value));
+    };
+}
+
 /* Browser integration. Skipped when this file is loaded outside OpenWebRX+ (unit tests). */
 if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typeof jQuery !== 'undefined') (function ($) {
     const plugin = Plugins.ale = Plugins.ale || {};
-    plugin._version = '0.6.1';
+    plugin._version = '0.7.0';
     plugin.no_css = true;
     const MODE = 'ale2g', PANEL = 'openwebrx-panel-ale2g-message';
 
@@ -442,6 +452,9 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
                 '.ale-scan-channels label{display:inline-block;margin:3px 8px 3px 0}.ale-scan-status{overflow-wrap:anywhere}' +
                 '.ale-log{flex:0 1 auto;padding:2px 6px 4px;font:12px system-ui}.ale-log>summary,.ale-scan-controls>summary{cursor:pointer;padding:3px 0}' +
                 '.ale-log-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:4px 0;flex:0 0 auto}' +
+                '.ale-watch input[type=text]{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px;width:170px;max-width:55vw}' +
+                '#openwebrx-panel-ale2g-message .ale-layout tr.ale-watched{background:#3a4a1e;box-shadow:inset 3px 0 0 #d6e86a}' +
+                '#openwebrx-panel-ale2g-message .ale-only-watched tbody tr:not(.ale-watched){display:none}' +
                 '.ale-log-tools button{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
                 '.ale-log-status{overflow-wrap:anywhere;color:#a7bad0}.ale-heard{max-height:160px;overflow:auto;padding:4px 0}' +
                 '.ale-heard-list{list-style:none;padding:0;margin:5px 0}.ale-heard-list li{display:grid;grid-template-columns:90px 160px minmax(0,1fr) 80px;gap:8px;padding:4px 0;border-top:1px solid #ffffff12;overflow-wrap:anywhere}' +
@@ -575,6 +588,30 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
         const logTools = $('<div class="ale-log-tools">').appendTo(logBox);
         const exportLog = $('<button type="button">').text('Export CSV').appendTo(logTools);
         const refreshLog = $('<button type="button">').text('Refresh log').appendTo(logTools);
+        const watchRow = $('<div class="ale-log-tools ale-watch">').appendTo(logBox);
+        const watchLabel = $('<label>').text('Watch ').appendTo(watchRow);
+        const watch = $('<input type="text" aria-label="ALE addresses to watch" placeholder="ADW, JNR, K2*" autocapitalize="characters" autocomplete="off" spellcheck="false">').appendTo(watchLabel);
+        const onlyLabel = $('<label>').appendTo(watchRow);
+        const only = $('<input type="checkbox" aria-label="Show only watched ALE addresses">').appendTo(onlyLabel);
+        onlyLabel.append(document.createTextNode(' Only watched'));
+        const watchKey = 'owrx_ale_watch_v1';
+        try {
+            const saved = JSON.parse(localStorage.getItem(watchKey) || '{}');
+            if (typeof saved.list === 'string') watch.val(saved.list.slice(0, 400));
+            only.prop('checked', saved.only === true);
+        } catch (_) { /* The watchlist then lasts for this page only. */ }
+        function applyWatch() {
+            me.watched = aleWatchMatcher(watch.val());
+            me.el.find('tbody tr').each(function () {
+                const cells = this.children;
+                $(this).toggleClass('ale-watched', me.watched(cells[2].textContent) || me.watched(cells[3].textContent));
+            });
+            layout.toggleClass('ale-only-watched', only.prop('checked') && !!String(watch.val()).trim());
+            try { localStorage.setItem(watchKey, JSON.stringify({list: String(watch.val()), only: only.prop('checked')})); }
+            catch (_) { /* Optional preference. */ }
+        }
+        watch.on('input', applyWatch); only.on('change', applyWatch);
+        this.applyWatch = applyWatch;
         const heard = $('<details class="ale-heard">').appendTo(logBox);
         const heardSummary = $('<summary>').text('Stations heard').appendTo(heard);
         const heardList = $('<ul class="ale-heard-list" aria-label="Stations heard from server scans">').appendTo(heard);
@@ -643,6 +680,7 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
             updateLog();
         });
         updateLog();
+        applyWatch();
         layout.append($('<table><thead><tr><th>UTC</th><th>kHz</th><th>From</th><th>To</th><th>Event</th><th>Message / details</th></tr></thead><tbody></tbody></table>'));
     };
     Ale2gMessagePanel.prototype.pushMessage = function(message) {
@@ -677,6 +715,7 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
             $('<summary>').text('Raw decode').appendTo(details);
             $('<pre>').text(String(message.message || '')).appendTo(details);
         }
+        if (this.watched && (this.watched(message.source) || this.watched(message.destination))) row.addClass('ale-watched');
         this.el.find('tbody').append(row);
         this.clearMessages(250);
         this.scrollToBottom();
