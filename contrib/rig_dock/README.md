@@ -17,6 +17,12 @@ its own with `Plugins.load('rig_dock')`. It cannot run together with the RIG ski
   chooser) and **Use stock controls**, which restores the native panel in the current tab.
 - The footer shows connection state, S-meter, CPU, listeners, antenna and UTC.
 
+## Phones
+
+At widths up to 620 px the dock starts compact: the frequency with large − / + step buttons (hold
+to keep stepping), Tune, mode, volume and the status line. **Controls** reveals profile, antenna,
+recording, squelch, NR, step, bandpass, waterfall and scan; the choice is remembered in the browser.
+
 ## Decoder tray
 
 Native message panels, digital voice metadata panels and the secondary waterfall/text panel move

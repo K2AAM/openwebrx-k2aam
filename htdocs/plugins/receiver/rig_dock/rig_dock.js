@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.rig_dock;
-    plugin._version = '0.5.0';
+    plugin._version = '0.6.0';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
@@ -293,10 +293,57 @@
             }}));
         } catch (error) { finishTune(error.message || String(error)); }
     }
+    function nudge(direction) {
+        // Large touch target beside the readout; hold to keep stepping.
+        const node = el('button', 'rd-button rd-nudge', direction < 0 ? '−' : '+');
+        node.type = 'button';
+        node.setAttribute('aria-label', direction < 0 ? 'Tune down one step' : 'Tune up one step');
+        let delay = null, repeat = null, held = false;
+        const stop = () => { clearTimeout(delay); clearInterval(repeat); delay = repeat = null; };
+        on(node, 'pointerdown', event => {
+            if (event.button) return;
+            stop(); held = false;
+            delay = setTimeout(() => {
+                held = true;
+                const scan = window.owrxAleScanner;
+                repeat = setInterval(() => {
+                    if (scan && scan.isRunning()) return stop();
+                    try { tuneBySteps(direction); } catch (error) { stop(); message(error.message || String(error)); }
+                }, 110);
+            }, 400);
+        });
+        ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach(type => on(node, type, stop));
+        listeners.push(stop);
+        on(node, 'click', () => {
+            if (held) { held = false; return; }
+            safely(() => manualControl(() => tuneBySteps(direction)));
+        });
+        on(node, 'contextmenu', event => event.preventDefault());
+        return node;
+    }
+    function buildExpand(main) {
+        // Phones start with frequency, mode and volume only; the rest is one tap away.
+        let expanded = false;
+        try { expanded = localStorage.getItem('rig_dock_expanded') === 'true'; } catch (error) { /* Optional preference. */ }
+        const toggle = refs.expand = button('', () => {
+            expanded = !expanded;
+            try { localStorage.setItem('rig_dock_expanded', String(expanded)); } catch (error) { /* Optional preference. */ }
+            apply(); closePopup(false); reserveSpace();
+        }, 'rd-expand');
+        function apply() {
+            dock.classList.toggle('rd-expanded', expanded);
+            toggle.textContent = expanded ? 'Less ▾' : 'Controls ▴';
+            toggle.setAttribute('aria-expanded', String(expanded));
+        }
+        toggle.title = 'Show or hide the full set of receiver controls';
+        apply(); main.append(toggle);
+    }
     function buildTune(main) {
         const frequency = group(main);
         frequency.classList.add('rd-frequency');
+        frequency.append(nudge(-1));
         move($('.frequencies-container', panel), frequency);
+        frequency.append(nudge(1));
         const pop = popover('tune', 'Tune frequency', 'Tune ▴');
         refs.tunePopup = pop.node;
         frequency.append(pop.trigger);
@@ -487,7 +534,7 @@
             const rowHeight = rows.slice(-6).reduce((total,row) => total+row.getBoundingClientRect().height,0);
             requestedHeight = headerHeight+(controls ? Math.max(controls.getBoundingClientRect().height,controls.scrollHeight) : 0)+
                 (head ? head.getBoundingClientRect().height : 0)+Math.max(48,rowHeight)+12+
-                all('.ale-log-tools,.ale-heard',ale).reduce((total,node)=>total+node.getBoundingClientRect().height,0);
+                all('.ale-log',ale).reduce((total,node)=>total+node.getBoundingClientRect().height,0);
         }
         const height = decoderCollapsed ? headerHeight : Math.min(maximum, Math.max(headerHeight + minimumBody, requestedHeight));
         const previous = refs.decoderTray.style.height;
@@ -502,7 +549,7 @@
         settleDecoderPanels();
         const active = decoderNodes.filter(decoderActive);
         const ale = active.find(node => node.id === 'openwebrx-panel-ale2g-message');
-        const fitSignature = ale && decoderFit ? all('tbody tr',ale).slice(-6).map(row => row.getBoundingClientRect().height).join(',')+':'+all('.ale-log-tools,.ale-heard',ale).map(node=>node.getBoundingClientRect().height).join(',') : '';
+        const fitSignature = ale && decoderFit ? all('tbody tr',ale).slice(-6).map(row => row.getBoundingClientRect().height).join(',')+':'+all('.ale-log',ale).map(node=>node.getBoundingClientRect().height).join(',') : '';
         const signature = active.map(node => node.id).join('|') + ':' + UI.getModulation()+':'+fitSignature;
         if (adopted || signature !== decoderSignature) {
             decoderSignature = signature;
@@ -717,8 +764,9 @@
         const profiles = group(main); profiles.classList.add('rd-profiles');
         native('#openwebrx-sdr-profiles-listbox', profiles, 'Receiver / profile');
         buildMode(main);
+        buildExpand(main);
         refs.antennas = group(main); refs.antennas.classList.add('rd-antennas');
-        const volume = group(toolbar, 'Volume');
+        const volume = group(toolbar, 'Volume'); volume.classList.add('rd-volume');
         move($('.openwebrx-mute-button', panel), volume); move($('#openwebrx-panel-volume'), volume);
         const squelch = group(toolbar, 'Squelch');
         move($('.openwebrx-squelch-auto', panel), squelch); move($('.openwebrx-squelch-slider', panel), squelch);

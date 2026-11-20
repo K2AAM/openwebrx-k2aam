@@ -111,7 +111,7 @@ body.rig-dock-active .rd-decoder-native {
 .rd-toolbar .openwebrx-panel-slider { margin: 0 !important; width: 84px !important; max-width: 100%; }
 .rd-toolbar .openwebrx-slider-button { flex: 0 0 25px; width: 25px; height: 25px; margin: 0; padding: 1px; border-radius: 4px; background: #26394e; }
 .rd-toolbar .openwebrx-slider-button svg { width: 23px; height: 23px; }
-.rd-toolbar select { width: 68px !important; }
+.rd-toolbar select { width: 80px !important; }
 body.rig-dock-active #openwebrx-panel-receiver select, .rd-popover input:not([type='checkbox']):not([type='range']) {
     background: #0b1522; color: #e7eff9; border: 1px solid #40536b; border-radius: 4px;
     padding: 5px 7px; font: inherit; min-height: 30px; margin: 0;
@@ -208,4 +208,30 @@ body.rig-dock-active [data-toggle-panel='openwebrx-panel-log'] {
     flex: 0 0 auto; float: none !important; position: static !important;
     width: auto !important; height: auto !important; min-width: max-content;
     margin: 0 !important; padding: 5px 10px !important; line-height: normal;
+}
+
+/* Touch tuning and the phone layout. On phones the dock starts compact:
+   frequency with step buttons, mode, volume and a Controls toggle. */
+.rd-nudge, .rd-expand { display: none !important; }
+@media (max-width: 620px) {
+    #rig-dock { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #rig-dock > .rd-main, #rig-dock > .rd-toolbar { display: contents; }
+    #rig-dock > .rd-footer, #rig-dock > .rd-message { flex: 1 1 100%; order: 30; }
+    #rig-dock .rd-frequency { order: 1; flex: 1 1 100%; gap: 6px; justify-content: space-between; }
+    #rig-dock .rd-frequency .webrx-actual-freq { font-size: 22px !important; letter-spacing: 0; }
+    #rig-dock .rd-nudge { display: inline-flex !important; align-items: center; justify-content: center;
+        flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; font-size: 22px; touch-action: manipulation;
+        -webkit-user-select: none; user-select: none; }
+    #rig-dock [aria-controls='rd-popover-mode'] { order: 2; min-height: 40px; }
+    #rig-dock .rd-volume { order: 3; flex: 1 1 110px; padding-right: 0; }
+    #rig-dock .rd-volume .openwebrx-panel-slider { flex: 1 1 auto; width: auto !important; min-width: 56px; }
+    #rig-dock .rd-expand { display: inline-flex !important; order: 4; min-height: 40px; align-items: center; }
+    #rig-dock .rd-profiles { order: 5; flex: 1 1 100%; }
+    #rig-dock .rd-antennas { order: 6; }
+    #rig-dock .rd-actions { order: 7; }
+    #rig-dock > .rd-toolbar > :not(.rd-volume) { order: 8; }
+    #rig-dock:not(.rd-expanded) .rd-profiles,
+    #rig-dock:not(.rd-expanded) .rd-antennas,
+    #rig-dock:not(.rd-expanded) .rd-actions,
+    #rig-dock:not(.rd-expanded) > .rd-toolbar > :not(.rd-volume) { display: none !important; }
 }
