@@ -403,7 +403,7 @@ function aleLogCsvRow(message) {
 /* Browser integration. Skipped when this file is loaded outside OpenWebRX+ (unit tests). */
 if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typeof jQuery !== 'undefined') (function ($) {
     const plugin = Plugins.ale = Plugins.ale || {};
-    plugin._version = '0.6.0';
+    plugin._version = '0.6.1';
     plugin.no_css = true;
     const MODE = 'ale2g', PANEL = 'openwebrx-panel-ale2g-message';
 
@@ -427,10 +427,12 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
                 '.ale-layout tbody tr{border-top:1px solid #ffffff0a;font-variant-numeric:tabular-nums}' +
                 '.ale-event{color:#9de2c3}.ale-raw{display:inline-block;margin-left:10px;vertical-align:top;font-size:11px;color:#a7bad0}' +
                 '.ale-raw summary{cursor:pointer}.ale-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0}' +
-                '@media(max-width:620px){#openwebrx-panel-ale2g-message .ale-layout tr{grid-template-columns:68px 84px minmax(0,1fr) minmax(0,1fr)}' +
-                '#openwebrx-panel-ale2g-message .ale-layout thead th:nth-child(n+5){display:none}' +
-                '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(5){grid-column:1/3;padding-top:0}' +
-                '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(6){grid-column:3/5;padding-top:0}}' +
+                '@media(max-width:620px){#openwebrx-panel-ale2g-message .ale-layout tr{grid-template-columns:66px 62px minmax(0,1fr) minmax(0,.7fr) 104px}' +
+                '#openwebrx-panel-ale2g-message .ale-layout th,#openwebrx-panel-ale2g-message .ale-layout td{padding:5px 4px}' +
+                '#openwebrx-panel-ale2g-message .ale-layout thead th:nth-child(6){display:none}' +
+                '#openwebrx-panel-ale2g-message .ale-layout td:nth-child(6){grid-column:1/6;padding-top:0}' +
+                '#openwebrx-panel-ale2g-message .ale-layout tr.ale-routine{cursor:pointer}' +
+                '#openwebrx-panel-ale2g-message .ale-layout tr.ale-routine:not(.ale-open) td:nth-child(6){display:none}}' +
                 '.ale-layout tbody{flex:1 1 0;min-height:0;height:auto!important;overflow:auto}' +
                 '.ale-scan-controls{flex:0 1 auto;overflow:auto;padding:6px 55px 6px 6px;box-sizing:border-box;font:12px system-ui}' +
                 '.ale-scan-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px}' +
@@ -438,9 +440,10 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
                 '.ale-scan-controls select option{color:#111;background:#fff}' +
                 '.ale-scan-controls input[type=number]{width:48px}.ale-scan-channels{max-height:90px;overflow:auto}' +
                 '.ale-scan-channels label{display:inline-block;margin:3px 8px 3px 0}.ale-scan-status{overflow-wrap:anywhere}' +
-                '.ale-log-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:4px 6px;font:12px system-ui;flex:0 0 auto}' +
+                '.ale-log{flex:0 1 auto;padding:2px 6px 4px;font:12px system-ui}.ale-log>summary,.ale-scan-controls>summary{cursor:pointer;padding:3px 0}' +
+                '.ale-log-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:4px 0;flex:0 0 auto}' +
                 '.ale-log-tools button{font:inherit;color:inherit;background:transparent;border:1px solid #65809a;border-radius:4px;padding:4px}' +
-                '.ale-log-status{overflow-wrap:anywhere;color:#a7bad0}.ale-heard{flex:0 1 auto;max-height:160px;overflow:auto;padding:4px 6px;font:12px system-ui}' +
+                '.ale-log-status{overflow-wrap:anywhere;color:#a7bad0}.ale-heard{max-height:160px;overflow:auto;padding:4px 0}' +
                 '.ale-heard-list{list-style:none;padding:0;margin:5px 0}.ale-heard-list li{display:grid;grid-template-columns:90px 160px minmax(0,1fr) 80px;gap:8px;padding:4px 0;border-top:1px solid #ffffff12;overflow-wrap:anywhere}' +
                 '@media(max-width:620px){.ale-heard-list li{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ale-heard-list li span:nth-child(3){grid-column:1/2}}'
             ).appendTo('head');
@@ -564,11 +567,15 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
         window.addEventListener('pageshow', () => this.serverScanner.resume());
         document.addEventListener('visibilitychange', () => { if (!document.hidden) this.serverScanner.resume(); });
         window.addEventListener('online', () => this.serverScanner.resume());
-        const logTools = $('<div class="ale-log-tools">').appendTo(layout);
+        // One disclosure keeps export, refresh and the station list out of the
+        // way of the decodes; its summary always shows the log status.
+        const logBox = $('<details class="ale-log">').appendTo(layout);
+        const logSummary = $('<summary>').text('Log · ').appendTo(logBox);
+        const logStatus = $('<span class="ale-log-status" role="status">').text('loading…').appendTo(logSummary);
+        const logTools = $('<div class="ale-log-tools">').appendTo(logBox);
         const exportLog = $('<button type="button">').text('Export CSV').appendTo(logTools);
         const refreshLog = $('<button type="button">').text('Refresh log').appendTo(logTools);
-        const logStatus = $('<span class="ale-log-status" role="status">').text('Server scan log · loading…').appendTo(logTools);
-        const heard = $('<details class="ale-heard">').appendTo(layout);
+        const heard = $('<details class="ale-heard">').appendTo(logBox);
         const heardSummary = $('<summary>').text('Stations heard').appendTo(heard);
         const heardList = $('<ul class="ale-heard-list" aria-label="Stations heard from server scans">').appendTo(heard);
         let logBusy = false, lastLogSource = '', exportBusy = false;
@@ -599,6 +606,7 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
         this.logWarning = text => logStatus.text(text);
         refreshLog.on('click',updateLog);
         heard.on('toggle', () => { if (heard.prop('open')) updateLog(); });
+        logBox.on('toggle', () => { if (logBox.prop('open')) updateLog(); });
         exportLog.on('click', async () => {
             if (exportBusy) return;
             exportBusy = true; exportLog.prop('disabled',true);
@@ -660,6 +668,10 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
         const body = $('<td class="message">').appendTo(row);
         if (event[1] === null) body.text(String(message.message || ''));
         else {
+            // Soundings and link handshakes: on a phone the description opens on tap.
+            row.addClass('ale-routine').on('click', function (clicked) {
+                if (!$(clicked.target).closest('summary, pre').length) row.toggleClass('ale-open');
+            });
             $('<span>').text((message.test_audio ? '[TEST AUDIO] ' : '')+event[1]).appendTo(body);
             const details = $('<details class="ale-raw">').appendTo(body);
             $('<summary>').text('Raw decode').appendTo(details);

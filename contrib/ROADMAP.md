@@ -9,7 +9,8 @@
 
 ## Dock interface
 
-- Phone layout pass: larger touch targets, one-handed tuning, fewer rows in portrait.
+- Done: compact phone dock, touch step buttons, one-line ALE rows on phones.
+- Next: S-meter beside the frequency, band and bookmark buttons, restyle the native volume/squelch/NR controls.
 - Review against a real receiver on a phone and a desktop; the browser tests simulate the receiver.
 - Consider renaming the plugin from `rig_dock`, since "RIG" is the name of the original skin.
 

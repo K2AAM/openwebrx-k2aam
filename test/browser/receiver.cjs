@@ -154,6 +154,8 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.waitForFunction(()=>document.querySelector('.rd-antennas').hidden);
         for(const [width,height] of [[1918,900],[1024,768],[390,844],[375,667]]) {
             await page.setViewportSize({width,height});
+            // Phones start compact; these controls live behind the Controls toggle.
+            if(width<=620)await page.evaluate(()=>{const b=document.querySelector('#rig-dock .rd-expand');if(b.getAttribute('aria-expanded')==='false')b.click();});
             await page.waitForTimeout(550);
             check(await page.evaluate(()=>{
                 const nodes=[document.querySelector('#rig-dock .openwebrx-record-button'),document.querySelector('#rig-dock #screenshot-btn'),document.querySelector('[aria-controls="rd-popover-more"]')];
@@ -360,6 +362,8 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             ws.logStations=[{address:'ADW',timestamp:1792962000204,count:204,frequencies:[11226000,15043000]},
                 {address:'<img src=x onerror=alert(1)>',timestamp:1792962000000,count:1,frequencies:[5708000]}];
         });
+        check(await page.getByRole('button',{name:'Export CSV',exact:true}).isHidden(),'log tools stay behind the Log disclosure until opened');
+        await page.locator('.ale-log > summary').click();
         await page.getByRole('button',{name:'Refresh log',exact:true}).click();
         await page.waitForFunction(()=>document.querySelector('.ale-log-status').textContent.includes('205'));
         await page.locator('.ale-heard > summary').click();
@@ -411,6 +415,11 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         check(compactHeight<340,'Fit bounds a few ALE rows instead of reserving a large empty pane');
         await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
         check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'ALE rows fit the phone width');
+        const phoneRow=page.locator('#openwebrx-panel-ale2g-message tbody tr').first();
+        check(await phoneRow.evaluate(n=>n.getBoundingClientRect().height<36&&n.children[2].textContent==='ADW'&&n.children[4].getBoundingClientRect().width>0),'a phone ALE sounding is one line with time, frequency, addresses and event');
+        await phoneRow.locator('td').first().click();
+        check(await phoneRow.locator('td.message').isVisible(),'tapping a phone ALE row opens its description and raw decode');
+        await phoneRow.locator('td').first().click();
         await page.screenshot({path:path.join(root,'test-results/ale-compact-mobile.png')});
         await page.setViewportSize({width:1440,height:900});
         await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
@@ -563,8 +572,30 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         for(const [width,height] of [[1024,768],[390,844],[375,667],[844,390]]){
             await page.setViewportSize({width,height});await page.waitForTimeout(150);
             if(width===390){
-                await page.evaluate(()=>localStorage.removeItem('rig_dock_decoder_if'));
+                await page.evaluate(()=>{localStorage.removeItem('rig_dock_decoder_if');localStorage.removeItem('rig_dock_expanded');});
                 await page.reload();await page.waitForSelector('#rig-dock');
+                check(await page.evaluate(()=>document.querySelector('#rig-dock .rd-expand').getAttribute('aria-expanded')==='false'&&
+                    ['.rd-profiles','.rd-actions','[aria-controls="rd-popover-bandpass"]'].every(q=>document.querySelector('#rig-dock '+q).getBoundingClientRect().height===0)),'phone dock starts compact');
+                check(await page.evaluate(()=>['.rd-frequency .webrx-actual-freq','[aria-controls="rd-popover-mode"]','.rd-volume','.rd-footer'].every(q=>document.querySelector('#rig-dock '+q).getBoundingClientRect().height>0)),'compact dock keeps frequency, mode, volume and status');
+                const compactDock=await page.locator('#openwebrx-panel-receiver').evaluate(n=>n.getBoundingClientRect().height);
+                check(compactDock<=170,'compact phone dock is at most 170 px tall ('+Math.round(compactDock)+')');
+                check(await page.locator('#rig-dock .rd-nudge').evaluateAll(nodes=>nodes.length===2&&nodes.every(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth;})),'step buttons are full-size touch targets');
+                const beforeNudge=await page.evaluate(()=>UI.getFrequency());
+                await page.getByRole('button',{name:'Tune up one step',exact:true}).click();
+                check(await page.evaluate(before=>UI.getFrequency()===before+tuning_step,beforeNudge),'step button tunes one step');
+                await page.getByRole('button',{name:'Tune down one step',exact:true}).click();
+                await page.getByRole('button',{name:'Tune down one step',exact:true}).dispatchEvent('pointerdown',{button:0});
+                await page.waitForTimeout(900);
+                await page.getByRole('button',{name:'Tune down one step',exact:true}).dispatchEvent('pointerup');
+                const heldSteps=await page.evaluate(before=>(before-UI.getFrequency())/tuning_step,beforeNudge);
+                check(heldSteps>=2,'holding a step button keeps tuning ('+heldSteps+' steps)');
+                await page.waitForTimeout(300);
+                check(await page.evaluate(expected=>UI.getFrequency()===expected,beforeNudge-heldSteps*100),'releasing the step button stops tuning');
+                await page.evaluate(before=>UI.setFrequency(before,false),beforeNudge);
+                await page.screenshot({path:path.join(root,'test-results/rig-dock-mobile-compact.png')});
+                await page.locator('#rig-dock .rd-expand').click();
+                check(await page.locator('#rig-dock .openwebrx-record-button').isVisible()&&await page.locator('#rig-dock .rd-profiles select').isVisible(),'Controls reveals the full phone dock');
+                check(await page.evaluate(()=>document.querySelector('.rd-nudge')&&getComputedStyle(document.querySelector('.rd-expand')).display!=='none'),'toggle remains available when expanded');
                 await page.evaluate(()=>{UI.setModulation('ft8');
                     $('#openwebrx-panel-wsjt-message').wsjtMessagePanel().pushMessage({mode:'FT8',timestamp:Date.now(),db:-14,dt:.2,freq:7074000,msg:'CQ K2AAM FN33'});});
                 await page.waitForSelector('#rig-decoder-tray',{state:'visible'});
