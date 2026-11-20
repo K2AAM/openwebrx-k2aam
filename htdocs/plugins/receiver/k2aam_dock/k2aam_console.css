@@ -135,6 +135,9 @@ body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-button:not([aria-controls]) {
 body.k2aam-console #k2aam-dock .rd-button,
 body.k2aam-console #k2aam-dock .rd-antennas button { min-height: 40px; border-radius: 6px; }
 
+body.k2aam-console #k2aam-dock .rd-antennas { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+body.k2aam-console #k2aam-dock .rd-antennas > .rd-label { font-size: 11px; }
+
 /* Label above, control below */
 body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-group {
     display: grid; grid-auto-flow: column; grid-template-rows: auto auto; align-items: center;

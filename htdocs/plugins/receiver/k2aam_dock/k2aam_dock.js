@@ -1003,7 +1003,7 @@
         native('#openwebrx-sdr-profiles-listbox', profiles, 'Receiver / profile');
         buildMode(main);
         buildExpand(main);
-        refs.antennas = group(main); refs.antennas.classList.add('rd-antennas');
+        refs.antennas = group(main, layout === 'console' ? 'Antenna' : undefined); refs.antennas.classList.add('rd-antennas');
         const volume = group(toolbar, 'Volume'); volume.classList.add('rd-volume');
         move($('.openwebrx-mute-button', panel), volume); move($('#openwebrx-panel-volume'), volume);
         const squelch = group(toolbar, 'Squelch'); squelch.classList.add('rd-squelch');

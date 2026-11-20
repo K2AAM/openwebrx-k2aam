@@ -135,6 +135,7 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         check(await page.evaluate(()=>Plugins.ui_select.current()==='dock'&&!Plugins.rig_skin&&!Plugins.audio_filter),'dock is the default interface and the RIG skin is not loaded with it');
         check(await page.evaluate(()=>savedProfileNode===document.getElementById('openwebrx-sdr-profiles-listbox')&&savedFrequencyNode===document.querySelector('.webrx-actual-freq')),'native profile and frequency nodes retained');
         check(await page.locator('.rd-antennas button').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().height>=30&&n.scrollWidth<=n.clientWidth+1)),'antenna buttons are full height and labels fit');
+        check(await page.locator('#k2aam-dock .rd-antennas > .rd-label').count()===0,'the dock layout keeps its antenna buttons unlabelled');
         check(await page.locator('#openwebrx-panel-status').isHidden(),'floating status hidden');
         check(await page.locator('#openwebrx-panel-log').isHidden(),'chat is hidden in the dock');
         await page.evaluate(()=>toggle_panel('openwebrx-panel-log',true));
@@ -736,6 +737,8 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
             return parseFloat(getComputedStyle(document.querySelector('.rd-tuning .webrx-actual-freq')).fontSize)>=34&&m.top>=f.bottom-1&&m.width>=200;}),'console shows a large frequency with the S-meter directly beneath it');
         check(await con.evaluate(()=>['.rd-profiles select','.rd-volume .openwebrx-mute-button','#openwebrx-panel-volume','.rd-squelch .openwebrx-squelch-auto','.rd-squelch .openwebrx-squelch-slider','.rd-nr .openwebrx-nr-toggle','#openwebrx-panel-nr','.openwebrx-record-button','[aria-controls="rd-popover-bands"]'].every(q=>{const n=document.querySelector('#k2aam-dock '+q);if(!n)return false;const r=n.getBoundingClientRect();return r.width>0&&r.height>0&&r.left>=0&&r.right<=innerWidth+1;})),'receiver strip shows profile, mute, volume, squelch, noise reduction, record and bands');
         check(await con.locator('#k2aam-dock .rd-nr .rd-label').innerText().then(t=>/noise reduction/i.test(t)),'noise reduction is labelled in the console strip');
+        check(await con.evaluate(()=>{const l=document.querySelector('#k2aam-dock .rd-antennas > .rd-label'),b=document.querySelector('#k2aam-dock .rd-antennas button');
+            return !!l&&/antenna/i.test(l.textContent)&&l.getBoundingClientRect().height>0&&l.getBoundingClientRect().bottom<=b.getBoundingClientRect().top+1;}),'the antenna buttons have an Antenna label above them');
         check(await con.evaluate(()=>!document.body.classList.contains('k2aam-side')&&Math.abs(document.body.getBoundingClientRect().width-innerWidth)<2),'with no decoder running the waterfall keeps the full width');
         await con.evaluate(()=>{UI.setModulation('ft8');const p=$('#openwebrx-panel-wsjt-message').wsjtMessagePanel();
             p.pushMessage({mode:'FT8',timestamp:Date.now(),db:-4,dt:.2,freq:7074812,msg:'CQ K2AAM FN33'});
