@@ -66,7 +66,7 @@ window.setupFixture = function () {
     gainNode.disconnect=function(target,...args){routeLog.push(['disconnect',target===ctx.destination?'direct':'filter']);return originalDisconnect(target,...args);};
     window.originalAudioConnect=AudioNode.prototype.connect;
     window.audioEngine={audioContext:ctx,gainNode,isStarted:()=>true,recording:false,lastHd:false,
-        recorder:new AudioRecorder(12000,128),hdRecorder:new AudioRecorder(48000,128),
+        recorder:new AudioRecorder(12000,128),hdRecorder:new AudioRecorder(48000,128,2),
         setVolume(v){gainNode.gain.value=v;},
         startRecording:AudioEngine.prototype.startRecording,stopRecording:AudioEngine.prototype.stopRecording};
     UI.toggleScanner=()=>{};
