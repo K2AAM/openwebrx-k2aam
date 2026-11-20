@@ -53,6 +53,7 @@ const server=http.createServer((req,res)=>{
         const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:3});
         const cold=await mobileContext.newPage(),coldErrors=[];
         cold.on('pageerror',e=>coldErrors.push(e.message));
+        const coldConsole=[];cold.on('console',m=>{if(['error','warning'].includes(m.type()))coldConsole.push(m.type()+': '+m.text());});
         let releaseStyles;
         await cold.route('**/rig_dock.css?*',async route=>{
             await new Promise(resolve=>{releaseStyles=resolve;});await route.continue();
@@ -60,7 +61,12 @@ const server=http.createServer((req,res)=>{
         await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
         await cold.waitForFunction(()=>window.Plugins?.rig_dock?._version);
         await cold.waitForSelector('#rig-dock-startup');
-        check(await cold.locator('#openwebrx-panel-receiver').isHidden(),'cold load hides floating native controls while the stylesheet is delayed');
+        const coldState=await cold.evaluate(()=>JSON.stringify({body:document.body.className,notice:!!document.getElementById('rig-dock-startup'),
+            panel:getComputedStyle(document.getElementById('openwebrx-panel-receiver')).visibility,
+            container:getComputedStyle(document.getElementById('openwebrx-panels-container')).visibility,
+            links:Array.from(document.querySelectorAll('link[rel=stylesheet]')).map(l=>l.getAttribute('href')),
+            plugins:Object.keys(Plugins).filter(k=>Plugins[k]&&typeof Plugins[k]==='object'&&'_script_loaded' in Plugins[k]).map(k=>k+'='+Plugins[k]._script_loaded)}));
+        check(await cold.locator('#openwebrx-panel-receiver').isHidden(),'cold load hides floating native controls while the stylesheet is delayed '+coldState+' console='+JSON.stringify(coldConsole)+' errors='+JSON.stringify(coldErrors));
         check(await cold.locator('#openwebrx-panel-status').isHidden(),'cold load hides the floating status panel before dock CSS arrives');
         check(await cold.evaluate(()=>!document.getElementById('rig-dock')),'cold load waits for the dock stylesheet');
         const stylesLoaded=cold.waitForResponse(r=>r.url().includes('rig_dock.css'));
