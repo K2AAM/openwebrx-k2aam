@@ -2,9 +2,8 @@ name: Receiver UI
 
 on:
   push:
-    branches: [k2aam-ui, ale-scanlists]
+    branches: [ale-scanlists]
   pull_request:
-    branches: [master, k2aam-ui, ale-scanlists]
   workflow_dispatch:
 
 permissions:
@@ -47,23 +46,15 @@ jobs:
           npx playwright install --with-deps chromium webkit
       - name: Validate JavaScript syntax
         run: |
-          node --check htdocs/lib/AleScanner.js
-          node --check htdocs/lib/MessagePanel.js
-          node --check htdocs/plugins.js
-          node --check htdocs/plugins/receiver/rig_dock/bootstrap.js
-          node --check htdocs/plugins/receiver/rig_dock/rig_dock.js
-          node --check htdocs/plugins/receiver/rig_audio/rig_audio.js
-      - name: Installer and update tests
-        run: python3 -m unittest discover -s contrib/rig_dock/tests -v
+          for file in htdocs/plugins.js htdocs/plugins/receiver/init.js htdocs/plugins/receiver/*/*.js; do
+            node --check "$file"
+          done
+      - name: Antenna switcher tests
+        run: python3 -m unittest discover -s contrib/antenna/tests -v
       - name: ALE scanner state and catalog tests
         run: |
           node contrib/ale/tests/scanner.cjs
           node contrib/ale/tests/observer.cjs
-      - name: Studio DSP and real RNNoise WASM tests
-        run: |
-          for script in contrib/rig_dock/tests/audio/*.cjs; do
-            node "$script"
-          done
       - name: Receiver browser tests
         run: npm run test:receiver
       - name: Mobile WebKit startup tests

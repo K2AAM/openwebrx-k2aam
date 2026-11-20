@@ -7,7 +7,7 @@ let html=read('htdocs/index.html');
 html=html.replace(/<script[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link[^>]*>/g,'').replace('onload="openwebrx_init();"','');
 html=html.replace('${header}','<header style="display:flex;justify-content:space-between;padding:18px 24px;background:#0b1728;color:#e7eff9;font:16px system-ui"><b>OpenWebRX+ <span style="color:#75d8f1">K2AAM</span></b><span style="font-size:11px;color:#a6bacf">Preview · simulated receiver</span></header>');
 html=html.replace('</header>','<button data-toggle-panel="openwebrx-panel-log" onclick="toggle_panel(\'openwebrx-panel-log\',true)">Chat</button></header>');
-const scripts=['htdocs/lib/jquery-3.7.1.min.js','htdocs/lib/jquery.nanoscroller.min.js','htdocs/lib/Plugins.js','htdocs/lib/lame.min.js','htdocs/lib/AudioEngine.js','test/browser/fixture.js','htdocs/lib/Utils.js','htdocs/lib/UI.js','htdocs/lib/Modes.js','htdocs/lib/Waterfall.js','htdocs/lib/AleScanner.js','htdocs/lib/MessagePanel.js','htdocs/lib/Js8Threads.js','htdocs/lib/MetaPanel.js','htdocs/lib/DemodulatorPanel.js'];
+const scripts=['htdocs/lib/jquery-3.7.1.min.js','htdocs/lib/jquery.nanoscroller.min.js','htdocs/lib/Plugins.js','htdocs/lib/lame.min.js','htdocs/lib/AudioEngine.js','test/browser/fixture.js','htdocs/lib/Utils.js','htdocs/lib/UI.js','htdocs/lib/Modes.js','htdocs/lib/Waterfall.js','htdocs/lib/MessagePanel.js','htdocs/lib/Js8Threads.js','htdocs/lib/MetaPanel.js','htdocs/lib/DemodulatorPanel.js'];
 const core=read('htdocs/openwebrx.js');
 const nativeFunctions=['resize_scale','openwebrx_resize','panel_displayed','toggle_panel','first_show_panel','initPanels',...Array.from(core.matchAll(/^function (secondary_demod_\w+)\(/gm),match=>match[1])];
 const resizeFunctions=nativeFunctions.map(name=>core.match(new RegExp('function '+name+'\\([^\\n]*\\)\\s*\\{[\\s\\S]*?\\n\\}'))[0]).join('\n');
@@ -18,18 +18,8 @@ const server=http.createServer((req,res)=>{
     const url=req.url.split('?')[0];let data,type;
     if(url==='/'){data=html;type='text/html';}
     else if(url==='/static/plugins/receiver/init.js'){
-        const studio=(req.headers.referer||'').includes('studio-init');
-        const init=studio?`(async()=>{
-            if(Plugins.audio_filter && Plugins.audio_filter._script_loaded === false)delete Plugins.audio_filter;
-            await Plugins.load('audio_filter');
-            window.studioSawFilter=window.AudioFilterPlugin?.build === 'studio-2.0.0';
-            await Plugins.load('https://aganet.github.io/openwebrxplus-rig-skin/receiver/rig_skin/rig_skin.js');
-            const themes=$('#openwebrx-themes-listbox');
-            if(themes.length)themes.val('rig').trigger('change');
-            await Plugins.load('rsp_antenna');
-            window.studioFinished=true;
-        })();`:"Plugins.load('rsp_antenna');\nPlugins.load('rig_skin');\nPlugins.load('audio_filter');";
-        data=read('htdocs/plugins/receiver/rig_dock/bootstrap.js')+'\n'+init;type='application/javascript';
+        // The station file as shipped.
+data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
     }
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.js'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.js');type='application/javascript';}
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.css'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.css');type='text/css';}
@@ -63,6 +53,7 @@ const server=http.createServer((req,res)=>{
         const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:3});
         const cold=await mobileContext.newPage(),coldErrors=[];
         cold.on('pageerror',e=>coldErrors.push(e.message));
+        const coldConsole=[];cold.on('console',m=>{if(['error','warning'].includes(m.type()))coldConsole.push(m.type()+': '+m.text());});
         let releaseStyles;
         await cold.route('**/rig_dock.css?*',async route=>{
             await new Promise(resolve=>{releaseStyles=resolve;});await route.continue();
@@ -70,7 +61,12 @@ const server=http.createServer((req,res)=>{
         await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
         await cold.waitForFunction(()=>window.Plugins?.rig_dock?._version);
         await cold.waitForSelector('#rig-dock-startup');
-        check(await cold.locator('#openwebrx-panel-receiver').isHidden(),'cold load hides floating native controls while the stylesheet is delayed');
+        const coldState=await cold.evaluate(()=>JSON.stringify({body:document.body.className,notice:!!document.getElementById('rig-dock-startup'),
+            panel:getComputedStyle(document.getElementById('openwebrx-panel-receiver')).visibility,
+            container:getComputedStyle(document.getElementById('openwebrx-panels-container')).visibility,
+            links:Array.from(document.querySelectorAll('link[rel=stylesheet]')).map(l=>l.getAttribute('href')),
+            plugins:Object.keys(Plugins).filter(k=>Plugins[k]&&typeof Plugins[k]==='object'&&'_script_loaded' in Plugins[k]).map(k=>k+'='+Plugins[k]._script_loaded)}));
+        check(await cold.locator('#openwebrx-panel-receiver').isHidden(),'cold load hides floating native controls while the stylesheet is delayed '+coldState+' console='+JSON.stringify(coldConsole)+' errors='+JSON.stringify(coldErrors));
         check(await cold.locator('#openwebrx-panel-status').isHidden(),'cold load hides the floating status panel before dock CSS arrives');
         check(await cold.evaluate(()=>!document.getElementById('rig-dock')),'cold load waits for the dock stylesheet');
         const stylesLoaded=cold.waitForResponse(r=>r.url().includes('rig_dock.css'));
@@ -136,7 +132,7 @@ const server=http.createServer((req,res)=>{
         await page.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
         await page.waitForSelector('body.rig-dock-active');
         await page.waitForSelector('.rd-antennas button');
-        check(await page.evaluate(()=>!Plugins.rig_skin&&!Plugins.audio_filter&&!Plugins.rig_audio),'legacy plugins blocked and optional filter not loaded');
+        check(await page.evaluate(()=>Plugins.ui_select.current()==='dock'&&!Plugins.rig_skin&&!Plugins.audio_filter),'dock is the default interface and the RIG skin is not loaded with it');
         check(await page.evaluate(()=>savedProfileNode===document.getElementById('openwebrx-sdr-profiles-listbox')&&savedFrequencyNode===document.querySelector('.webrx-actual-freq')),'native profile and frequency nodes retained');
         check(await page.locator('.rd-antennas button').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().height>=30&&n.scrollWidth<=n.clientWidth+1)),'antenna buttons are full height and labels fit');
         check(await page.locator('#openwebrx-panel-status').isHidden(),'floating status hidden');
@@ -259,55 +255,7 @@ const server=http.createServer((req,res)=>{
         await page.locator('#rd-popover-bandpass input').nth(0).fill('-2700');await page.locator('#rd-popover-bandpass input').nth(1).fill('-200');
         await page.getByRole('button',{name:'Apply',exact:true}).click();
         check(await page.evaluate(()=>UI.getDemodulator().low_cut===-2700&&UI.getDemodulator().high_cut===-200),'receive bandpass applies');
-        await page.locator('[aria-controls="rd-popover-audio"]').click();
-        check(await page.getByText('Enable audio filter for this session',{exact:true}).locator('input').isChecked()===false,'audio starts bypassed');
-        await page.getByRole('button',{name:'Filter settings…',exact:true}).click();
-        await page.waitForSelector('#af2-status');
-        check(await page.evaluate(()=>!Plugins.rig_audio.isEnabled()&&routeLog.length===0),'loading settings leaves native audio route untouched');
-        check(await page.evaluate(()=>AudioNode.prototype.connect===originalAudioConnect),'AudioNode prototype is unchanged');
-        await page.getByRole('button',{name:'Enable',exact:true}).click();
-        check(await page.evaluate(()=>Plugins.rig_audio.isEnabled()),'explicit filter enable');
-        check(await page.evaluate(()=>routeLog.some(x=>x[0]==='disconnect'&&x[1]==='direct')),'filter enable removes native direct route');
-        await page.getByRole('button',{name:'Bypass',exact:true}).click();
-        check(await page.evaluate(()=>!Plugins.rig_audio.isEnabled()),'filter bypass disables processing');
-        check(await page.evaluate(()=>routeLog.some(x=>x[0]==='disconnect'&&x[1]==='filter')),'bypass detaches filter input');
-        const residual=await page.evaluate(async()=>{
-            const previous=audioEngine;
-            const offline=new OfflineAudioContext(1,8192,48000);
-            // This checks routing, independently of worklet/ScriptProcessor DSP.
-            const secure=Object.getOwnPropertyDescriptor(window,'isSecureContext');
-            Object.defineProperty(window,'isSecureContext',{value:false,configurable:true});
-            offline.createScriptProcessor=()=>offline.createGain();
-            const gainNode=offline.createGain();gainNode.connect(offline.destination);
-            audioEngine={audioContext:offline,gainNode,isStarted:()=>true};
-            const data=offline.createBuffer(1,8192,48000),input=data.getChannelData(0);
-            for(let i=0;i<input.length;i++)input[i]=.2*Math.sin(i*.123)+.1*Math.sin(i*.617);
-            const source=offline.createBufferSource();source.buffer=data;source.connect(gainNode);
-            Plugins.rig_audio.setEnabled(true);Plugins.rig_audio.setEnabled(false);
-            source.start();const rendered=await offline.startRendering();audioEngine=previous;
-            if(secure)Object.defineProperty(window,'isSecureContext',secure);else delete window.isSecureContext;
-            return Math.max(...rendered.getChannelData(0).map((v,i)=>Math.abs(v-input[i])));
-        });
-        check(residual<1e-7,'rendered audio is unchanged after enable then bypass (max error '+residual+')');
-        await page.evaluate(()=>Plugins.toggleWindow('rig_audio',false));
-        await page.waitForTimeout(600);
-        check(await page.locator('[aria-controls="rd-popover-audio"]').innerText()==='Audio: Bypassed ▴','dock displays actual bypass state');
-        await page.evaluate(async()=>{
-            window.beforeNeuralAudio=audioEngine;
-            window.neuralContext=new AudioContext({sampleRate:48000});await neuralContext.resume();
-            const gainNode=neuralContext.createGain();gainNode.gain.value=.05;gainNode.connect(neuralContext.destination);
-            window.neuralOscillator=neuralContext.createOscillator();neuralOscillator.connect(gainNode);neuralOscillator.start();
-            audioEngine={audioContext:neuralContext,gainNode,isStarted:()=>true};
-            UI.setModulation('usb');Plugins.rig_audio.setEnabled(true);
-            RigAudioStudio.applyPreset('weak-dx-neural');
-        });
-        await page.waitForFunction(()=>RigAudioStudio.status().nrEngineEffective==='rnnoise',{},{timeout:20000});
-        check(await page.evaluate(()=>RigAudioStudio.status().routes.some(r=>r.rnnoiseState==='ready'&&r.nonzeroInputSamples>0)),'real bundled RNNoise model processes nonzero receiver audio in an AudioWorklet');
-        check(await page.evaluate(()=>AudioNode.prototype.connect===originalAudioConnect),'Studio RNNoise does not patch the global audio connection prototype');
-        await page.evaluate(()=>UI.setModulation('cw'));
-        await page.waitForFunction(()=>RigAudioStudio.status().mode==='cw');
-        check(await page.evaluate(()=>RigAudioStudio.status().nrEngineEffective==='classic'),'CW uses classical processing rather than speech suppression');
-        await page.evaluate(async()=>{Plugins.rig_audio.setEnabled(false);neuralOscillator.stop();await neuralContext.close();audioEngine=beforeNeuralAudio;UI.setModulation('lsb');});
+        check(await page.locator('[aria-controls="rd-popover-audio"]').count()===0,'dock has no audio filter control');
 
         await page.locator('[aria-controls="rd-popover-more"]').click();
         check(await page.locator('#openwebrx-themes-listbox').isVisible(),'display settings available in More');
@@ -650,25 +598,33 @@ const server=http.createServer((req,res)=>{
         check(await page.locator('.webrx-actual-freq').getAttribute('role')===null,'stock frequency readout attributes are restored');
         check(await page.locator('#removed-decoder').count()===0,'teardown does not recreate a decoder removed by its owner');
         await page.getByRole('button',{name:'RIG Dock',exact:true}).click();await page.waitForSelector('#rig-dock');
-        check(await page.evaluate(()=>!Plugins.rig_audio||!Plugins.rig_audio.isEnabled()),'reenabling dock keeps filter bypassed or unloaded');
         await page.reload();await page.waitForSelector('#rig-dock');
-        check(await page.evaluate(()=>!Plugins.rig_audio),'reload does not load optional filter');
         await page.waitForFunction(()=>document.querySelector('[aria-label="ALE scan bank"]').value==='cothen_candidates');
         check(await page.getByLabel('Scan across HF bands').isChecked()&&await page.getByLabel('Run scanner on server').isChecked(),'saved scan selections restore after a page reload');
         check(await page.evaluate(()=>!window.owrxAleScanner.isRunning()),'restoring scan preferences does not start an unattended scan');
-        const studio=page;const studioErrors=[];
-        studio.on('pageerror',e=>studioErrors.push(e.message));
-        await studio.goto(`http://127.0.0.1:${server.address().port}/?studio-init=1`,{waitUntil:'domcontentloaded'});
-        await studio.waitForSelector('body.rig-dock-active');
-        await studio.waitForFunction(()=>window.studioFinished===true);
-        await studio.waitForSelector('.rd-antennas button');
-        check(await studio.evaluate(()=>!Plugins.audio_filter&&!Plugins.rig_skin&&!window.studioSawFilter),'Optiplex guarded Studio checks are safe when legacy loads are skipped');
-        check(await studio.locator('.rd-antennas button').count()===3,'Optiplex-style async startup continues loading other plugins');
-        check(studioErrors.length===0,'Optiplex-style startup has no browser errors: '+studioErrors.join('; '));
+        // Interface chooser: dock by default, stock and the original RIG skin by choice.
+        await page.locator('[aria-controls="rd-popover-more"]').click();
+        check(await page.locator('#rd-popover-more #ui-select-listbox').inputValue()==='dock','interface chooser is reachable from the dock and shows the dock');
+        await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('#ui-select-listbox').selectOption('stock')]);
+        await page.waitForFunction(()=>window.Plugins&&Plugins.ui_select&&Plugins.ui_select._script_loaded&&document.getElementById('ui-select-listbox'));
+        await page.waitForTimeout(400);
+        check(await page.evaluate(()=>!Plugins.rig_dock&&!Plugins.rig_skin&&!document.getElementById('rig-dock')&&!document.body.classList.contains('rig-dock-active')),'stock choice loads neither the dock nor the RIG skin');
+        check(await page.evaluate(()=>savedProfileNode.parentElement.parentElement.id==='openwebrx-panel-receiver'&&document.getElementById('ui-select-listbox').value==='stock'),'stock choice leaves native controls in place with the chooser in settings');
+        await page.evaluate(()=>UI.setModulation('ale2g'));
+        await page.waitForFunction(()=>document.getElementById('openwebrx-panel-ale2g-message')&&document.getElementById('openwebrx-panel-ale2g-message').style.display!=='none');
+        check(await page.locator('#openwebrx-panel-ale2g-message [aria-label="ALE scan bank"]').count()===1,'ALE plugin panel works with stock controls');
+        await page.evaluate(()=>UI.setModulation('lsb'));
+        await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('#ui-select-listbox').selectOption('rig')]);
+        await page.waitForFunction(()=>window.Plugins&&Plugins.rig_skin&&Plugins.rig_skin._script_loaded&&document.body.classList.contains('theme-rig'));
+        check(await page.evaluate(()=>!Plugins.rig_dock&&!document.getElementById('rig-dock')&&document.getElementById('openwebrx-themes-listbox').value==='rig'),'RIG choice loads the pinned RIG skin and selects its theme without the dock');
+        check(await page.evaluate(()=>Plugins.rig_skin._script_loaded.startsWith('static/plugins/receiver/rig_skin/')),'RIG skin is served from the local pinned copy');
+        await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.evaluate(()=>Plugins.ui_select.choose('dock'))]);
+        await page.waitForSelector('body.rig-dock-active');
+        check(await page.evaluate(()=>!Plugins.rig_skin&&!document.body.classList.contains('theme-rig')&&UI.theme!=='rig'),'returning to the dock unloads the RIG skin and clears its theme');
         await page.addInitScript(()=>{if(location.search.includes('map-test'))window.mapManager={};});
         await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`,{waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>Plugins._type==='map');
-        check(await page.evaluate(()=>!window.owrxRigDockLoader&&!Plugins.rig_dock),'map plugin initialization does not load the receiver dock');
+        check(await page.evaluate(()=>!Plugins.ui_select&&!Plugins.rig_dock&&!Plugins.ale),'map plugin initialization does not load the receiver plugins');
         const slow=await browser.newPage();const slowErrors=[];
         slow.on('pageerror',e=>slowErrors.push(e.message));
         await slow.goto(`http://127.0.0.1:${server.address().port}/?delay-start=1`,{waitUntil:'domcontentloaded'});
@@ -684,6 +640,6 @@ const server=http.createServer((req,res)=>{
         check(slowErrors.length===0,'no errors on delayed startup or early cleanup: '+slowErrors.join('; '));
         await slow.close();
         check(errors.length===0,'no browser errors: '+errors.join('; '));
-        console.log(`${checks} browser checks passed; native OWRX 1.2.126 HTML, UI, demodulator panel, waterfall and plugin APIs; simulated RF transport.`);
+        console.log(`${checks} browser checks passed; native OWRX+ HTML, UI, demodulator panel, waterfall and plugin APIs; simulated RF transport.`);
     }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});

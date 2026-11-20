@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.rsp_antenna;
-    plugin._version = 0.1;
+    plugin._version = 0.2;
     let socket = null;
     let section = null;
     let heading = null;
@@ -162,12 +162,14 @@
             lastRequest = 0;
         }
         const now = Date.now();
-        if (now - lastRequest >= 2500 && send('getantenna')) lastRequest = now;
+        // An SDR without switchable antennas is re-checked only occasionally.
+        const interval = state && state.supported === false ? 60000 : 2500;
+        if (now - lastRequest >= interval && send('getantenna')) lastRequest = now;
         if (pending && now - pending > 7000) {
             pending = 0;
             lastError = 'No response to the change. Check reception and try again.';
         }
-        if (state && lastReply && now - lastReply > 10000) {
+        if (state && state.supported && lastReply && now - lastReply > 10000) {
             state.ready = false;
             lastError = 'Antenna status is stale. Waiting for the server…';
         }

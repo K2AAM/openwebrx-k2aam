@@ -1,9 +1,12 @@
-K2AAM receiver UI fork
-=====================
+K2AAM fork of OpenWebRX+
+========================
 
-This fork of OpenWebRX+ adds a compact RIG dock and a shared decoder tray directly above it. The RF waterfall reserves space for text, image, and digital-radio decoder output. The tray has height/collapse controls and retains native decoder nodes and processing. The branch also includes native recording and frequency-entry fixes.
+This fork tracks upstream OpenWebRX+ and adds:
 
-See **[receiver UI setup and updates](contrib/rig_dock/README.md)**, **[validation](contrib/rig_dock/VALIDATION.md)**, and **[roadmap](contrib/rig_dock/ROADMAP.md)**. The receiver loader starts the dock automatically in this fork; an installer/updater can apply only the browser assets to an existing stock installation.
+- **Receiver plugins** (browser side, optional, chosen in `htdocs/plugins/receiver/init.js`): a compact dock interface, a pinned copy of the original RIG skin, an interface chooser, the ALE panel and scanner, and RSPdx antenna buttons.
+- **Two server-side additions**, the only changes to OpenWebRX+ core: a receive-only ALE backend (ALE 2G mode, decoder chain, bank scanner, reception log) and an RSPdx antenna handler.
+
+See **[plugins](contrib/PLUGINS.md)**, **[deploying on a receiver](contrib/DEPLOY.md)**, **[ALE](contrib/ale/README.md)**, the **[antenna switcher](contrib/antenna/README.md)** and the **[roadmap](contrib/ROADMAP.md)**.
 
 Upstream project documentation follows.
 

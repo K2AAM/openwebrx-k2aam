@@ -1,7 +1,7 @@
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const path = require('node:path');
 const ctx = vm.createContext({});
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../../../htdocs/lib/AleScanner.js'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../../htdocs/plugins/receiver/ale/ale.js'), 'utf8'), ctx);
 const Controller = vm.runInContext('AleScanController', ctx);
 const banks = JSON.parse(JSON.stringify(vm.runInContext('ALE_SCAN_BANKS', ctx)));
 const catalog = require('../channels.json');
@@ -56,7 +56,7 @@ function fixture() {
         UI:{getDemodulator:()=>({}),getFrequency:()=>frequency,getModulation:()=>mode,
             toggleScanner:()=>{},getDemodulatorPanel:()=>panel,
             setFrequency:f=>{frequency=f;return true;},setModulation:m=>{mode=m;}}});
-    vm.runInContext(fs.readFileSync(path.join(__dirname,'../../../htdocs/lib/AleScanner.js'),'utf8'),native);
+    vm.runInContext(fs.readFileSync(path.join(__dirname,'../../../htdocs/plugins/receiver/ale/ale.js'),'utf8'),native);
     const api=vm.runInContext('aleNativeScanApi(()=>{})',native);
     assert.equal(api.fits(7199000),false); // center fits, but USB passband would not
     await api.tune(7102000,false,()=>true,f=>{cancelled=f;});assert.equal(sent.length,0);

@@ -1,3 +1,5 @@
+> These notes record testing done before the ALE front end became a plugin and before the stock-install patch scripts were removed. Installer results below are historical.
+
 # ALE integration 0.5.1 — mobile observer and idle scheduling
 
 The C++ decoder remains 0.1.0; the 0.5 series adds a bounded SQLite reception log and read-only log/export requests. Version 0.5.1 corrects source occupancy while the last browser is absent and restores an opted-in tab to its existing scan after a reload into AM. It does not start scanning after reboot.

@@ -2,44 +2,12 @@
 
 This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one channel at a time. The experimental server scanner steps through enabled bank entries and holds on decoder activity, including with the browser closed. An optional browser scanner remains available. Receiver profiles and RIG Dock assets are not changed by the ALE installer.
 
-## Receiver trial on stock OWRX+ 1.2.126
+## Installing
 
-Build on the receiver so the binary matches its CPU architecture. In this fork's `ale-scanlists` branch:
-
-```bash
-make -C contrib/ale/decoder
-sudo /usr/bin/python3 contrib/ale/install.py --check
-sudo /usr/bin/python3 contrib/ale/install.py --install
-sudo systemctl restart openwebrx
-```
-
-The check is read-only and requires supported versions of the eight native files it patches. The installer refuses edited/unsupported files and existing decoder assets, saves backups, preserves file modes and rolls back failed writes. It does not restart the service. This backend change requires the explicit restart shown above. A versioned receiver bundle URL makes the updated native UI available after reloading the page.
-
-If necessary, supply `--owrx-root /usr/lib/python3/dist-packages/owrx` and `--htdocs /usr/lib/python3/dist-packages/htdocs`. The Python root must have sibling `owrx` and `csdr` packages. Backups/state are in `/var/lib/openwebrx/ale2g` and the executable installs to `/usr/local/bin/owrx-ale`.
-
-## Upgrade an existing 0.1.0–0.5.0 ALE installation
-
-```bash
-git switch ale-scanlists
-git pull --ff-only
-make -C contrib/ale/decoder
-sudo /usr/bin/python3 contrib/ale/install.py --check
-sudo /usr/bin/python3 contrib/ale/install.py --upgrade
-sudo systemctl restart openwebrx
-```
-
-The upgrade checks every installed hash and original backup before writing. It preserves the original stock-file backups so uninstall still restores the pre-ALE installation. New backend files and the native connection handler are checked too, with an original-file backup retained for uninstall. The exact existing RSPdx antenna-switcher connection patch is recognized by removing its known hook and checking the remaining stock-file hash; the generated ALE connection handler retains that hook. Other edits stop the upgrade. Uninstall ALE before uninstalling the antenna switcher, so its original connection hash is restored first. Refresh the receiver after restart. The native receiver bundle and new scanner script use `ale=0.5.1` cache keys; the decoder executable remains version 0.1.0 because its demodulation code is unchanged.
-
-## Apply the accompanying RIG Dock update
-
-ALE's installer updates native ALE files only. For an already installed RIG Dock, also run the following from the same ale-scanlists checkout to apply the compact layout, Fit, frequency selector and manual-control handoff:
-
-```bash
-sudo /usr/bin/python3 contrib/rig_dock/update.py --check
-sudo /usr/bin/python3 contrib/rig_dock/update.py
-```
-
-Reload the receiver after both updates. For a fresh dock install, follow [the RIG instructions](../rig_dock/README.md). Keep the receiver trial on OptiplexSDR before upgrading the remote SDRplay installation.
+The server side ships with this fork; follow [the deployment notes](../DEPLOY.md), which also build
+and install the `owrx-ale` decoder. The browser side is the `ale` receiver plugin
+(`htdocs/plugins/receiver/ale/ale.js`), loaded from `init.js`. It works with the dock, the RIG skin
+and stock controls. See [plugins](../PLUGINS.md).
 
 ## Mobile return and idle scheduling (0.5.1)
 
@@ -104,7 +72,7 @@ The scanner does not resume automatically after an OWRX restart. Its latest 250 
 
 The optional utility frequencies are historical monitoring candidates, not verified current assignments or guaranteed activity. User observations are still needed to choose a productive subset and dwell. Live receiver testing has recovered an ADW sounding on 11226 kHz; the operator also reports PLA and HAW addresses. These are decoded addresses, not independently verified station identities. Hold/resume performance still needs on-air evaluation. **3G ALE is not implemented.**
 
-To restore stock native files, run `sudo /usr/bin/python3 contrib/ale/install.py --uninstall`, then restart openwebrx and reload the page. Later edits stop restoration before any writes. When running the fork itself, its native source already has the integration: build/install the executable and restart the fork; do not run this patch installer against its own checkout.
+To hide ALE in the browser, remove `Plugins.load('ale')` from `init.js`. Removing `/usr/local/bin/owrx-ale` and restarting openwebrx removes the mode from the server.
 
 See [decoder/README.md](decoder/README.md) for file decoding, tests, provenance and limitations.
 
