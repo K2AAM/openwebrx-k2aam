@@ -3,7 +3,11 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.7.0';
+    plugin._version = '0.8.0';
+    // "console" is a second arrangement of the same controls: one receiver
+    // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
+    const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
+    plugin.layout = layout;
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
         'static/plugins/receiver/k2aam_dock/k2aam_dock.js').replace(/[^/]*$/, '');
@@ -13,7 +17,8 @@
     let pendingTune = null, centerChangesAllowed = null, pendingBand = null;
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
     let decoderNodes = [], decoderSignature = '', decoderCollapsed = false, decoderPercent = 28;
-    let decoderIFPreference = null, decoderFit = true;
+    let decoderIFPreference = null, decoderFit = true, decoderSide = true, tabSignature = '';
+    const lastFamilyMode = {};
     let startupNotice, startupHidden, startupVisibility;
     const refs = {};
     const $ = (selector, root) => (root || document).querySelector(selector);
@@ -531,7 +536,7 @@
             button('Full band', () => zoomOutTotal()));
     }
     function buildBandpass(toolbar) {
-        const pop = popover('bandpass', 'Receive bandpass', 'Bandpass ▴'); toolbar.append(pop.trigger);
+        const pop = popover('bandpass', 'Receive bandpass', 'Bandpass ▴'); toolbar.append(pop.trigger); refs.bandpassTrigger = pop.trigger;
         refs.bpLow = number(pop.node, 'Low cut (Hz)');
         refs.bpHigh = number(pop.node, 'High cut (Hz)');
         on(pop.trigger, 'click', () => {
@@ -624,6 +629,18 @@
         settleDecoderPanels();
         const active = decoderNodes.filter(decoderActive);
         refs.decoderTray.hidden = !active.length;
+        const side = layout === 'console' && decoderSide && active.length > 0 && innerWidth >= 900 && innerHeight > 500;
+        const sideWidth = side ? Math.round(Math.min(460, Math.max(340, innerWidth * 0.3))) : 0;
+        const sideChanged = refs.decoderTray.classList.contains('rd-side') !== side ||
+            document.documentElement.style.getPropertyValue('--k2aam-decoder-width') !== sideWidth + 'px';
+        refs.decoderTray.classList.toggle('rd-side', side);
+        // The page body narrows, so the native waterfall and scale keep their own mapping.
+        document.body.classList.toggle('k2aam-side', side);
+        document.documentElement.style.setProperty('--k2aam-decoder-width', sideWidth + 'px');
+        if (refs.decoderSide) {
+            refs.decoderSide.hidden = !(layout === 'console' && innerWidth >= 900 && innerHeight > 500);
+            refs.decoderSide.setAttribute('aria-pressed', String(decoderSide));
+        }
         if (!active.length) return 0;
         const mode = modes().find(item => item.modulation === UI.getModulation());
         refs.decoderTitle.textContent = (mode ? mode.name : 'Decoder') + ' · Decoders';
@@ -645,10 +662,19 @@
         refs.decoderTray.classList.toggle('rd-if-hidden', !showIF);
         refs.decoderIF.setAttribute('aria-pressed', String(showIF));
         refs.decoderIF.hidden = !hasIF;
+        if (side) {
+            refs.decoderBody.hidden = false;
+            refs.decoderFit.hidden = true;
+            if (refs.decoderTray.style.height) refs.decoderTray.style.height = '';
+            if (changedIF || sideChanged) refreshDecoderCanvas();
+            return 0;
+        }
         const dockHeight = panel.getBoundingClientRect().height;
         const top = $('#webrx-canvas-background').getBoundingClientRect().top;
         const available = Math.max(0, window.innerHeight - dockHeight - top);
-        const headerHeight = refs.decoderHeader.getBoundingClientRect().height;
+        // Everything above the output area: the header, plus the console's tabs and mode buttons.
+        const headerHeight = [refs.decoderHeader, refs.decoderTabs, refs.decoderModes].reduce((total, node) =>
+            total + (node && !node.hidden ? node.getBoundingClientRect().height : 0), 0);
         const maximum = Math.max(headerHeight, available - Math.min(80, available * .35));
         const minimumBody = innerWidth <= 620 ? 72 : 48;
         let requestedHeight = available * decoderPercent / 100;
@@ -673,6 +699,7 @@
         adoptScreenshot();
         const adopted = adoptDecoders();
         settleDecoderPanels();
+        renderDecoderTabs(); markCalls();
         const active = decoderNodes.filter(decoderActive);
         const ale = active.find(node => node.id === 'openwebrx-panel-ale2g-message');
         const fitSignature = ale && decoderFit ? all('tbody tr',ale).slice(-6).map(row => row.getBoundingClientRect().height).join(',')+':'+all('.ale-log',ale).map(node=>node.getBoundingClientRect().height).join(',') : '';
@@ -683,6 +710,51 @@
             refreshDecoderCanvas();
         }
     }
+    // Decoder families shown as tabs in the console layout. A tab switches to
+    // the family's last-used mode; only modes this receiver offers are listed.
+    const families = [
+        ['FT8', ['ft8', 'ft4', 'wspr', 'js8', 'jt65', 'jt9', 'fst4', 'fst4w', 'q65', 'msk144']],
+        ['Aircraft', ['hfdl', 'vdl2', 'acars', 'adsb', 'uat']],
+        ['Packet', ['packet', 'ais', 'lora-aprs', 'pocsag', 'page']],
+        ['ALE', ['ale2g']]
+    ];
+    function renderDecoderTabs() {
+        if (!refs.decoderTabs) return;
+        const available = modes(), current = UI.getModulation();
+        const shown = families.map(([title, ids]) => ({title, items: ids.map(id => available.find(mode => mode.modulation === id)).filter(Boolean)}))
+            .filter(family => family.items.length);
+        const signature = JSON.stringify([current, shown.map(family => [family.title, family.items.map(mode => mode.modulation)])]);
+        if (signature === tabSignature) return;
+        tabSignature = signature;
+        refs.decoderTabs.replaceChildren(); refs.decoderModes.replaceChildren();
+        shown.forEach(family => {
+            const selected = family.items.some(mode => mode.modulation === current);
+            if (selected) lastFamilyMode[family.title] = current;
+            const tab = el('button', 'rd-tab', family.title); tab.type = 'button';
+            tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(selected));
+            tab.addEventListener('click', () => safely(() => manualControl(() => {
+                const wanted = family.items.find(mode => mode.modulation === lastFamilyMode[family.title]) || family.items[0];
+                UI.setModulation(wanted.modulation); tick();
+            })));
+            refs.decoderTabs.append(tab);
+            if (selected && family.items.length > 1) family.items.forEach(mode => {
+                const item = el('button', 'rd-button rd-family-mode', mode.name); item.type = 'button';
+                item.setAttribute('aria-pressed', String(mode.modulation === current));
+                item.addEventListener('click', () => safely(() => manualControl(() => { UI.setModulation(mode.modulation); tick(); })));
+                refs.decoderModes.append(item);
+            });
+        });
+        refs.decoderModes.hidden = !refs.decoderModes.children.length;
+    }
+    function markCalls() {
+        // Lets the stylesheet pick out CQ calls in the WSJT list.
+        if (layout !== 'console') return;
+        all('#openwebrx-panel-wsjt-message tbody tr:not(.rd-seen)').forEach(row => {
+            row.classList.add('rd-seen');
+            const cell = $('.message', row);
+            if (cell && /^CQ(\s|$)/.test(cell.textContent.trim())) row.classList.add('rd-cq');
+        });
+    }
     function buildDecoders() {
         try {
             decoderCollapsed = localStorage.getItem('k2aam_dock_decoder_collapsed') === 'true';
@@ -690,6 +762,7 @@
             decoderFit = localStorage.getItem('k2aam_dock_decoder_fit') === 'true' || (localStorage.getItem('k2aam_dock_decoder_fit') === null && savedHeight === null);
             const percent = Number(savedHeight);
             decoderPercent = percent >= 16 && percent <= 65 ? percent : 28;
+            decoderSide = localStorage.getItem('k2aam_dock_decoder_side') !== 'false';
             const showIF = localStorage.getItem('k2aam_dock_decoder_if');
             decoderIFPreference = showIF === null ? null : showIF === 'true';
         } catch (error) { /* Defaults also work without storage. */ }
@@ -726,6 +799,17 @@
         refs.decoderCollapse.title = 'Collapse the output area while decoding continues';
         refs.decoderBody = el('div', 'rd-decoder-body'); refs.decoderBody.id = 'k2aam-decoder-body';
         header.append(refs.decoderTitle, heightLabel, refs.decoderFit, refs.decoderIF, refs.decoderClear, refs.decoderCollapse);
+        if (layout === 'console') {
+            refs.decoderSide = button('Side panel', () => {
+                decoderSide = !decoderSide; saveDecoderSetting('side', decoderSide); reserveSpace(); refreshDecoderCanvas();
+            });
+            refs.decoderSide.title = 'Show decoders beside the waterfall or below it';
+            header.insertBefore(refs.decoderSide, refs.decoderIF);
+            refs.decoderTabs = el('div', 'rd-decoder-tabs'); refs.decoderTabs.setAttribute('role', 'tablist');
+            refs.decoderTabs.setAttribute('aria-label', 'Decoder families');
+            refs.decoderModes = el('div', 'rd-decoder-modes'); refs.decoderModes.hidden = true;
+            tray.append(refs.decoderTabs, refs.decoderModes);
+        }
         tray.append(header, refs.decoderBody);
         on(tray,'toggle',reserveSpace,true);
         // A fixed child of the native animated receiver panel can inherit its
@@ -869,6 +953,12 @@
             if (underlying.length) refs.underlying.value = UI.getUnderlying();
         }
         settleBand();
+        if (layout === 'console' && refs.bandpassTrigger) {
+            const demod = UI.getDemodulator();
+            const width = demod && Number.isFinite(demod.high_cut - demod.low_cut) ? Math.abs(demod.high_cut - demod.low_cut) : 0;
+            const text = width ? 'Filter ' + (width >= 1000 ? (width / 1000).toFixed(1).replace(/\.0$/, '') + ' kHz' : width + ' Hz') + ' ▴' : 'Filter ▴';
+            if (refs.bandpassTrigger.textContent !== text) refs.bandpassTrigger.textContent = text;
+        }
         if (popup === refs.bookmarksPopup) renderBookmarks();
         if (popup === refs.bandsPopup) all('.rd-band', refs.bandsPopup).forEach(item =>
             item.setAttribute('aria-pressed', String(Math.abs(UI.getFrequency() - Number(item.dataset.frequency)) < 1)));
@@ -893,6 +983,11 @@
         buildTune(main);
         const meter = el('span', 'rd-meter'); move($('#openwebrx-smeter'), meter); move($('#openwebrx-smeter-db'), meter);
         meter.title = 'Signal strength'; main.append(meter);
+        if (layout === 'console') {
+            // Frequency with the meter directly beneath it.
+            const tuning = el('div', 'rd-tuning'), frequency = $('.rd-frequency', main);
+            frequency.before(tuning); tuning.append(frequency, meter);
+        }
         const profiles = group(main); profiles.classList.add('rd-profiles');
         native('#openwebrx-sdr-profiles-listbox', profiles, 'Receiver / profile');
         buildMode(main);
@@ -900,11 +995,11 @@
         refs.antennas = group(main); refs.antennas.classList.add('rd-antennas');
         const volume = group(toolbar, 'Volume'); volume.classList.add('rd-volume');
         move($('.openwebrx-mute-button', panel), volume); move($('#openwebrx-panel-volume'), volume);
-        const squelch = group(toolbar, 'Squelch');
+        const squelch = group(toolbar, 'Squelch'); squelch.classList.add('rd-squelch');
         move($('.openwebrx-squelch-auto', panel), squelch); move($('.openwebrx-squelch-slider', panel), squelch);
-        const nr = group(toolbar);
+        const nr = group(toolbar, layout === 'console' ? 'Noise reduction' : undefined); nr.classList.add('rd-nr');
         move($('.openwebrx-nr-toggle', panel), nr); move($('#openwebrx-panel-nr'), nr);
-        const step = group(toolbar, 'Step'); move($('#openwebrx-tuning-step-listbox'), step);
+        const step = group(toolbar, 'Step'); step.classList.add('rd-step'); move($('#openwebrx-tuning-step-listbox'), step);
         step.append(button('−', () => safely(() => manualControl(() => tuneBySteps(-1)))), button('+', () => safely(() => manualControl(() => tuneBySteps(1)))));
         buildBands(toolbar); buildBookmarks(toolbar); buildBandpass(toolbar); buildWaterfall(toolbar);
         const nativeRecord = $('.openwebrx-record-button', panel);
@@ -929,6 +1024,7 @@
         chatWasVisible = !!(chat && getComputedStyle(chat).display !== 'none');
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', false);
         document.body.classList.add('k2aam-dock-active');
+        document.body.classList.toggle('k2aam-console', layout === 'console');
         on(window, 'resize', reserveSpace);
         if (window.visualViewport) on(window.visualViewport, 'resize', reserveSpace);
         on(document, 'pointerdown', event => {
@@ -949,7 +1045,8 @@
             showStartup();
             const deadline = Date.now() + 20000;
             await Promise.race([
-                Plugins._load_style(base + 'k2aam_dock.css?v=' + plugin._version),
+                Plugins._load_style(base + 'k2aam_dock.css?v=' + plugin._version).then(() =>
+                    layout === 'console' ? Plugins._load_style(base + 'k2aam_console.css?v=' + plugin._version) : null),
                 new Promise((resolve, reject) => {
                     styleTimeout = window.setTimeout(() => reject(new Error('K2AAM Dock: stylesheet load timed out; stock controls retained.')), 20000);
                 })
@@ -978,7 +1075,9 @@
             node.classList.remove('rd-decoder-native');
             all('.rd-native-clear', node).forEach(control => control.classList.remove('rd-native-clear'));
         });
-        decoderNodes = []; decoderSignature = '';
+        decoderNodes = []; decoderSignature = ''; tabSignature = '';
+        all('.rd-seen').forEach(row => row.classList.remove('rd-seen', 'rd-cq'));
+        refs.decoderTabs = refs.decoderModes = refs.decoderSide = null;
         closePopup(false);
         clearInterval(timer); if (observer) observer.disconnect();
         if (socket) socket.removeEventListener('message', receive);
@@ -993,7 +1092,8 @@
         }); moved = [];
         if (refs.decoderTray) refs.decoderTray.remove();
         all('.k2aam-dock-ui', panel).forEach(node => node.remove());
-        document.body.classList.remove('k2aam-dock-active');
+        document.body.classList.remove('k2aam-dock-active', 'k2aam-console', 'k2aam-side');
+        document.documentElement.style.removeProperty('--k2aam-decoder-width');
         document.documentElement.style.removeProperty('--k2aam-dock-height');
         document.documentElement.style.removeProperty('--k2aam-decoder-height');
         refs.screenshot = null; refs.actions = null;
