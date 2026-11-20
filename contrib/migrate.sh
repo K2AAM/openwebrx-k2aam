@@ -81,7 +81,7 @@ cmd_check() {
     if [ -d "$PLUGINS/receiver/k2aam_dock" ]; then note "the fork is ALREADY installed (k2aam_dock plugin present)"; fi
     if [ -f "$PLUGINS/receiver/init.js" ]; then
         note "current receiver init.js loads:"
-        grep -E '^[[:space:]]*(await[[:space:]]+)?Plugins\.load' "$PLUGINS/receiver/init.js" | sed 's/^/        /' || note "        (nothing)"
+        grep -E "^[[:space:]]*(await[[:space:]]+)?Plugins\.load[[:space:]]*\(" "$PLUGINS/receiver/init.js" | sed 's/^[[:space:]]*/        /' || note "        (nothing)"
     fi
     local leftover
     for leftover in rsp-antenna-switcher rig-dock ale2g; do
@@ -130,7 +130,12 @@ save_stock_package() {
         return
     fi
     rm -f "$BACKUP"/stock/openwebrx_*.deb
-    ( cd "$BACKUP/stock" && apt-get download openwebrx >/dev/null ) || die "could not download the installed stock package; without it there is no rollback"
+    # apt downloads as its own unprivileged user, which cannot write into the root-only backup.
+    local scratch; scratch=$(mktemp -d)
+    chmod 755 "$scratch"
+    ( cd "$scratch" && apt-get download openwebrx >/dev/null ) || { rm -rf "$scratch"; die "could not download the installed stock package; without it there is no rollback"; }
+    mv "$scratch"/openwebrx_*.deb "$BACKUP/stock/"
+    rm -rf "$scratch"
     local deb; deb=$(ls "$BACKUP"/stock/openwebrx_*.deb | head -1)
     [ "$(dpkg-deb -f "$deb" Version)" = "$(installed_version)" ] || die "the repository's openwebrx ($(dpkg-deb -f "$deb" Version)) is not the installed one ($(installed_version)); run 'sudo apt install --only-upgrade openwebrx', check the receiver, then try again"
     note "$(basename "$deb")"
@@ -168,8 +173,11 @@ build() {
         || { tail -20 "$BACKUP/build/package.log"; die "package build failed; nothing on the receiver was changed (log: $BACKUP/build/package.log)"; }
     FORK_DEB=$(ls "$BACKUP"/build/openwebrx_*_all.deb | head -1)
     note "$(basename "$FORK_DEB")"
-    dpkg-deb -c "$FORK_DEB" | grep -q 'htdocs/plugins/receiver/k2aam_dock/k2aam_dock.js' || die "the built package does not contain the dock plugin"
-    dpkg-deb -c "$FORK_DEB" | grep -q 'owrx/ale_channels.json' || die "the built package does not contain the ALE channel list"
+    # List to a file first: piping straight into "grep -q" ends the pipe early,
+    # which pipefail then reports as a failure even though the file was found.
+    dpkg-deb -c "$FORK_DEB" > "$BACKUP/build/contents.txt"
+    grep -q 'htdocs/plugins/receiver/k2aam_dock/k2aam_dock.js' "$BACKUP/build/contents.txt" || die "the built package does not contain the dock plugin"
+    grep -q 'owrx/ale_channels.json' "$BACKUP/build/contents.txt" || die "the built package does not contain the ALE channel list"
     if [ "$with_ale" = 1 ]; then
         say "Building the ALE decoder"
         make -C "$BACKUP/build/src/contrib/ale/decoder" >"$BACKUP/build/ale.log" 2>&1 \
@@ -236,17 +244,21 @@ cmd_install() {
         exit 1
     fi
     note "web page answers on port $(web_port)"
-    if journalctl -u openwebrx --since "-2min" --no-pager 2>/dev/null | grep -q Traceback; then
+    local recent
+    recent=$(journalctl -u openwebrx --since "-2min" --no-pager 2>/dev/null || true)
+    if grep -q Traceback <<<"$recent"; then
         note "WARNING: the service log shows a Python traceback since the restart:"
-        journalctl -u openwebrx --since "-2min" --no-pager | grep -A6 Traceback | head -20 | sed 's/^/        /'
+        grep -A6 Traceback <<<"$recent" | sed -n '1,20s/^/        /p' || true
     fi
     if [ -f "$BACKUP/plugins.tgz" ]; then
         local old
-        old=$(tar xzOf "$BACKUP/plugins.tgz" plugins/receiver/init.js 2>/dev/null | grep -E '^[[:space:]]*(await[[:space:]]+)?Plugins\.load' | grep -vE "rsp_antenna|rig_skin|rig_dock|audio_filter|mode_selector" || true)
+        old=$(tar xzOf "$BACKUP/plugins.tgz" plugins/receiver/init.js 2>/dev/null | grep -E "^[[:space:]]*(await[[:space:]]+)?Plugins\.load[[:space:]]*\(" | grep -vE "rsp_antenna|rig_skin|rig_dock|audio_filter|mode_selector" || true)
         if [ -n "$old" ]; then
             note "your old init.js also loaded these, which the fork's init.js does not:"
-            printf '%s\n' "$old" | sed 's/^/        /'
+            printf '%s\n' "$old" | sed 's/^[[:space:]]*/        /'
+            note "the old file is saved as $BACKUP/init.js.before"
         fi
+        tar xzOf "$BACKUP/plugins.tgz" plugins/receiver/init.js > "$BACKUP/init.js.before" 2>/dev/null || rm -f "$BACKUP/init.js.before"
     fi
 
     cat <<EOF
