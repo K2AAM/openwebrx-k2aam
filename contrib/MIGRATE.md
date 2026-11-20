@@ -5,7 +5,45 @@ OpenWebRX+ was installed from the apt package and that you reach the machine ove
 OpenWebRX+ never locks you out. Every step that changes something is covered by an automatic
 rollback you arm first.
 
-Do this only after the same package has run on a receiver you can reach (the OptiplexSDR).
+Do this only after the fork has run on a receiver you can reach (the OptiplexSDR).
+
+## The short way: `contrib/migrate.sh`
+
+```bash
+ssh websdrv2
+tmux new -s owrx                                   # survives a dropped SSH session
+git clone --branch ale-scanlists https://github.com/K2AAM/openwebrx-k2aam.git
+cd openwebrx-k2aam
+sudo contrib/migrate.sh check                      # read-only
+sudo contrib/migrate.sh install                    # add --no-ale to skip the ALE decoder
+```
+
+Then test in a browser and, within 30 minutes, run one of:
+
+```bash
+sudo /root/owrx-rollback/migrate.sh confirm        # keep the fork
+sudo /root/owrx-rollback/migrate.sh rollback       # back to stock now
+```
+
+Doing nothing rolls back automatically. `install` does this, in order:
+
+1. Refuses to start unless OpenWebRX+ is an apt package, is running, answers on its web port, and
+   is the same release as the fork.
+2. Backs up `/var/lib/openwebrx` and `/etc/openwebrx` (settings, profiles, users, bookmarks) and
+   the plugins folder with your `init.js`, into `/root/owrx-rollback`.
+3. Downloads the installed stock package as the rollback target.
+4. Builds the fork package and the ALE decoder from the checked-out commit. A failure up to here
+   leaves the receiver untouched.
+5. Moves records left by the old patch installers out of the way, so their uninstallers can never
+   restore files from an older release, and keeps the antenna switcher config.
+6. Starts the rollback timer, installs the fork, holds the package, restarts the service.
+7. Waits for the web page to answer. If it does not, it rolls back immediately.
+
+`rollback --with-data` also restores settings and profiles from the backup; a plain rollback leaves
+them as they are, since the package never modifies them. The script was exercised against stubbed
+system commands, including the failure paths; it has not yet been run on a real receiver.
+
+The rest of this page is the same procedure by hand.
 
 ## 0. Bring the package
 
