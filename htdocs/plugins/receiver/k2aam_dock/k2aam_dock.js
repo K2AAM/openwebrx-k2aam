@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.9.0';
+    plugin._version = '0.9.1';
     // "console" is a second arrangement of the same controls: one receiver
     // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
     const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
@@ -965,6 +965,15 @@
     function reserveSpace() {
         if (!mounted) return;
         document.documentElement.style.setProperty('--k2aam-dock-height', Math.ceil(panel.getBoundingClientRect().height) + 'px');
+        // On phones the waterfall is laid out for the slid-down dock and the raised
+        // dock simply covers its lower part. Sliding the dock down then uncovers
+        // waterfall that is already drawn, instead of an empty area that takes
+        // many seconds to fill.
+        let reserve = panel.getBoundingClientRect().height;
+        if (refs.handle && getComputedStyle(refs.handle).display !== 'none' && !dock.classList.contains('rd-min')) {
+            dock.classList.add('rd-min'); reserve = panel.getBoundingClientRect().height; dock.classList.remove('rd-min');
+        }
+        document.documentElement.style.setProperty('--k2aam-dock-reserve', Math.ceil(reserve) + 'px');
         document.documentElement.style.setProperty('--k2aam-decoder-height', layoutDecoders() + 'px');
         positionPopup();
         if (typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done && typeof scale_canvas !== 'undefined' && scale_canvas && typeof scale_ctx !== 'undefined' && scale_ctx && typeof openwebrx_resize === 'function') openwebrx_resize();
@@ -1167,6 +1176,7 @@
         document.body.classList.remove('k2aam-dock-active', 'k2aam-console', 'k2aam-side');
         document.documentElement.style.removeProperty('--k2aam-decoder-width');
         document.documentElement.style.removeProperty('--k2aam-dock-height');
+        document.documentElement.style.removeProperty('--k2aam-dock-reserve');
         document.documentElement.style.removeProperty('--k2aam-decoder-height');
         refs.screenshot = null; refs.actions = null;
         mounted = false; modeSignature = '';

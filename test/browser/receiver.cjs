@@ -639,12 +639,15 @@ data=read('htdocs/plugins/receiver/init.js');
                 check(await page.locator('#openwebrx-digimode-canvas-container').isHidden(),'phone defaults to full-width decoder results with an optional IF view');
             }
             check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`no horizontal overflow ${width}×${height}`);
-            check(await page.evaluate(()=>document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().top+1),`waterfall reserved ${width}×${height}`);
+            // Phones lay the waterfall out for the slid-down dock; the raised dock covers its lower part.
+            check(await page.evaluate(()=>{const css=n=>parseInt(getComputedStyle(document.documentElement).getPropertyValue(n))||0,reserve=css('--k2aam-dock-reserve'),
+                dock=Math.ceil(document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().height),phone=innerWidth<=620||innerHeight<=500;
+                return reserve>0&&(phone?reserve<=dock&&reserve<=110:reserve===dock)&&document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=innerHeight-reserve-css('--k2aam-decoder-height')+1;}),`waterfall reserved ${width}×${height}`);
             check(await page.evaluate(()=>{
                 const tray=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
                 return tray.left>=0&&tray.right<=innerWidth+1&&tray.top>=document.getElementById('webrx-canvas-background').getBoundingClientRect().top-1&&
                     tray.bottom<=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().top+1&&
-                    document.getElementById('webrx-page-container').getBoundingClientRect().bottom<=tray.top+1;
+                    (innerWidth<=620||innerHeight<=500||document.getElementById('webrx-page-container').getBoundingClientRect().bottom<=tray.top+1);
             }),`decoder and main waterfall fit the viewport ${width}×${height}`);
             await page.locator('[aria-controls="rd-popover-mode"]').click();
             const bounds=await page.locator('#rd-popover-mode').boundingBox();
@@ -838,6 +841,7 @@ data=read('htdocs/plugins/receiver/init.js');
         check(!conPhone.side&&!conPhone.overflow&&conPhone.shown.length===0&&conPhone.hidden.length===0,'phone console shows tuning, tags, volume, squelch, noise reduction and profile, with the rest behind Controls '+JSON.stringify(conPhone));
         check(conPhone.dock<=340,'phone console strip is at most 340 px tall ('+conPhone.dock+')');
         await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone-up.png')});
+        const pageBefore=await con.evaluate(()=>Math.round(document.getElementById('webrx-page-container').getBoundingClientRect().height));
         // Sliding the strip down leaves the frequency and meter only.
         const stripState=()=>con.evaluate(()=>{const h=q=>{const n=document.querySelector('#k2aam-dock '+q);return n?Math.round(n.getBoundingClientRect().height):-1;};
             return {min:document.getElementById('k2aam-dock').classList.contains('rd-min'),dock:Math.round(document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height),
@@ -846,8 +850,11 @@ data=read('htdocs/plugins/receiver/init.js');
                 expanded:document.querySelector('#k2aam-dock .rd-handle').getAttribute('aria-expanded'),saved:localStorage.getItem('k2aam_dock_minimized')};});
         await con.locator('#k2aam-dock .rd-handle').click();await con.waitForTimeout(450);
         const slid=await stripState();
+        check(await con.evaluate(h=>Math.abs(document.getElementById('webrx-page-container').getBoundingClientRect().height-h)<=1,pageBefore),'sliding the strip does not resize the waterfall, so nothing has to be redrawn');
         check(slid.min&&slid.dock<=110&&slid.freq>0&&slid.meter>0&&slid.rest===0&&slid.handle>=16&&slid.expanded==='false'&&slid.saved==='true'&&Math.abs(slid.reserved-slid.dock)<=1,'tapping the handle slides the phone strip down to frequency and meter '+JSON.stringify(slid));
         await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone-down.png')});
+        check(await con.evaluate(()=>{const w=document.getElementById('webrx-page-container').getBoundingClientRect(),t=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
+            return Math.abs(w.bottom-t.top)<=2;}),'with the strip down the waterfall reaches the decoder list');
         const grab=await con.locator('#k2aam-dock .rd-handle').boundingBox();
         await con.mouse.move(grab.x+grab.width/2,grab.y+grab.height/2);await con.mouse.down();await con.mouse.move(grab.x+grab.width/2,grab.y-60,{steps:4});await con.mouse.up();await con.waitForTimeout(450);
         const raised=await stripState();
