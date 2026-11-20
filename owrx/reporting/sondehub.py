@@ -85,7 +85,7 @@ class Worker(threading.Thread):
                     key = (spot["serial"], spot["frame"])
                     if key not in seen:
                         buffer.append(spot)
-                        seen.append(key)
+                        seen.add(key)
 
                 # Flush accumulated spots periodically
                 now = time.monotonic()
@@ -238,7 +238,7 @@ class SondehubReporter(FilteredReporter):
                 self.selfErrorCounter.inc()
 
     # Check field value for validity
-    def isValidValue(field, value):
+    def isValidValue(self, field, value):
         # Convert value to floating point
         try:
             value = float(value)
@@ -270,7 +270,7 @@ class SondehubReporter(FilteredReporter):
         subtype = data["subtype"].upper() if "subtype" in data else ""
         family  = ""
         # Guess device family
-        if type.startsWith("DFM") or ":DFM" in subtype:
+        if type.startswith("DFM") or ":DFM" in subtype:
             family = "DFM"
         elif "rs41_mainboard" in data:
             family = "RS41"
