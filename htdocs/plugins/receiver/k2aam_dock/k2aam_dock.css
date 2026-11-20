@@ -288,3 +288,19 @@ body.k2aam-dock-active [data-toggle-panel='openwebrx-panel-log'] {
 .rd-popover .rd-bookmark-add { width: 100%; margin-bottom: 8px; min-height: 36px; }
 /* Native dialogs (add bookmark, search) open above the dock. */
 body.k2aam-dock-active .openwebrx-dialog { z-index: 1300; }
+
+/* Phone grab handle: swipe down or tap to leave only the frequency and meter. */
+#k2aam-dock .rd-handle { display: none; }
+@media (max-width: 620px), (max-height: 500px) {
+    /* Sits in the dock's top padding, clear of the step buttons at either end, so it adds no height. */
+    #k2aam-dock .rd-handle { display: block; position: absolute; top: 0; left: 25%; right: 25%; z-index: 1; height: 16px; padding: 0;
+        border: 0; background: none; color: inherit; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; }
+    #k2aam-dock .rd-handle::before { content: ''; display: block; width: 44px; height: 4px; margin: 3px auto 0; border-radius: 2px;
+        background: currentColor; opacity: .45; }
+    #k2aam-dock .rd-handle:focus-visible::before { opacity: 1; }
+    /* The doubled id outranks every per-control phone rule in both layouts. */
+    #k2aam-dock#k2aam-dock.rd-min > .rd-main > :not(.rd-tuning):not(.rd-frequency):not(.rd-meter),
+    #k2aam-dock#k2aam-dock.rd-min > .rd-toolbar > *,
+    #k2aam-dock#k2aam-dock.rd-min > .rd-footer { display: none !important; }
+    #k2aam-dock#k2aam-dock.rd-min { padding-bottom: 8px; }
+}

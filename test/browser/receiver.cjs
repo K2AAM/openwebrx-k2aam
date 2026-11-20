@@ -628,6 +628,11 @@ data=read('htdocs/plugins/receiver/init.js');
                 await page.locator('#k2aam-dock .rd-expand').click();
                 check(await page.locator('#k2aam-dock .openwebrx-record-button').isVisible()&&await page.locator('#k2aam-dock .rd-profiles select').isVisible(),'Controls reveals the full phone dock');
                 check(await page.evaluate(()=>document.querySelector('.rd-nudge')&&getComputedStyle(document.querySelector('.rd-expand')).display!=='none'),'toggle remains available when expanded');
+                await page.locator('#k2aam-dock .rd-handle').click();await page.waitForTimeout(450);
+                check(await page.evaluate(()=>{const h=q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height;
+                    return h('.rd-frequency .webrx-actual-freq')>0&&h('#openwebrx-smeter')>0&&h('[aria-controls="rd-popover-mode"]')===0&&h('.rd-volume')===0&&h('.rd-footer')===0&&document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height<=100;}),'the dock slides down to frequency and meter on a phone');
+                await page.locator('#k2aam-dock .rd-handle').click();await page.waitForTimeout(450);
+                check(await page.locator('#k2aam-dock .rd-profiles select').isVisible(),'and comes back with its controls');
                 await page.evaluate(()=>{UI.setModulation('ft8');
                     $('#openwebrx-panel-wsjt-message').wsjtMessagePanel().pushMessage({mode:'FT8',timestamp:Date.now(),db:-14,dt:.2,freq:7074000,msg:'CQ K2AAM FN33'});});
                 await page.waitForSelector('#k2aam-decoder-tray',{state:'visible'});
@@ -832,6 +837,29 @@ data=read('htdocs/plugins/receiver/init.js');
             hidden:['.openwebrx-record-button','[aria-controls="rd-popover-waterfall"]'].filter(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height>0)}));
         check(!conPhone.side&&!conPhone.overflow&&conPhone.shown.length===0&&conPhone.hidden.length===0,'phone console shows tuning, tags, volume, squelch, noise reduction and profile, with the rest behind Controls '+JSON.stringify(conPhone));
         check(conPhone.dock<=340,'phone console strip is at most 340 px tall ('+conPhone.dock+')');
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone-up.png')});
+        // Sliding the strip down leaves the frequency and meter only.
+        const stripState=()=>con.evaluate(()=>{const h=q=>{const n=document.querySelector('#k2aam-dock '+q);return n?Math.round(n.getBoundingClientRect().height):-1;};
+            return {min:document.getElementById('k2aam-dock').classList.contains('rd-min'),dock:Math.round(document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height),
+                reserved:parseInt(getComputedStyle(document.documentElement).getPropertyValue('--k2aam-dock-height')),freq:h('.rd-frequency .webrx-actual-freq'),meter:h('#openwebrx-smeter'),
+                rest:['[aria-controls="rd-popover-mode"]','#openwebrx-panel-volume','.rd-profiles select','.rd-expand','.rd-footer'].map(h).reduce((a,b)=>a+b,0),handle:h('.rd-handle'),
+                expanded:document.querySelector('#k2aam-dock .rd-handle').getAttribute('aria-expanded'),saved:localStorage.getItem('k2aam_dock_minimized')};});
+        await con.locator('#k2aam-dock .rd-handle').click();await con.waitForTimeout(450);
+        const slid=await stripState();
+        check(slid.min&&slid.dock<=110&&slid.freq>0&&slid.meter>0&&slid.rest===0&&slid.handle>=16&&slid.expanded==='false'&&slid.saved==='true'&&Math.abs(slid.reserved-slid.dock)<=1,'tapping the handle slides the phone strip down to frequency and meter '+JSON.stringify(slid));
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone-down.png')});
+        const grab=await con.locator('#k2aam-dock .rd-handle').boundingBox();
+        await con.mouse.move(grab.x+grab.width/2,grab.y+grab.height/2);await con.mouse.down();await con.mouse.move(grab.x+grab.width/2,grab.y-60,{steps:4});await con.mouse.up();await con.waitForTimeout(450);
+        const raised=await stripState();
+        check(!raised.min&&raised.rest>0&&raised.expanded==='true'&&Math.abs(raised.dock-conPhone.dock)<=2&&Math.abs(raised.reserved-raised.dock)<=1,'swiping the handle up brings the strip back '+JSON.stringify(raised));
+        const grab2=await con.locator('#k2aam-dock .rd-handle').boundingBox();
+        await con.mouse.move(grab2.x+grab2.width/2,grab2.y+grab2.height/2);await con.mouse.down();await con.mouse.move(grab2.x+grab2.width/2,grab2.y+70,{steps:4});await con.mouse.up();await con.waitForTimeout(450);
+        check((await stripState()).min,'swiping the handle down hides the controls');
+        await con.locator('#k2aam-dock .rd-handle').click();await con.waitForTimeout(450);
+        check(!(await stripState()).min,'a tap brings them back');
+        await con.setViewportSize({width:1280,height:800});await con.waitForTimeout(300);
+        check(await con.evaluate(()=>getComputedStyle(document.querySelector('#k2aam-dock .rd-handle')).display==='none'),'the handle is a phone control only');
+        await con.setViewportSize({width:390,height:844});await con.waitForTimeout(400);
         check(await con.evaluate(()=>{const b=document.getElementById('k2aam-decoder-body').getBoundingClientRect(),d=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect(),r=document.querySelector('#openwebrx-panel-wsjt-message tbody tr').getBoundingClientRect();
             return b.height>=60&&b.bottom<=d.top+1&&r.bottom<=d.top+1&&r.height>0;}),'on a phone the decode list keeps room below the tabs and above the strip');
         await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone.png')});

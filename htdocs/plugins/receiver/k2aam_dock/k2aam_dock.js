@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.8.2';
+    plugin._version = '0.9.0';
     // "console" is a second arrangement of the same controls: one receiver
     // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
     const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
@@ -342,6 +342,58 @@
         }
         toggle.title = 'Show or hide the full set of receiver controls';
         apply(); main.append(toggle);
+    }
+    function buildHandle() {
+        // Phones: a grab handle on top of the dock. Swipe it down (or tap it) to
+        // leave only the frequency and meter, so the waterfall gets the screen.
+        let minimized = false, startY = null, animation = null;
+        try { minimized = localStorage.getItem('k2aam_dock_minimized') === 'true'; } catch (error) { /* Optional preference. */ }
+        const handle = refs.handle = el('button', 'rd-handle');
+        handle.type = 'button';
+        const height = () => panel.getBoundingClientRect().height;
+        function apply() {
+            dock.classList.toggle('rd-min', minimized);
+            handle.setAttribute('aria-expanded', String(!minimized));
+            handle.setAttribute('aria-label', minimized ? 'Show receiver controls' : 'Hide receiver controls');
+            handle.title = minimized ? 'Swipe up or tap to show the controls' : 'Swipe down or tap to hide the controls';
+        }
+        function set(next) {
+            if (next === minimized) return;
+            minimized = next;
+            try { localStorage.setItem('k2aam_dock_minimized', String(minimized)); } catch (error) { /* Optional preference. */ }
+            closePopup(false);
+            if (animation) { animation.cancel(); animation = null; }
+            const still = !panel.animate || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+            const before = height();
+            apply();
+            const distance = Math.abs(height() - before);
+            if (still || distance < 1) return reserveSpace();
+            if (minimized) {
+                // Slide the full dock down first, then drop the hidden rows.
+                dock.classList.remove('rd-min');
+                const slide = animation = panel.animate([{ transform: 'none' }, { transform: 'translateY(' + distance + 'px)' }], { duration: 180, easing: 'ease-in' });
+                const done = () => { if (animation !== slide) return; animation = null; if (mounted) { apply(); reserveSpace(); } };
+                slide.onfinish = done; slide.oncancel = done;
+            } else {
+                reserveSpace();
+                const slide = animation = panel.animate([{ transform: 'translateY(' + distance + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'ease-out' });
+                slide.onfinish = slide.oncancel = () => { if (animation === slide) animation = null; };
+            }
+        }
+        on(handle, 'pointerdown', event => { if (!event.button) { startY = event.clientY; try { handle.setPointerCapture(event.pointerId); } catch (error) { /* Not capturable. */ } } });
+        on(handle, 'pointerup', event => {
+            if (startY === null) return;
+            const moved = event.clientY - startY; startY = null;
+            if (Math.abs(moved) >= 16) { handle.dataset.swiped = '1'; set(moved > 0); }
+        });
+        on(handle, 'pointercancel', () => { startY = null; });
+        on(handle, 'click', () => {
+            // The click that ends a swipe has already been handled.
+            if (handle.dataset.swiped) { delete handle.dataset.swiped; return; }
+            set(!minimized);
+        });
+        listeners.push(() => { if (animation) animation.cancel(); });
+        apply(); dock.prepend(handle);
     }
     function buildTune(main) {
         const frequency = group(main);
@@ -1011,6 +1063,7 @@
         native('#openwebrx-sdr-profiles-listbox', profiles, 'Receiver / profile');
         buildMode(main);
         buildExpand(main);
+        buildHandle();
         refs.antennas = group(main, layout === 'console' ? 'Antenna' : undefined); refs.antennas.classList.add('rd-antennas');
         const volume = group(toolbar, 'Volume'); volume.classList.add('rd-volume');
         move($('.openwebrx-mute-button', panel), volume); move($('#openwebrx-panel-volume'), volume);
