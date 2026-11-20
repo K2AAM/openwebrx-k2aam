@@ -6,7 +6,7 @@ load is decided by `htdocs/plugins/receiver/init.js`; none is forced by the fork
 | Plugin | What it does | Needs |
 | --- | --- | --- |
 | `ui_select` | Adds an **Interface** choice to the receiver settings: Dock, RIG skin or Stock. Loads the chosen one. | — |
-| `rig_dock` | The K2AAM dock: compact controls along the bottom and a shared decoder tray above them. | — |
+| `k2aam_dock` | The K2AAM dock: compact controls along the bottom and a shared decoder tray above them. | — |
 | `rig_skin` | The original RIG skin by SV1DOD / HB9ISH, pinned at 0.10.20 and unmodified. See its `PROVENANCE.md`. | — |
 | `ale` | ALE message panel, bank scanner controls, reception log and CSV export. | This fork's ALE backend |
 | `rsp_antenna` | Antenna buttons for an RSPdx. | This fork's antenna handler and a config file |
@@ -23,7 +23,7 @@ To change what a first-time visitor gets, set this in `init.js` before `Plugins.
 window.ui_select_config = { default: 'stock' };   // 'dock', 'rig' or 'stock'
 ```
 
-To offer only one interface, drop `ui_select` and load `rig_dock` or `rig_skin` directly.
+To offer only one interface, drop `ui_select` and load `k2aam_dock` or `rig_skin` directly.
 
 ## ALE
 
@@ -40,7 +40,7 @@ controls they appear as an **Antenna** section.
 
 ## Using a plugin on stock OpenWebRX+
 
-`rig_dock`, `rig_skin` and `ui_select` do not depend on the fork. Copy the plugin's
+`k2aam_dock`, `rig_skin` and `ui_select` do not depend on the fork. Copy the plugin's
 folder into the receiver's `htdocs/plugins/receiver/` and add its `Plugins.load(...)` line to
 `init.js` there.
 

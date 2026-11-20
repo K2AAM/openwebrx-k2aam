@@ -1,6 +1,6 @@
 # Experimental ALE 2G receiver and channel banks
 
-This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one channel at a time. The experimental server scanner steps through enabled bank entries and holds on decoder activity, including with the browser closed. An optional browser scanner remains available. Receiver profiles and RIG Dock assets are not changed by the ALE installer.
+This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one channel at a time. The experimental server scanner steps through enabled bank entries and holds on decoder activity, including with the browser closed. An optional browser scanner remains available. Receiver profiles and K2AAM Dock assets are not changed by the ALE installer.
 
 ## Installing
 

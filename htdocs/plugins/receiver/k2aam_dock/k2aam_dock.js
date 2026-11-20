@@ -1,12 +1,12 @@
-/* RIG Dock: compact receiver dock and shared decoder tray for OpenWebRX+.
- * Optional plugin; load with Plugins.load('rig_dock') or through ui_select. MIT License. */
+/* K2AAM Dock: compact receiver dock and shared decoder tray for OpenWebRX+.
+ * Optional plugin; load with Plugins.load('k2aam_dock') or through ui_select. MIT License. */
 (function () {
     'use strict';
-    const plugin = Plugins.rig_dock;
+    const plugin = Plugins.k2aam_dock;
     plugin._version = '0.6.0';
     plugin.no_css = true;
     const base = ((document.currentScript && document.currentScript.src) ||
-        'static/plugins/receiver/rig_dock/rig_dock.js').replace(/[^/]*$/, '');
+        'static/plugins/receiver/k2aam_dock/k2aam_dock.js').replace(/[^/]*$/, '');
     let panel, dock, popup, opener, observer, socket, timer;
     let cpu = null, clients = null, moved = [], listeners = [];
     let modeSignature = '', mounted = false, chatWasVisible = false;
@@ -40,16 +40,16 @@
             startupHidden.style.setProperty('visibility', 'hidden', 'important');
         }
         startupNotice = el('div', '', 'Connecting to receiver…');
-        startupNotice.id = 'rig-dock-startup'; startupNotice.setAttribute('role', 'status');
+        startupNotice.id = 'k2aam-dock-startup'; startupNotice.setAttribute('role', 'status');
         startupNotice.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; z-index: 1050;' +
             'box-sizing: border-box; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));' +
             'background: #111c2c; color: #b8d5e8; border-top: 1px solid #4b6481;' +
             'font: 13px system-ui, -apple-system, sans-serif; pointer-events: none;';
-        document.body.classList.add('rig-dock-loading');
+        document.body.classList.add('k2aam-dock-loading');
         document.body.append(startupNotice);
     }
     function hideStartup() {
-        document.body.classList.remove('rig-dock-loading');
+        document.body.classList.remove('k2aam-dock-loading');
         if (startupNotice) startupNotice.remove();
         if (startupHidden) {
             if (startupVisibility[0]) startupHidden.style.setProperty('visibility', startupVisibility[0], startupVisibility[1]);
@@ -78,7 +78,7 @@
     }
     function move(node, target) {
         if (!node) return null;
-        const marker = document.createComment('rig-dock original position');
+        const marker = document.createComment('k2aam-dock original position');
         node.before(marker);
         moved.push({node, marker});
         target.append(node);
@@ -146,7 +146,7 @@
         if (focus) focus.focus();
     }
     function popover(id, title, label) {
-        const node = el('section', 'rig-dock-ui rd-popover');
+        const node = el('section', 'k2aam-dock-ui rd-popover');
         node.id = 'rd-popover-' + id;
         node.hidden = true;
         node.setAttribute('role', 'dialog');
@@ -324,10 +324,10 @@
     function buildExpand(main) {
         // Phones start with frequency, mode and volume only; the rest is one tap away.
         let expanded = false;
-        try { expanded = localStorage.getItem('rig_dock_expanded') === 'true'; } catch (error) { /* Optional preference. */ }
+        try { expanded = localStorage.getItem('k2aam_dock_expanded') === 'true'; } catch (error) { /* Optional preference. */ }
         const toggle = refs.expand = button('', () => {
             expanded = !expanded;
-            try { localStorage.setItem('rig_dock_expanded', String(expanded)); } catch (error) { /* Optional preference. */ }
+            try { localStorage.setItem('k2aam_dock_expanded', String(expanded)); } catch (error) { /* Optional preference. */ }
             apply(); closePopup(false); reserveSpace();
         }, 'rd-expand');
         function apply() {
@@ -463,7 +463,7 @@
         return changed;
     }
     function saveDecoderSetting(key, value) {
-        try { localStorage.setItem('rig_dock_decoder_' + key, String(value)); } catch (error) { /* Optional preference. */ }
+        try { localStorage.setItem('k2aam_dock_decoder_' + key, String(value)); } catch (error) { /* Optional preference. */ }
     }
     function clearDecoders() {
         decoderNodes.filter(decoderActive).forEach(node => {
@@ -559,16 +559,16 @@
     }
     function buildDecoders() {
         try {
-            decoderCollapsed = localStorage.getItem('rig_dock_decoder_collapsed') === 'true';
-            const savedHeight = localStorage.getItem('rig_dock_decoder_height');
-            decoderFit = localStorage.getItem('rig_dock_decoder_fit') === 'true' || (localStorage.getItem('rig_dock_decoder_fit') === null && savedHeight === null);
+            decoderCollapsed = localStorage.getItem('k2aam_dock_decoder_collapsed') === 'true';
+            const savedHeight = localStorage.getItem('k2aam_dock_decoder_height');
+            decoderFit = localStorage.getItem('k2aam_dock_decoder_fit') === 'true' || (localStorage.getItem('k2aam_dock_decoder_fit') === null && savedHeight === null);
             const percent = Number(savedHeight);
             decoderPercent = percent >= 16 && percent <= 65 ? percent : 28;
-            const showIF = localStorage.getItem('rig_dock_decoder_if');
+            const showIF = localStorage.getItem('k2aam_dock_decoder_if');
             decoderIFPreference = showIF === null ? null : showIF === 'true';
         } catch (error) { /* Defaults also work without storage. */ }
-        const tray = refs.decoderTray = el('section', 'rig-dock-ui rd-decoder-tray');
-        tray.id = 'rig-decoder-tray'; tray.hidden = true;
+        const tray = refs.decoderTray = el('section', 'k2aam-dock-ui rd-decoder-tray');
+        tray.id = 'k2aam-decoder-tray'; tray.hidden = true;
         tray.setAttribute('aria-label', 'Decoder output');
         const header = refs.decoderHeader = el('div', 'rd-decoder-header');
         refs.decoderTitle = el('strong', 'rd-decoder-title', 'Decoders');
@@ -596,9 +596,9 @@
             decoderCollapsed = !decoderCollapsed;
             saveDecoderSetting('collapsed', decoderCollapsed); reserveSpace(); refreshDecoderCanvas();
         });
-        refs.decoderCollapse.setAttribute('aria-controls', 'rig-decoder-body');
+        refs.decoderCollapse.setAttribute('aria-controls', 'k2aam-decoder-body');
         refs.decoderCollapse.title = 'Collapse the output area while decoding continues';
-        refs.decoderBody = el('div', 'rd-decoder-body'); refs.decoderBody.id = 'rig-decoder-body';
+        refs.decoderBody = el('div', 'rd-decoder-body'); refs.decoderBody.id = 'k2aam-decoder-body';
         header.append(refs.decoderTitle, heightLabel, refs.decoderFit, refs.decoderIF, refs.decoderClear, refs.decoderCollapse);
         tray.append(header, refs.decoderBody);
         on(tray,'toggle',reserveSpace,true);
@@ -683,8 +683,8 @@
     }
     function reserveSpace() {
         if (!mounted) return;
-        document.documentElement.style.setProperty('--rig-dock-height', Math.ceil(panel.getBoundingClientRect().height) + 'px');
-        document.documentElement.style.setProperty('--rig-decoder-height', layoutDecoders() + 'px');
+        document.documentElement.style.setProperty('--k2aam-dock-height', Math.ceil(panel.getBoundingClientRect().height) + 'px');
+        document.documentElement.style.setProperty('--k2aam-decoder-height', layoutDecoders() + 'px');
         positionPopup();
         if (typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done && typeof scale_canvas !== 'undefined' && scale_canvas && typeof scale_ctx !== 'undefined' && scale_ctx && typeof openwebrx_resize === 'function') openwebrx_resize();
     }
@@ -752,11 +752,11 @@
     function mount() {
         if (mounted) return;
         panel = $('#openwebrx-panel-receiver');
-        if (!panel || typeof UI === 'undefined') throw new Error('RIG Dock: receiver controls were not found.');
+        if (!panel || typeof UI === 'undefined') throw new Error('K2AAM Dock: receiver controls were not found.');
         if (Plugins.rig_skin && Plugins.rig_skin._script_loaded)
-            throw new Error('RIG Dock: the RIG skin is loaded. Choose one interface and reload.');
+            throw new Error('K2AAM Dock: the RIG skin is loaded. Choose one interface and reload.');
         mounted = true;
-        dock = el('div', 'rig-dock-ui'); dock.id = 'rig-dock';
+        dock = el('div', 'k2aam-dock-ui'); dock.id = 'k2aam-dock';
         panel.append(dock);
         const main = el('div', 'rd-main'), toolbar = el('div', 'rd-toolbar'), footer = el('div', 'rd-footer');
         dock.append(main, toolbar, footer);
@@ -797,7 +797,7 @@
         const chat = $('#openwebrx-panel-log');
         chatWasVisible = !!(chat && getComputedStyle(chat).display !== 'none');
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', false);
-        document.body.classList.add('rig-dock-active');
+        document.body.classList.add('k2aam-dock-active');
         on(window, 'resize', reserveSpace);
         if (window.visualViewport) on(window.visualViewport, 'resize', reserveSpace);
         on(document, 'pointerdown', event => {
@@ -812,22 +812,22 @@
     }
     plugin.init = async function () {
         if (mounted) return true;
-        const returning = $('#rig-dock-return'); if (returning) returning.remove();
+        const returning = $('#k2aam-dock-return'); if (returning) returning.remove();
         let styleTimeout;
         try {
             showStartup();
             const deadline = Date.now() + 20000;
             await Promise.race([
-                Plugins._load_style(base + 'rig_dock.css?v=' + plugin._version),
+                Plugins._load_style(base + 'k2aam_dock.css?v=' + plugin._version),
                 new Promise((resolve, reject) => {
-                    styleTimeout = window.setTimeout(() => reject(new Error('RIG Dock: stylesheet load timed out; stock controls retained.')), 20000);
+                    styleTimeout = window.setTimeout(() => reject(new Error('K2AAM Dock: stylesheet load timed out; stock controls retained.')), 20000);
                 })
             ]);
             clearTimeout(styleTimeout);
             // Config, modes/features, profiles, and the native 50 ms demodulator
             // restart can finish independently. The canvas alone is not readiness.
             while (!receiverReady()) {
-                if (Date.now() > deadline) throw new Error('RIG Dock: receiver startup timed out; stock controls retained. Reload after the receiver connects.');
+                if (Date.now() > deadline) throw new Error('K2AAM Dock: receiver startup timed out; stock controls retained. Reload after the receiver connects.');
                 await new Promise(resolve => window.setTimeout(resolve, 100));
             }
             mount(); return true;
@@ -861,16 +861,16 @@
             }
         }); moved = [];
         if (refs.decoderTray) refs.decoderTray.remove();
-        all('.rig-dock-ui', panel).forEach(node => node.remove());
-        document.body.classList.remove('rig-dock-active');
-        document.documentElement.style.removeProperty('--rig-dock-height');
-        document.documentElement.style.removeProperty('--rig-decoder-height');
+        all('.k2aam-dock-ui', panel).forEach(node => node.remove());
+        document.body.classList.remove('k2aam-dock-active');
+        document.documentElement.style.removeProperty('--k2aam-dock-height');
+        document.documentElement.style.removeProperty('--k2aam-decoder-height');
         refs.screenshot = null; refs.actions = null;
         mounted = false; modeSignature = '';
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', true);
         if (typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done && typeof scale_canvas !== 'undefined' && scale_canvas && typeof scale_ctx !== 'undefined' && scale_ctx && typeof openwebrx_resize === 'function') openwebrx_resize();
         if (showReturn) {
-            const back = el('button', 'rd-return', 'RIG Dock'); back.id = 'rig-dock-return'; back.type = 'button';
+            const back = el('button', 'rd-return', 'K2AAM Dock'); back.id = 'k2aam-dock-return'; back.type = 'button';
             back.addEventListener('click', () => plugin.init()); document.body.append(back);
         }
     };

@@ -1,10 +1,10 @@
-# RIG Dock
+# K2AAM Dock (`k2aam_dock`)
 
 A receiver plugin that replaces the floating receiver panel with a compact dock along the bottom of
-the page and a shared decoder tray directly above it. Source: `htdocs/plugins/receiver/rig_dock/`.
+the page and a shared decoder tray directly above it. Source: `htdocs/plugins/receiver/k2aam_dock/`.
 
 Load it through the interface chooser (`Plugins.load('ui_select')`, the default in this fork) or on
-its own with `Plugins.load('rig_dock')`. It cannot run together with the RIG skin.
+its own with `Plugins.load('k2aam_dock')`. It cannot run together with the RIG skin.
 
 ## Controls
 
