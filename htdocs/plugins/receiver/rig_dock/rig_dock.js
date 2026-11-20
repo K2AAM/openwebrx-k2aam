@@ -14,7 +14,7 @@
     let decoderObserver, decoderFrame = null, decoderCanvasTimer = null;
     let decoderNodes = [], decoderSignature = '', decoderCollapsed = false, decoderPercent = 28;
     let decoderIFPreference = null, decoderFit = true;
-    let startupStyle, startupNotice;
+    let startupNotice, startupHidden, startupVisibility;
     const refs = {};
     const $ = (selector, root) => (root || document).querySelector(selector);
     const all = (selector, root) => Array.from((root || document).querySelectorAll(selector));
@@ -32,23 +32,30 @@
     function showStartup() {
         // The main stylesheet may still be downloading on a cold connection.
         // Visibility keeps native panel measurements and initialization intact.
-        startupStyle = el('style');
-        startupStyle.textContent = 'body.rig-dock-loading #openwebrx-panels-container { visibility: hidden !important; }' +
-            '#rig-dock-startup { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1050;' +
-            'box-sizing: border-box; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));' +
-            'background: #111c2c; color: #b8d5e8; border-top: 1px solid #4b6481;' +
-            'font: 13px system-ui, -apple-system, sans-serif; pointer-events: none; }';
+        // Inline styles are used because WebKit can defer applying a new
+        // <style> rule while another stylesheet is still loading.
+        startupHidden = $('#openwebrx-panels-container');
+        if (startupHidden) {
+            startupVisibility = [startupHidden.style.getPropertyValue('visibility'), startupHidden.style.getPropertyPriority('visibility')];
+            startupHidden.style.setProperty('visibility', 'hidden', 'important');
+        }
         startupNotice = el('div', '', 'Connecting to receiver…');
         startupNotice.id = 'rig-dock-startup'; startupNotice.setAttribute('role', 'status');
-        document.head.append(startupStyle);
+        startupNotice.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; z-index: 1050;' +
+            'box-sizing: border-box; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));' +
+            'background: #111c2c; color: #b8d5e8; border-top: 1px solid #4b6481;' +
+            'font: 13px system-ui, -apple-system, sans-serif; pointer-events: none;';
         document.body.classList.add('rig-dock-loading');
         document.body.append(startupNotice);
     }
     function hideStartup() {
         document.body.classList.remove('rig-dock-loading');
         if (startupNotice) startupNotice.remove();
-        if (startupStyle) startupStyle.remove();
-        startupNotice = startupStyle = null;
+        if (startupHidden) {
+            if (startupVisibility[0]) startupHidden.style.setProperty('visibility', startupVisibility[0], startupVisibility[1]);
+            else startupHidden.style.removeProperty('visibility');
+        }
+        startupNotice = startupHidden = null;
     }
     function receiverReady() {
         const profiles = $('#openwebrx-sdr-profiles-listbox');
