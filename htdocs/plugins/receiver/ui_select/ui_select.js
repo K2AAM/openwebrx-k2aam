@@ -1,7 +1,7 @@
 /*
  * ui_select: lets each visitor choose the receiver interface.
  *
- *   dock   K2AAM dock UI (plugin rig_dock)
+ *   dock   K2AAM dock UI (plugin k2aam_dock)
  *   rig    original RIG skin by SV1DOD / HB9ISH (plugin rig_skin)
  *   stock  unmodified OpenWebRX+ controls
  *
@@ -18,7 +18,7 @@
     plugin._version = '0.1.0';
     plugin.no_css = true;
     const KEY = 'ui_select_choice';
-    const choices = [['dock', 'Dock'], ['rig', 'RIG skin'], ['stock', 'Stock']];
+    const choices = [['dock', 'K2AAM Dock'], ['rig', 'RIG skin'], ['stock', 'Stock']];
     const valid = name => choices.some(choice => choice[0] === name);
 
     function current() {
@@ -72,7 +72,7 @@
         } else {
             // A saved "rig" theme has no stylesheet unless the skin is loaded.
             if (typeof UI !== 'undefined' && UI.theme === 'rig') UI.setTheme('default');
-            if (active === 'dock') await Plugins.load('rig_dock');
+            if (active === 'dock') await Plugins.load('k2aam_dock');
         }
         return true;
     };

@@ -9,17 +9,19 @@
 
 ## Dock interface
 
-- Done: compact phone dock, touch step buttons, one-line ALE rows on phones.
-- Next: S-meter beside the frequency, band and bookmark buttons, restyle the native volume/squelch/NR controls.
-- Review against a real receiver on a phone and a desktop; the browser tests simulate the receiver.
-- Consider renaming the plugin from `rig_dock`, since "RIG" is the name of the original skin.
+- Done: compact phone and landscape layouts, touch step buttons, band buttons, bookmarks, S-meter
+  beside the frequency, restyled native controls, renamed to `k2aam_dock`.
+- Next: review all of it on a real phone and receiver; the browser tests simulate the receiver.
 
 ## ALE
 
-- 2G: qualify the decoder on live signals, add service-start resume and scan fault recovery.
-- 3G (MIL-STD-188-141 Appendix C): new decoder; not started.
+- Done: plugin front end, key-only scanner control, resume after restart, address watchlist,
+  one-line phone rows.
+- Next: qualify the 2G decoder on live signals (needs the receiver), scan fault recovery.
+- Later: 3G (MIL-STD-188-141 Appendix C), a new decoder; not started.
 - Server side stays a small patch to OpenWebRX+ core (`modes.py`, `feature.py`, `dsp.py`,
-  `connection.py` plus new `owrx/ale*.py` and `csdr/*/ale.py`).
+  `connection.py`, `__main__.py`, one default and one settings checkbox, plus new `owrx/ale*.py`
+  and `csdr/*/ale.py`).
 
 ## Antenna switcher
 

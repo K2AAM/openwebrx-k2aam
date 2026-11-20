@@ -156,6 +156,13 @@ Support and info:       https://groups.io/g/openwebrx
 
     Services.start()
 
+    # Resume an ALE server scan that was running when the service last stopped
+    try:
+        from owrx.ale_scan import resume_saved
+        resume_saved()
+    except Exception:
+        logger.exception("Cannot schedule ALE scan resume")
+
     # Instantiate and start GPS location updater
     GpsUpdater.init()
 
@@ -186,6 +193,12 @@ Support and info:       https://groups.io/g/openwebrx
         logger.info("Ready to serve requests.")
         server.serve_forever()
     except SignalException:
+        pass
+
+    try:
+        from owrx.ale_scan import prepare_shutdown
+        prepare_shutdown()
+    except Exception:
         pass
 
     WebSocketConnection.closeAll()

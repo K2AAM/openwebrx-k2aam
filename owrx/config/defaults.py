@@ -358,6 +358,7 @@ defaultConfig = PropertyLayer(
     key_locked=False,
     magic_key="memagic",
     allow_center_freq_changes=False,
+    ale_scan_public=False,
     allow_audio_recording=True,
     allow_remote_config=True,
     allow_chat=True,

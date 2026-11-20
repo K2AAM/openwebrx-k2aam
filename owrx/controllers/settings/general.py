@@ -141,6 +141,10 @@ class GeneralSettingsController(SettingsFormController):
                     "allow_center_freq_changes",
                     "Allow users to change center frequency",
                 ),
+                CheckboxInput(
+                    "ale_scan_public",
+                    "Allow anyone to start and stop the ALE scanner (otherwise the magic key is required)",
+                ),
                 TextInput(
                     "magic_key",
                     "Magic key",

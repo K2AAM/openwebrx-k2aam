@@ -55,27 +55,27 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         cold.on('pageerror',e=>coldErrors.push(e.message));
         const coldConsole=[];cold.on('console',m=>{if(['error','warning'].includes(m.type()))coldConsole.push(m.type()+': '+m.text());});
         let releaseStyles;
-        await cold.route('**/rig_dock.css?*',async route=>{
+        await cold.route('**/k2aam_dock.css?*',async route=>{
             await new Promise(resolve=>{releaseStyles=resolve;});await route.continue();
         });
         await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
-        await cold.waitForFunction(()=>window.Plugins?.rig_dock?._version);
-        await cold.waitForSelector('#rig-dock-startup');
-        const coldState=await cold.evaluate(()=>JSON.stringify({body:document.body.className,notice:!!document.getElementById('rig-dock-startup'),
+        await cold.waitForFunction(()=>window.Plugins?.k2aam_dock?._version);
+        await cold.waitForSelector('#k2aam-dock-startup');
+        const coldState=await cold.evaluate(()=>JSON.stringify({body:document.body.className,notice:!!document.getElementById('k2aam-dock-startup'),
             panel:getComputedStyle(document.getElementById('openwebrx-panel-receiver')).visibility,
             container:getComputedStyle(document.getElementById('openwebrx-panels-container')).visibility,
             links:Array.from(document.querySelectorAll('link[rel=stylesheet]')).map(l=>l.getAttribute('href')),
             plugins:Object.keys(Plugins).filter(k=>Plugins[k]&&typeof Plugins[k]==='object'&&'_script_loaded' in Plugins[k]).map(k=>k+'='+Plugins[k]._script_loaded)}));
         check(await cold.locator('#openwebrx-panel-receiver').isHidden(),'cold load hides floating native controls while the stylesheet is delayed '+coldState+' console='+JSON.stringify(coldConsole)+' errors='+JSON.stringify(coldErrors));
         check(await cold.locator('#openwebrx-panel-status').isHidden(),'cold load hides the floating status panel before dock CSS arrives');
-        check(await cold.evaluate(()=>!document.getElementById('rig-dock')),'cold load waits for the dock stylesheet');
-        const stylesLoaded=cold.waitForResponse(r=>r.url().includes('rig_dock.css'));
+        check(await cold.evaluate(()=>!document.getElementById('k2aam-dock')),'cold load waits for the dock stylesheet');
+        const stylesLoaded=cold.waitForResponse(r=>r.url().includes('k2aam_dock.css'));
         releaseStyles();await stylesLoaded;
         await cold.evaluate(()=>{
             window.startupPaints=[];
             function capture(){
-                if(document.body.classList.contains('rig-dock-active')&&!document.body.classList.contains('rig-dock-loading')){
-                    startupPaints.push({frequency:document.querySelector('#rig-dock .webrx-actual-freq').textContent,
+                if(document.body.classList.contains('k2aam-dock-active')&&!document.body.classList.contains('k2aam-dock-loading')){
+                    startupPaints.push({frequency:document.querySelector('#k2aam-dock .webrx-actual-freq').textContent,
                         profile:document.getElementById('openwebrx-sdr-profiles-listbox').value});
                 }
                 if(startupPaints.length<3)requestAnimationFrame(capture);
@@ -84,45 +84,45 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         });
         await cold.evaluate(()=>coldStartup.config());
         await cold.waitForTimeout(200);
-        check(await cold.evaluate(()=>waterfall_setup_done&&!UI.getDemodulator()&&!document.getElementById('rig-dock')),'cold load waits for receiver data after the waterfall canvas exists');
+        check(await cold.evaluate(()=>waterfall_setup_done&&!UI.getDemodulator()&&!document.getElementById('k2aam-dock')),'cold load waits for receiver data after the waterfall canvas exists');
         await cold.evaluate(()=>coldStartup.modes());await cold.waitForTimeout(120);
-        check(await cold.evaluate(()=>!UI.getDemodulator()&&!document.getElementById('rig-dock')),'cold load waits for supported mode features');
+        check(await cold.evaluate(()=>!UI.getDemodulator()&&!document.getElementById('k2aam-dock')),'cold load waits for supported mode features');
         await cold.evaluate(()=>coldStartup.features());await cold.waitForTimeout(120);
-        check(await cold.evaluate(()=>!!UI.getDemodulator()&&!document.getElementById('rig-dock')),'cold load waits for the profile list after the demodulator starts');
+        check(await cold.evaluate(()=>!!UI.getDemodulator()&&!document.getElementById('k2aam-dock')),'cold load waits for the profile list after the demodulator starts');
         await cold.evaluate(()=>coldStartup.profiles());
-        await cold.waitForSelector('body.rig-dock-active:not(.rig-dock-loading)');
-        check(await cold.locator('#rig-dock .webrx-actual-freq').textContent()==='7.074000 MHz','cold load reveals the configured frequency instead of 0 Hz');
-        check(await cold.locator('#rig-dock #openwebrx-sdr-profiles-listbox').inputValue()==='sdrplay|40m','cold load reveals the selected profile');
+        await cold.waitForSelector('body.k2aam-dock-active:not(.k2aam-dock-loading)');
+        check(await cold.locator('#k2aam-dock .webrx-actual-freq').textContent()==='7.074000 MHz','cold load reveals the configured frequency instead of 0 Hz');
+        check(await cold.locator('#k2aam-dock #openwebrx-sdr-profiles-listbox').inputValue()==='sdrplay|40m','cold load reveals the selected profile');
         await cold.waitForFunction(()=>startupPaints.length>=3);
         check(await cold.evaluate(()=>startupPaints.every(p=>p.frequency==='7.074000 MHz'&&p.profile==='sdrplay|40m')),'every initial visible mobile frame has a populated frequency and profile');
-        check(await cold.locator('#rig-dock-startup').count()===0,'connecting notice is removed after receiver readiness');
-        await cold.waitForSelector('#rig-decoder-tray');
+        check(await cold.locator('#k2aam-dock-startup').count()===0,'connecting notice is removed after receiver readiness');
+        await cold.waitForSelector('#k2aam-decoder-tray');
         check(await cold.evaluate(()=>{
-            const tray=document.getElementById('rig-decoder-tray'),r=tray.getBoundingClientRect();
+            const tray=document.getElementById('k2aam-decoder-tray'),r=tray.getBoundingClientRect();
             return !document.getElementById('openwebrx-panel-receiver').contains(tray)&&Math.abs(r.left)<1&&Math.abs(r.width-innerWidth)<1;
         }),'cold mobile decoder tray spans the viewport outside the native receiver panel');
         await cold.evaluate(()=>document.getElementById('openwebrx-panel-receiver').style.setProperty('transform','translate3d(80px,0,0)','important'));
         check(await cold.evaluate(()=>{
-            const r=document.getElementById('rig-decoder-tray').getBoundingClientRect();
+            const r=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
             return Math.abs(r.left)<1&&Math.abs(r.width-innerWidth)<1;
         }),'native receiver transforms cannot move or clip the decoder tray');
-        await cold.evaluate(()=>{Plugins.rig_dock.destroy(false);});
-        check(await cold.locator('#rig-decoder-tray').count()===0,'restoring stock controls removes the separate decoder tray');
+        await cold.evaluate(()=>{Plugins.k2aam_dock.destroy(false);});
+        check(await cold.locator('#k2aam-decoder-tray').count()===0,'restoring stock controls removes the separate decoder tray');
         check(await cold.evaluate(()=>savedDecoderNodes.every(n=>n.parentElement===savedDecoderParents.get(n))),'cold-load decoder nodes return to their native positions');
-        await cold.unroute('**/rig_dock.css?*');
+        await cold.unroute('**/k2aam_dock.css?*');
         await cold.goto(`http://127.0.0.1:${server.address().port}/?cold-start=1`,{waitUntil:'domcontentloaded'});
-        await cold.waitForSelector('#rig-dock-startup');
+        await cold.waitForSelector('#k2aam-dock-startup');
         await cold.evaluate(()=>{coldStartup.modes();coldStartup.features();coldStartup.profiles();});
         await cold.waitForTimeout(150);
-        check(await cold.evaluate(()=>!document.getElementById('rig-dock')),'profiles and modes arriving first still wait for the initial receiver config');
+        check(await cold.evaluate(()=>!document.getElementById('k2aam-dock')),'profiles and modes arriving first still wait for the initial receiver config');
         await cold.evaluate(()=>coldStartup.config());
-        await cold.waitForSelector('body.rig-dock-active:not(.rig-dock-loading)');
-        check(await cold.locator('#rig-dock .webrx-actual-freq').textContent()==='7.074000 MHz','reverse startup message order settles without a refresh');
-        await cold.route('**/rig_dock.css?*',route=>route.abort());
+        await cold.waitForSelector('body.k2aam-dock-active:not(.k2aam-dock-loading)');
+        check(await cold.locator('#k2aam-dock .webrx-actual-freq').textContent()==='7.074000 MHz','reverse startup message order settles without a refresh');
+        await cold.route('**/k2aam_dock.css?*',route=>route.abort());
         await cold.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
-        await cold.waitForFunction(()=>window.Plugins?.rig_dock?._script_loaded&&!document.body.classList.contains('rig-dock-loading'));
-        check(await cold.locator('#openwebrx-panel-receiver').isVisible()&&await cold.locator('#rig-dock').count()===0,'stylesheet failure restores usable stock controls');
-        check(await cold.locator('#rig-dock-startup').count()===0,'stylesheet failure removes the connecting notice');
+        await cold.waitForFunction(()=>window.Plugins?.k2aam_dock?._script_loaded&&!document.body.classList.contains('k2aam-dock-loading'));
+        check(await cold.locator('#openwebrx-panel-receiver').isVisible()&&await cold.locator('#k2aam-dock').count()===0,'stylesheet failure restores usable stock controls');
+        check(await cold.locator('#k2aam-dock-startup').count()===0,'stylesheet failure removes the connecting notice');
         check(coldErrors.length===0,'no errors during cold mobile startup: '+coldErrors.join('; '));
         if(process.argv.includes('--startup-only')){
             console.log(`${checks} ${useWebKit?'WebKit':'Chromium'} cold mobile startup checks passed; simulated RF transport.`);
@@ -130,7 +130,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         }
         await page.bringToFront();
         await page.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
-        await page.waitForSelector('body.rig-dock-active');
+        await page.waitForSelector('body.k2aam-dock-active');
         await page.waitForSelector('.rd-antennas button');
         check(await page.evaluate(()=>Plugins.ui_select.current()==='dock'&&!Plugins.rig_skin&&!Plugins.audio_filter),'dock is the default interface and the RIG skin is not loaded with it');
         check(await page.evaluate(()=>savedProfileNode===document.getElementById('openwebrx-sdr-profiles-listbox')&&savedFrequencyNode===document.querySelector('.webrx-actual-freq')),'native profile and frequency nodes retained');
@@ -143,11 +143,11 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         check(await page.evaluate(()=>document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().top+1),'waterfall space reserved');
         await loadScreenshotPlugin(page);
         await page.waitForTimeout(600);
-        const record=page.locator('#rig-dock .openwebrx-record-button');
+        const record=page.locator('#k2aam-dock .openwebrx-record-button');
         check(await record.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'Screenshot plugin cannot clip the RIG Record label');
         check(await page.locator('#screenshot-btn').count()===1,'Screenshot plugin keeps one working PIC control');
-        await page.locator('#rig-dock #screenshot-btn').waitFor({state:'visible'});
-        const screenshotDownload=page.waitForEvent('download');await page.locator('#rig-dock #screenshot-btn').click();
+        await page.locator('#k2aam-dock #screenshot-btn').waitFor({state:'visible'});
+        const screenshotDownload=page.waitForEvent('download');await page.locator('#k2aam-dock #screenshot-btn').click();
         const shot=await screenshotDownload,shotBytes=fs.readFileSync(await shot.path());
         check(shotBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&await page.evaluate(()=>screenshotCalls===1),'the retained upstream PIC handler downloads one PNG');
         await page.evaluate(()=>{ws.antennaSupported=false;ws.send(JSON.stringify({type:'getantenna'}));});
@@ -155,10 +155,10 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         for(const [width,height] of [[1918,900],[1024,768],[390,844],[375,667]]) {
             await page.setViewportSize({width,height});
             // Phones start compact; these controls live behind the Controls toggle.
-            if(width<=620)await page.evaluate(()=>{const b=document.querySelector('#rig-dock .rd-expand');if(b.getAttribute('aria-expanded')==='false')b.click();});
+            if(width<=620)await page.evaluate(()=>{const b=document.querySelector('#k2aam-dock .rd-expand');if(b.getAttribute('aria-expanded')==='false')b.click();});
             await page.waitForTimeout(550);
             check(await page.evaluate(()=>{
-                const nodes=[document.querySelector('#rig-dock .openwebrx-record-button'),document.querySelector('#rig-dock #screenshot-btn'),document.querySelector('[aria-controls="rd-popover-more"]')];
+                const nodes=[document.querySelector('#k2aam-dock .openwebrx-record-button'),document.querySelector('#k2aam-dock #screenshot-btn'),document.querySelector('[aria-controls="rd-popover-more"]')];
                 const rects=nodes.map(n=>n.getBoundingClientRect());
                 return nodes.every((n,i)=>n.scrollWidth<=n.clientWidth+1&&rects[i].left>=0&&rects[i].right<=innerWidth+1)&&rects.every((r,i)=>!i||r.left>=rects[i-1].right+4);
             }),`Record, Screenshot and More fit without overlap without antenna controls ${width}×${height}`);
@@ -169,22 +169,22 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.evaluate(()=>{ws.antennaSupported=true;ws.send(JSON.stringify({type:'getantenna'}));});
         await page.waitForFunction(()=>!document.querySelector('.rd-antennas').hidden);
         const keyboardScreenshot=page.waitForEvent('download');
-        await page.locator('#rig-dock #screenshot-btn').focus();await page.locator('#rig-dock #screenshot-btn').press('Enter');
+        await page.locator('#k2aam-dock #screenshot-btn').focus();await page.locator('#k2aam-dock #screenshot-btn').press('Enter');
         await keyboardScreenshot;
         check(await page.evaluate(()=>screenshotCalls===2),'Screenshot remains keyboard accessible without duplicate downloads');
         const early=await browser.newPage({viewport:{width:1024,height:768}});
         let releaseEarlyStyle,styleQueued;
         const earlyStyleRequest=new Promise(resolve=>{styleQueued=resolve;});
-        await early.route('**/rig_dock.css?*',async route=>{await new Promise(resolve=>{releaseEarlyStyle=resolve;styleQueued();});await route.continue();});
+        await early.route('**/k2aam_dock.css?*',async route=>{await new Promise(resolve=>{releaseEarlyStyle=resolve;styleQueued();});await route.continue();});
         await early.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
         await earlyStyleRequest;await loadScreenshotPlugin(early);
-        check(await early.evaluate(()=>!document.getElementById('rig-dock')&&!!originalScreenshot),'Screenshot can initialize before the dock mounts');
-        releaseEarlyStyle();await early.waitForSelector('#rig-dock #screenshot-btn');
-        check(await early.evaluate(()=>document.querySelector('#rig-dock #screenshot-btn')===originalScreenshot),'early PIC initialization retains the original handler node');
-        const earlyDownload=early.waitForEvent('download');await early.locator('#rig-dock #screenshot-btn').click();await earlyDownload;
+        check(await early.evaluate(()=>!document.getElementById('k2aam-dock')&&!!originalScreenshot),'Screenshot can initialize before the dock mounts');
+        releaseEarlyStyle();await early.waitForSelector('#k2aam-dock #screenshot-btn');
+        check(await early.evaluate(()=>document.querySelector('#k2aam-dock #screenshot-btn')===originalScreenshot),'early PIC initialization retains the original handler node');
+        const earlyDownload=early.waitForEvent('download');await early.locator('#k2aam-dock #screenshot-btn').click();await earlyDownload;
         check(await early.evaluate(()=>screenshotCalls===1),'an early-loaded Screenshot plugin works after adoption');
-        await early.evaluate(()=>Plugins.rig_dock.destroy(false));
-        check(await early.evaluate(()=>document.getElementById('screenshot-btn')===originalScreenshot&&!originalScreenshot.closest('#rig-dock')&&originalScreenshot.textContent==='PIC'),'stock fallback restores the original PIC node and label');
+        await early.evaluate(()=>Plugins.k2aam_dock.destroy(false));
+        check(await early.evaluate(()=>document.getElementById('screenshot-btn')===originalScreenshot&&!originalScreenshot.closest('#k2aam-dock')&&originalScreenshot.textContent==='PIC'),'stock fallback restores the original PIC node and label');
         const stockShot=early.waitForEvent('download');await early.locator('#screenshot-btn').click();await stockShot;
         check(await early.evaluate(()=>screenshotCalls===2),'stock PIC handler still works after dock teardown');
         // Keep this auxiliary page until browser teardown for single-process Chromium.
@@ -207,7 +207,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         check(await page.evaluate(()=>!audioEngine.recording),'stop clears native recording state');
         await page.evaluate(()=>{ws.reply({type:'config',value:{allow_audio_recording:false}});UI.toggleRecording(true);});
         check(await record.isHidden()&&await page.evaluate(()=>!audioEngine.recording),'server recording permission still applies');
-        check(await page.locator('#rig-dock #screenshot-btn').isVisible(),'Screenshot remains available when audio recording is disabled');
+        check(await page.locator('#k2aam-dock #screenshot-btn').isVisible(),'Screenshot remains available when audio recording is disabled');
         await page.evaluate(()=>ws.reply({type:'config',value:{allow_audio_recording:true}}));
         await page.locator('#openwebrx-sdr-profiles-listbox').selectOption('sdrplay|20m');
         check(await page.evaluate(()=>profilesChanged===1),'native profile handler works after move');
@@ -324,7 +324,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.evaluate(()=>{ws.reply({type:'cpuusage',value:.13});ws.reply({type:'clients',value:2});});
         await page.waitForTimeout(600);
         check(await page.locator('.rd-footer').innerText().then(s=>s.includes('CPU 13%')&&s.includes('2 listeners')),'footer shows live server status');
-        check(await page.evaluate(()=>savedDecoderNodes.every(node=>node.parentElement.id==='rig-decoder-body')),'all native decoder panel nodes are retained in one tray');
+        check(await page.evaluate(()=>savedDecoderNodes.every(node=>node.parentElement.id==='k2aam-decoder-body')),'all native decoder panel nodes are retained in one tray');
         const families={
             ft8:'wsjt-message',ft4:'wsjt-message',wspr:'wsjt-message',js8:'js8-message',
             packet:'packet-message',ais:'packet-message',pocsag:'pocsag-message',page:'page-message',
@@ -339,12 +339,12 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             await page.evaluate(mode=>UI.setModulation(mode),mode);
             await page.waitForFunction(suffix=>{
                 const node=document.getElementById('openwebrx-panel-'+suffix);
-                return node&&node.parentElement.id==='rig-decoder-body'&&node.style.display!=='none'&&
-                    !document.getElementById('rig-decoder-tray').hidden;
+                return node&&node.parentElement.id==='k2aam-decoder-body'&&node.style.display!=='none'&&
+                    !document.getElementById('k2aam-decoder-tray').hidden;
             },suffix,{timeout:10000,polling:50}).catch(async error=>{
                 console.error('Decoder mode failed:',mode,suffix,await page.evaluate(suffix=>{
                     const node=document.getElementById('openwebrx-panel-'+suffix);
-                    return {mode:UI.getModulation(),node:node&&{style:node.getAttribute('style'),classes:node.className,parent:node.parentElement.id,movement:node.movement},tray:document.getElementById('rig-decoder-tray').outerHTML.slice(0,500)};
+                    return {mode:UI.getModulation(),node:node&&{style:node.getAttribute('style'),classes:node.className,parent:node.parentElement.id,movement:node.movement},tray:document.getElementById('k2aam-decoder-tray').outerHTML.slice(0,500)};
                 },suffix));throw error;
             });
             check(await page.locator('#openwebrx-panel-'+suffix).isVisible(),`${mode} output is in the decoder tray`);
@@ -376,7 +376,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         check(csvDownload.suggestedFilename().endsWith('.csv')&&csvText.includes('Frequency_Hz'),'CSV download has frequency units and column headers');
         check(csvText.includes('"' + "'=SUM(1,2)" + '"')&&csvText.includes('Radio ""text"", line'),'CSV quotes radio text and neutralizes spreadsheet formulas');
         check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='export').length)===2,'CSV export downloads every retained page');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('.ale-heard-list li').count()===2,'Clear removes displayed messages without erasing the durable station summary');
         await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
         check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'heard stations and CSV controls fit phone width');
@@ -390,7 +390,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         check(await page.evaluate(()=>!alePanel.serverScanner.pending),'log failures do not change scanner control state');
         await page.evaluate(()=>{ws.logFailure=false;});
 
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'ALE output uses the shared Clear action');
         await page.evaluate(()=>{
             for (const [source,freq] of [['ADW',15043000],['JNR',11226000],['OFF',5708000]])
@@ -407,11 +407,23 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             const cells=[...document.querySelector('#openwebrx-panel-ale2g-message tbody tr').children];
             return head.every((th,i)=>Math.abs(th.getBoundingClientRect().left-cells[i].getBoundingClientRect().left)<1);
         }),'all ALE column headings align with their data');
+        await page.evaluate(()=>{document.querySelector('.ale-log').open=true;});
+        await page.getByLabel('ALE addresses to watch').fill('jnr, zz*');
+        check(await page.evaluate(()=>[...document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr')].map(r=>r.children[2].textContent+':'+r.classList.contains('ale-watched')).join()==='ADW:false,JNR:true,OFF:false'),'watchlist highlights matching addresses only');
+        await page.getByLabel('Show only watched ALE addresses').check();
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr:visible').count()===1,'Only watched hides other decodes without deleting them');
+        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',timestamp:Date.now(),freq:8992000,source:'ZZ9',destination:'',event:'sounding_this_was',message:'[Sounding THIS WAS] [From: ZZ9]'}));
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr:visible').count()===2,'a new decode from a watched wildcard address is shown and highlighted');
+        await page.evaluate(()=>document.querySelector('#openwebrx-panel-ale2g-message tbody tr:last-child').remove());
+        await page.getByLabel('Show only watched ALE addresses').uncheck();
+        await page.getByLabel('ALE addresses to watch').fill('');
+        check(await page.evaluate(()=>document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr.ale-watched').length===0&&JSON.parse(localStorage.getItem('owrx_ale_watch_v1')).list===''),'clearing the watchlist removes highlights and is remembered');
+        await page.evaluate(()=>{document.querySelector('.ale-log').open=false;});
         await page.getByRole('button',{name:'Fit',exact:true}).click();
         // Fit starts enabled on a fresh browser; exercise toggling back on explicitly.
         if(await page.getByRole('button',{name:'Fit',exact:true}).getAttribute('aria-pressed')==='false') await page.getByRole('button',{name:'Fit',exact:true}).click();
         await page.screenshot({path:path.join(root,'test-results/ale-compact-desktop.png')});
-        const compactHeight=await page.locator('#rig-decoder-tray').evaluate(n=>n.getBoundingClientRect().height);
+        const compactHeight=await page.locator('#k2aam-decoder-tray').evaluate(n=>n.getBoundingClientRect().height);
         check(compactHeight<340,'Fit bounds a few ALE rows instead of reserving a large empty pane');
         await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);
         check(await page.locator('#openwebrx-panel-ale2g-message').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'ALE rows fit the phone width');
@@ -422,7 +434,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await phoneRow.locator('td').first().click();
         await page.screenshot({path:path.join(root,'test-results/ale-compact-mobile.png')});
         await page.setViewportSize({width:1440,height:900});
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         await page.locator('.ale-scan-controls > summary').click();
         check(await page.getByLabel('Run scanner on server').isChecked(),'server scanning is the default');
         await page.getByLabel('Run scanner on server').uncheck();
@@ -486,11 +498,11 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         const savedScan = await page.evaluate(()=>JSON.parse(localStorage.getItem('owrx_ale_scan_preferences_v1')).sdrplay);
         check(savedScan.bank==='cothen_candidates'&&savedScan.across&&savedScan.server,'scan bank, engine and scope are saved per receiver in this browser');
         await page.evaluate(()=>UI.setModulation('ale2g'));
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_mod:'usb'}}));
         await page.waitForTimeout(150);
         await page.evaluate(()=>UI.setModulation('ft8'));
-        await page.waitForFunction(()=>!document.getElementById('rig-decoder-tray').hidden);
+        await page.waitForFunction(()=>!document.getElementById('k2aam-decoder-tray').hidden);
         await page.evaluate(()=>{
             const panel=$('#openwebrx-panel-wsjt-message').wsjtMessagePanel();
             window.savedWsjt=panel;
@@ -498,31 +510,31 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         });
         check(await page.locator('#openwebrx-panel-wsjt-message a[href="https://www.qrz.com/db/K2AAM"]').count()===30,'native decoded callsign links survive moving the panel');
         check(await page.locator('#openwebrx-panel-wsjt-message tbody').evaluate(n=>n.scrollHeight>n.clientHeight),'decoder messages scroll inside the bounded pane');
-        const originalHeight=(await page.locator('#rig-decoder-tray').boundingBox()).height;
+        const originalHeight=(await page.locator('#k2aam-decoder-tray').boundingBox()).height;
         await page.getByRole('slider',{name:'Decoder pane height',exact:true}).fill('55');
-        check((await page.locator('#rig-decoder-tray').boundingBox()).height>originalHeight,'decoder height can be adjusted');
+        check((await page.locator('#k2aam-decoder-tray').boundingBox()).height>originalHeight,'decoder height can be adjusted');
         check(await page.evaluate(()=>{
-            const tray=document.getElementById('rig-decoder-tray').getBoundingClientRect();
+            const tray=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
             const dock=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect();
             return document.getElementById('webrx-page-container').getBoundingClientRect().bottom<=tray.top+1&&tray.bottom<=dock.top+1;
-        }),'decoder tray reserves waterfall space directly above the RIG dock');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Collapse',exact:true}).click();
-        check(await page.locator('#rig-decoder-body').isHidden(),'decoder tray collapses without hiding native panel state');
+        }),'decoder tray reserves waterfall space directly above the K2AAM Dock');
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Collapse',exact:true}).click();
+        check(await page.locator('#k2aam-decoder-body').isHidden(),'decoder tray collapses without hiding native panel state');
         await page.evaluate(()=>savedWsjt.pushMessage({mode:'FT8',timestamp:Date.now(),db:-9,dt:.1,freq:7074000,msg:'CQ K2AAM FN33'}));
         check(await page.locator('#openwebrx-panel-wsjt-message tbody tr').count()===31&&await page.evaluate(()=>UI.getModulation()==='ft8'),'decoding continues while the tray is collapsed');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Expand',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Expand',exact:true}).click();
         check(await page.evaluate(()=>savedWsjt===$('#openwebrx-panel-wsjt-message').wsjtMessagePanel()),'expand keeps the native message handler instance');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-panel-wsjt-message tbody tr').count()===0,'tray Clear invokes the native decoder Clear handler');
-        const ifToggle=page.locator('#rig-decoder-tray').getByRole('button',{name:'IF waterfall',exact:true});
+        const ifToggle=page.locator('#k2aam-decoder-tray').getByRole('button',{name:'IF waterfall',exact:true});
         await ifToggle.click();
         check(await page.locator('#openwebrx-digimode-canvas-container').isHidden()&&await ifToggle.isVisible(),'decoder waterfall can be hidden and its toggle remains available');
         await ifToggle.click();
         check(await page.locator('#openwebrx-digimode-canvas-container').isVisible(),'decoder waterfall can be restored');
         await page.evaluate(()=>{UI.setModulation('rtty');secondary_demod_push_data('RTTY TEST <decoded>\n');});
-        await page.waitForFunction(()=>document.getElementById('rig-decoder-tray').dataset.text==='true');
+        await page.waitForFunction(()=>document.getElementById('k2aam-decoder-tray').dataset.text==='true');
         check(await page.locator('#openwebrx-digimode-content').innerText().then(s=>s.replace(/\s/g,' ').includes('RTTY TEST <decoded>')),'native text decoder appends escaped output in the tray');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         check(await page.locator('#openwebrx-cursor-blink').count()===1&&await page.locator('#openwebrx-digimode-content').innerText().then(s=>!s.includes('RTTY')),'text Clear retains the native cursor and content container');
         await page.evaluate(()=>{
             UI.setModulation('js8');
@@ -539,18 +551,18 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         });
         await page.waitForFunction(()=>document.getElementById('openwebrx-panel-sstv-message').style.display!=='none');
         check(await page.evaluate(()=>savedSstvCanvas.getContext('2d').getImageData(0,0,1,1).data[0]===255),'native SSTV scanlines render into the retained image canvas');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Collapse',exact:true}).click();
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Collapse',exact:true}).click();
         await page.evaluate(()=>{
             $('#openwebrx-panel-sstv-message').sstvMessagePanel().pushMessage({width:16,height:8,line:1,pixels:btoa('\x00\xff\x00'.repeat(16))});
             UI.setModulation('lsb');
         });
-        await page.waitForSelector('#rig-decoder-tray',{state:'hidden'});
+        await page.waitForSelector('#k2aam-decoder-tray',{state:'hidden'});
         check(await page.evaluate(()=>savedSstvCanvas.getContext('2d').getImageData(0,1,1,1).data[1]===255),'image decoding continues while the tray is collapsed');
         check(await page.evaluate(()=>savedDecoderNodes.every(node=>node.style.display==='none'&&!node.movement)),'switching to an analog mode settles all native collapse states');
         await page.evaluate(()=>UI.setModulation('fax'));
-        await page.waitForSelector('#rig-decoder-tray',{state:'visible'});
-        check(await page.locator('#rig-decoder-body').isHidden(),'collapsed preference survives switching decoder types');
-        await page.locator('#rig-decoder-tray').getByRole('button',{name:'Expand',exact:true}).click();
+        await page.waitForSelector('#k2aam-decoder-tray',{state:'visible'});
+        check(await page.locator('#k2aam-decoder-body').isHidden(),'collapsed preference survives switching decoder types');
+        await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Expand',exact:true}).click();
         await page.evaluate(()=>{
             const panel=$('#openwebrx-panel-fax-message').faxMessagePanel();
             panel.pushMessage({width:16,height:8,timestamp:'12:01',filename:'test-fax',faxMode:'Test'});
@@ -562,24 +574,24 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             const node=document.createElement('div');node.className='openwebrx-panel openwebrx-message-panel';node.id='future-decoder';node.textContent='Future decoder output';
             document.getElementById('openwebrx-panels-container-left').append(node);window.futureDecoder=node;
         });
-        await page.waitForFunction(()=>futureDecoder.parentElement.id==='rig-decoder-body');
+        await page.waitForFunction(()=>futureDecoder.parentElement.id==='k2aam-decoder-body');
         check(await page.locator('#future-decoder').isVisible(),'new decoder panels are adopted without a hard-coded mode list');
         await page.evaluate(()=>{futureDecoder.remove();UI.setModulation('ft8');
             savedWsjt.pushMessage({mode:'FT8',timestamp:Date.now(),db:-14,dt:.2,freq:7074000,msg:'CQ K2AAM FN33'});});
         await page.getByRole('slider',{name:'Decoder pane height',exact:true}).fill('28');
         await page.waitForFunction(()=>document.querySelector('[aria-controls="rd-popover-mode"]').textContent.includes('FT8'));
-        await page.screenshot({path:path.join(root,'test-results/rig-dock-desktop.png')});
+        await page.screenshot({path:path.join(root,'test-results/k2aam-dock-desktop.png')});
         for(const [width,height] of [[1024,768],[390,844],[375,667],[844,390]]){
             await page.setViewportSize({width,height});await page.waitForTimeout(150);
             if(width===390){
-                await page.evaluate(()=>{localStorage.removeItem('rig_dock_decoder_if');localStorage.removeItem('rig_dock_expanded');});
-                await page.reload();await page.waitForSelector('#rig-dock');
-                check(await page.evaluate(()=>document.querySelector('#rig-dock .rd-expand').getAttribute('aria-expanded')==='false'&&
-                    ['.rd-profiles','.rd-actions','[aria-controls="rd-popover-bandpass"]'].every(q=>document.querySelector('#rig-dock '+q).getBoundingClientRect().height===0)),'phone dock starts compact');
-                check(await page.evaluate(()=>['.rd-frequency .webrx-actual-freq','[aria-controls="rd-popover-mode"]','.rd-volume','.rd-footer'].every(q=>document.querySelector('#rig-dock '+q).getBoundingClientRect().height>0)),'compact dock keeps frequency, mode, volume and status');
+                await page.evaluate(()=>{localStorage.removeItem('k2aam_dock_decoder_if');localStorage.removeItem('k2aam_dock_expanded');});
+                await page.reload();await page.waitForSelector('#k2aam-dock');
+                check(await page.evaluate(()=>document.querySelector('#k2aam-dock .rd-expand').getAttribute('aria-expanded')==='false'&&
+                    ['.rd-profiles','.rd-actions','[aria-controls="rd-popover-bandpass"]'].every(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height===0)),'phone dock starts compact');
+                check(await page.evaluate(()=>['.rd-frequency .webrx-actual-freq','.rd-meter #openwebrx-smeter','[aria-controls="rd-popover-mode"]','.rd-volume','.rd-footer'].every(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height>0)),'compact dock keeps frequency, S-meter, mode, volume and status');
                 const compactDock=await page.locator('#openwebrx-panel-receiver').evaluate(n=>n.getBoundingClientRect().height);
-                check(compactDock<=170,'compact phone dock is at most 170 px tall ('+Math.round(compactDock)+')');
-                check(await page.locator('#rig-dock .rd-nudge').evaluateAll(nodes=>nodes.length===2&&nodes.every(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth;})),'step buttons are full-size touch targets');
+                check(compactDock<=190,'compact phone dock is at most 190 px tall ('+Math.round(compactDock)+')');
+                check(await page.locator('#k2aam-dock .rd-nudge').evaluateAll(nodes=>nodes.length===2&&nodes.every(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth;})),'step buttons are full-size touch targets');
                 const beforeNudge=await page.evaluate(()=>UI.getFrequency());
                 await page.getByRole('button',{name:'Tune up one step',exact:true}).click();
                 check(await page.evaluate(before=>UI.getFrequency()===before+tuning_step,beforeNudge),'step button tunes one step');
@@ -592,19 +604,19 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
                 await page.waitForTimeout(300);
                 check(await page.evaluate(expected=>UI.getFrequency()===expected,beforeNudge-heldSteps*100),'releasing the step button stops tuning');
                 await page.evaluate(before=>UI.setFrequency(before,false),beforeNudge);
-                await page.screenshot({path:path.join(root,'test-results/rig-dock-mobile-compact.png')});
-                await page.locator('#rig-dock .rd-expand').click();
-                check(await page.locator('#rig-dock .openwebrx-record-button').isVisible()&&await page.locator('#rig-dock .rd-profiles select').isVisible(),'Controls reveals the full phone dock');
+                await page.screenshot({path:path.join(root,'test-results/k2aam-dock-mobile-compact.png')});
+                await page.locator('#k2aam-dock .rd-expand').click();
+                check(await page.locator('#k2aam-dock .openwebrx-record-button').isVisible()&&await page.locator('#k2aam-dock .rd-profiles select').isVisible(),'Controls reveals the full phone dock');
                 check(await page.evaluate(()=>document.querySelector('.rd-nudge')&&getComputedStyle(document.querySelector('.rd-expand')).display!=='none'),'toggle remains available when expanded');
                 await page.evaluate(()=>{UI.setModulation('ft8');
                     $('#openwebrx-panel-wsjt-message').wsjtMessagePanel().pushMessage({mode:'FT8',timestamp:Date.now(),db:-14,dt:.2,freq:7074000,msg:'CQ K2AAM FN33'});});
-                await page.waitForSelector('#rig-decoder-tray',{state:'visible'});
+                await page.waitForSelector('#k2aam-decoder-tray',{state:'visible'});
                 check(await page.locator('#openwebrx-digimode-canvas-container').isHidden(),'phone defaults to full-width decoder results with an optional IF view');
             }
             check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`no horizontal overflow ${width}×${height}`);
             check(await page.evaluate(()=>document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().top+1),`waterfall reserved ${width}×${height}`);
             check(await page.evaluate(()=>{
-                const tray=document.getElementById('rig-decoder-tray').getBoundingClientRect();
+                const tray=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
                 return tray.left>=0&&tray.right<=innerWidth+1&&tray.top>=document.getElementById('webrx-canvas-background').getBoundingClientRect().top-1&&
                     tray.bottom<=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().top+1&&
                     document.getElementById('webrx-page-container').getBoundingClientRect().bottom<=tray.top+1;
@@ -613,23 +625,70 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
             const bounds=await page.locator('#rd-popover-mode').boundingBox();
             check(bounds.x>=0&&bounds.x+bounds.width<=width+1&&bounds.y>=0&&bounds.y+bounds.height<=height+1,`popover inside viewport ${width}×${height}`);
             await page.keyboard.press('Escape');
-            if(width===390)await page.screenshot({path:path.join(root,'test-results/rig-dock-mobile.png')});
+            if(width===390)await page.screenshot({path:path.join(root,'test-results/k2aam-dock-mobile.png')});
         }
-        await page.setViewportSize({width:1440,height:900});
+        // Landscape phone: compact single row by height.
+        await page.setViewportSize({width:844,height:390});await page.waitForTimeout(150);
+        await page.locator('#k2aam-dock .rd-expand').click();await page.waitForTimeout(250);
+        const landscape=await page.evaluate(()=>({dock:document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height,
+            record:document.querySelector('#k2aam-dock .openwebrx-record-button').getBoundingClientRect().height,
+            nudges:[...document.querySelectorAll('#k2aam-dock .rd-nudge')].every(n=>n.getBoundingClientRect().width>=40),
+            overflow:document.documentElement.scrollWidth>innerWidth+1}));
+        check(landscape.dock<=110&&landscape.record===0&&landscape.nudges&&!landscape.overflow,'landscape phone dock is one compact row with step buttons '+JSON.stringify(landscape));
+        await page.screenshot({path:path.join(root,'test-results/k2aam-dock-landscape.png')});
+        await page.locator('#k2aam-dock .rd-expand').click();
+        await page.setViewportSize({width:1440,height:900});await page.waitForTimeout(250);
+        check(await page.evaluate(()=>{const m=document.querySelector('#k2aam-dock .rd-main .rd-meter #openwebrx-smeter').getBoundingClientRect(),f=document.querySelector('#k2aam-dock .rd-frequency').getBoundingClientRect();
+            return m.width>=60&&m.height>=10&&m.left>=f.right&&Math.abs((m.top+m.bottom)/2-(f.top+f.bottom)/2)<24&&!document.querySelector('.rd-footer #openwebrx-smeter');}),'S-meter sits beside the frequency on desktop');
+        check(await page.evaluate(()=>['.openwebrx-mute-button','.openwebrx-squelch-auto','.openwebrx-nr-toggle'].every(q=>{const n=document.querySelector('#k2aam-dock '+q),r=n.getBoundingClientRect(),c=getComputedStyle(n);return Math.round(r.width)===30&&Math.round(r.height)===30&&c.borderTopWidth==='1px';})),'native mute, squelch and NR buttons match the dock button style');
+        // Bands
+        await page.evaluate(()=>{UI.setModulation('usb');center_freq=7100000;UI.getDemodulatorPanel().setCenterFrequency(center_freq);});
+        await page.waitForFunction(()=>!UI.getDemodulatorPanel().centerFreqTimeout&&UI.getDemodulator());
+        await page.locator('[aria-controls="rd-popover-bands"]').click();
+        check(await page.locator('#rd-popover-bands .rd-band').count()===20,'Bands lists amateur, broadcast and time-signal entries');
+        await page.locator('#rd-popover-bands').getByRole('button',{name:'40m',exact:true}).click();
+        check(await page.evaluate(()=>UI.getFrequency()===7150000&&UI.getModulation()==='lsb'&&document.getElementById('openwebrx-sdr-profiles-listbox').value==='sdrplay|40m'),'a band inside the current view tunes and sets its mode without changing profile');
+        const changesBefore=await page.evaluate(()=>profilesChanged);
+        await page.locator('[aria-controls="rd-popover-bands"]').click();
+        await page.locator('#rd-popover-bands').getByRole('button',{name:'20m',exact:true}).click();
+        check(await page.evaluate(before=>document.getElementById('openwebrx-sdr-profiles-listbox').value==='sdrplay|20m'&&profilesChanged===before+1&&ws.sent.filter(p=>p.type==='setfrequency'&&p.params.frequency===14200000).length===0,changesBefore),'a band outside the view selects the profile named for it instead of retuning the SDR');
+        await page.evaluate(()=>{center_freq=14150000;UI.getDemodulatorPanel().setCenterFrequency(center_freq);});
+        await page.waitForFunction(()=>UI.getFrequency()===14200000&&UI.getModulation()==='usb',{},{timeout:5000});
+        check(true,'after the profile starts the dock lands on the band frequency and mode');
+        await page.evaluate(()=>{window.k2aam_bandRequests=ws.sent.filter(p=>p.type==='setfrequency').length;});
+        await page.locator('[aria-controls="rd-popover-bands"]').click();
+        await page.locator('#rd-popover-bands').getByRole('button',{name:'MW',exact:true}).click();
+        await page.waitForTimeout(200);
+        check(await page.evaluate(()=>ws.sent.filter(p=>p.type==='setfrequency').length===k2aam_bandRequests+1&&ws.sent.filter(p=>p.type==='setfrequency').pop().params.frequency===1000000)||await page.locator('.rd-message').innerText().then(t=>/center frequency/i.test(t)),'a band with no matching profile falls back to the native retune request or explains why it cannot');
+        await page.evaluate(()=>Plugins.k2aam_dock&&document.querySelector('.rd-tune-form')&&document.querySelectorAll('.rd-popover:not([hidden]) .rd-close').forEach(b=>b.click()));
+        await page.waitForTimeout(150);
+        await page.evaluate(()=>{const stop=[...document.querySelectorAll('#rd-popover-tune button')].find(b=>b.textContent==='Stop waiting');if(stop&&!stop.hidden)stop.click();
+            const l=document.getElementById('openwebrx-sdr-profiles-listbox');l.value='sdrplay|40m';center_freq=7100000;UI.getDemodulatorPanel().setCenterFrequency(center_freq);});
+        await page.waitForFunction(()=>!UI.getDemodulatorPanel().centerFreqTimeout&&UI.getDemodulator());
+        // Bookmarks
+        await page.evaluate(()=>{bookmarks.bookmarks={server:[{name:'<img src=x onerror="window.bookmarkXss=1">W1AW',frequency:7047500,modulation:'cw'},{name:'40m FT8',frequency:7074000,modulation:'usb'}],local:[{name:'40m FT8',frequency:7074000,modulation:'usb'},{name:'broken'}]};});
+        await page.locator('[aria-controls="rd-popover-bookmarks"]').click();
+        await page.waitForFunction(()=>document.querySelectorAll('#rd-popover-bookmarks .rd-bookmark').length===2);
+        check(await page.evaluate(()=>!document.querySelector('#rd-popover-bookmarks img')&&!window.bookmarkXss&&document.querySelector('#rd-popover-bookmarks .rd-bookmark-name').textContent.includes('<img')),'bookmark names render as text; duplicates and malformed entries are dropped');
+        await page.getByLabel('Search bookmarks').fill('ft8');
+        await page.waitForFunction(()=>document.querySelectorAll('#rd-popover-bookmarks .rd-bookmark').length===1);
+        await page.locator('#rd-popover-bookmarks .rd-bookmark').click();
+        check(await page.evaluate(()=>UI.getFrequency()===7074000&&UI.getModulation()==='usb'&&!window.bookmarkXss&&document.getElementById('rd-popover-bookmarks').hidden),'choosing a bookmark tunes, sets its mode and closes the list');
+        await page.evaluate(()=>{bookmarks.bookmarks={};UI.setModulation('ft8');});
         await page.evaluate(()=>{
             const node=document.createElement('div');node.className='openwebrx-panel openwebrx-message-panel';node.id='removed-decoder';
             document.getElementById('openwebrx-panels-container-left').append(node);window.removedDecoder=node;
         });
-        await page.waitForFunction(()=>removedDecoder.parentElement.id==='rig-decoder-body');
+        await page.waitForFunction(()=>removedDecoder.parentElement.id==='k2aam-decoder-body');
         await page.evaluate(()=>removedDecoder.remove());
-        await page.evaluate(()=>Plugins.rig_dock.destroy(true));
-        check(await page.evaluate(()=>!document.body.classList.contains('rig-dock-active')),'stock controls restored');
-        check(await page.evaluate(()=>savedSquelchNode===document.querySelector('.openwebrx-squelch-slider')&&!document.querySelector('#rig-dock')),'native nodes restored after destroy');
+        await page.evaluate(()=>Plugins.k2aam_dock.destroy(true));
+        check(await page.evaluate(()=>!document.body.classList.contains('k2aam-dock-active')),'stock controls restored');
+        check(await page.evaluate(()=>savedSquelchNode===document.querySelector('.openwebrx-squelch-slider')&&!document.querySelector('#k2aam-dock')),'native nodes restored after destroy');
         check(await page.evaluate(()=>savedDecoderNodes.every(node=>node.parentElement===savedDecoderParents.get(node)&&!node.classList.contains('rd-decoder-native'))),'all native decoder panels return to their original parents');
         check(await page.locator('.webrx-actual-freq').getAttribute('role')===null,'stock frequency readout attributes are restored');
         check(await page.locator('#removed-decoder').count()===0,'teardown does not recreate a decoder removed by its owner');
-        await page.getByRole('button',{name:'RIG Dock',exact:true}).click();await page.waitForSelector('#rig-dock');
-        await page.reload();await page.waitForSelector('#rig-dock');
+        await page.getByRole('button',{name:'K2AAM Dock',exact:true}).click();await page.waitForSelector('#k2aam-dock');
+        await page.reload();await page.waitForSelector('#k2aam-dock');
         await page.waitForFunction(()=>document.querySelector('[aria-label="ALE scan bank"]').value==='cothen_candidates');
         check(await page.getByLabel('Scan across HF bands').isChecked()&&await page.getByLabel('Run scanner on server').isChecked(),'saved scan selections restore after a page reload');
         check(await page.evaluate(()=>!window.owrxAleScanner.isRunning()),'restoring scan preferences does not start an unattended scan');
@@ -639,7 +698,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('#ui-select-listbox').selectOption('stock')]);
         await page.waitForFunction(()=>window.Plugins&&Plugins.ui_select&&Plugins.ui_select._script_loaded&&document.getElementById('ui-select-listbox'));
         await page.waitForTimeout(400);
-        check(await page.evaluate(()=>!Plugins.rig_dock&&!Plugins.rig_skin&&!document.getElementById('rig-dock')&&!document.body.classList.contains('rig-dock-active')),'stock choice loads neither the dock nor the RIG skin');
+        check(await page.evaluate(()=>!Plugins.k2aam_dock&&!Plugins.rig_skin&&!document.getElementById('k2aam-dock')&&!document.body.classList.contains('k2aam-dock-active')),'stock choice loads neither the dock nor the RIG skin');
         check(await page.evaluate(()=>savedProfileNode.parentElement.parentElement.id==='openwebrx-panel-receiver'&&document.getElementById('ui-select-listbox').value==='stock'),'stock choice leaves native controls in place with the chooser in settings');
         await page.evaluate(()=>UI.setModulation('ale2g'));
         await page.waitForFunction(()=>document.getElementById('openwebrx-panel-ale2g-message')&&document.getElementById('openwebrx-panel-ale2g-message').style.display!=='none');
@@ -647,27 +706,27 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.evaluate(()=>UI.setModulation('lsb'));
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('#ui-select-listbox').selectOption('rig')]);
         await page.waitForFunction(()=>window.Plugins&&Plugins.rig_skin&&Plugins.rig_skin._script_loaded&&document.body.classList.contains('theme-rig'));
-        check(await page.evaluate(()=>!Plugins.rig_dock&&!document.getElementById('rig-dock')&&document.getElementById('openwebrx-themes-listbox').value==='rig'),'RIG choice loads the pinned RIG skin and selects its theme without the dock');
+        check(await page.evaluate(()=>!Plugins.k2aam_dock&&!document.getElementById('k2aam-dock')&&document.getElementById('openwebrx-themes-listbox').value==='rig'),'RIG choice loads the pinned RIG skin and selects its theme without the dock');
         check(await page.evaluate(()=>Plugins.rig_skin._script_loaded.startsWith('static/plugins/receiver/rig_skin/')),'RIG skin is served from the local pinned copy');
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.evaluate(()=>Plugins.ui_select.choose('dock'))]);
-        await page.waitForSelector('body.rig-dock-active');
+        await page.waitForSelector('body.k2aam-dock-active');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!document.body.classList.contains('theme-rig')&&UI.theme!=='rig'),'returning to the dock unloads the RIG skin and clears its theme');
         await page.addInitScript(()=>{if(location.search.includes('map-test'))window.mapManager={};});
         await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`,{waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>Plugins._type==='map');
-        check(await page.evaluate(()=>!Plugins.ui_select&&!Plugins.rig_dock&&!Plugins.ale),'map plugin initialization does not load the receiver plugins');
+        check(await page.evaluate(()=>!Plugins.ui_select&&!Plugins.k2aam_dock&&!Plugins.ale),'map plugin initialization does not load the receiver plugins');
         const slow=await browser.newPage();const slowErrors=[];
         slow.on('pageerror',e=>slowErrors.push(e.message));
         await slow.goto(`http://127.0.0.1:${server.address().port}/?delay-start=1`,{waitUntil:'domcontentloaded'});
-        await slow.waitForResponse(r=>r.url().includes('rig_dock.css'),{timeout:10000}).catch(()=>{});
+        await slow.waitForResponse(r=>r.url().includes('k2aam_dock.css'),{timeout:10000}).catch(()=>{});
         await slow.waitForTimeout(300);
-        check(await slow.evaluate(()=>!document.getElementById('rig-dock')&&!waterfall_setup_done),'dock waits while native scale is uninitialized');
+        check(await slow.evaluate(()=>!document.getElementById('k2aam-dock')&&!waterfall_setup_done),'dock waits while native scale is uninitialized');
         check(await slow.evaluate(()=>savedProfileNode.parentElement.parentElement.id==='openwebrx-panel-receiver'),'native controls remain in place before receiver startup');
         await slow.evaluate(()=>finishReceiverStartup());
-        await slow.waitForSelector('body.rig-dock-active');
+        await slow.waitForSelector('body.k2aam-dock-active');
         check(await slow.locator('#openwebrx-scale-canvas').evaluate(n=>n.style.width.endsWith('px')),'real native resize_scale succeeds after delayed startup');
-        await slow.evaluate(()=>{waterfall_setup_done=0;scale_canvas=undefined;scale_ctx=undefined;Plugins.rig_dock.destroy(false);});
-        check(await slow.evaluate(()=>!document.getElementById('rig-dock')),'cleanup works when native scale is unavailable');
+        await slow.evaluate(()=>{waterfall_setup_done=0;scale_canvas=undefined;scale_ctx=undefined;Plugins.k2aam_dock.destroy(false);});
+        check(await slow.evaluate(()=>!document.getElementById('k2aam-dock')),'cleanup works when native scale is unavailable');
         check(slowErrors.length===0,'no errors on delayed startup or early cleanup: '+slowErrors.join('; '));
         await slow.close();
         check(errors.length===0,'no browser errors: '+errors.join('; '));

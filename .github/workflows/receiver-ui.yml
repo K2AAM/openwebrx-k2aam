@@ -20,9 +20,16 @@ jobs:
           python-version: '3.12'
       - name: Build receive-only decoder
         run: make -C contrib/ale/decoder
+      - name: Scanner, log and protocol tests (no reference audio needed)
+        run: python3 -m unittest contrib/ale/tests/test_server_scan.py contrib/ale/tests/test_log.py contrib/ale/tests/test_mobile_scan.py -v
+      # The sample host is often slow from CI; keep the verified file between runs.
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: contrib/ale/decoder/test-data
+          key: ale-reference-audio-90d1a75ef48c7802
       - name: Download verified upstream reference audio
         run: python3 contrib/ale/decoder/fetch_test_audio.py
-      - name: Reference audio, parser and installer tests
+      - name: Reference audio, parser and scanner tests
         run: python3 -m unittest discover -s contrib/ale/tests -v
       - name: Address and undefined-behavior sanitizer tests
         run: |

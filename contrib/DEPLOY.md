@@ -51,5 +51,8 @@ Rebuild `owrx-ale` only when `contrib/ale/decoder` changes.
 
 ## Before exposing the receiver publicly
 
-Set a magic key in the receiver settings. Without one, any visitor can start or stop the server
-ALE scanner, which holds the SDR while it runs.
+Change the magic key in Settings → General. OpenWebRX+ ships with the well-known default
+`memagic`, which protects nothing. Starting or stopping the server ALE scanner needs that key
+(open the receiver as `https://your.receiver/#key=yourkey`), because a scan holds the SDR for
+everyone. With an empty key, scanner control is locked rather than open. To let any visitor run
+the scanner, tick "Allow anyone to start and stop the ALE scanner" on the same page.

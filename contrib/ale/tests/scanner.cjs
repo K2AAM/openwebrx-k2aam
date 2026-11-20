@@ -73,3 +73,15 @@ function fixture() {
     pending=api.tune(5250000,true,()=>true,f=>{cancelled=f;});now=11000;poll();await assert.rejects(pending);
     console.log('8 native ALE tuning/permission/cancellation checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+// Watchlist matching
+{
+    const matcher = vm.runInContext('aleWatchMatcher', ctx);
+    const watch = matcher('adw, jnr K2*;  *99');
+    assert.ok(watch('ADW') && watch('jnr') && watch('K2AAM') && watch('ABC99'));
+    assert.ok(!watch('ADWX') && !watch('XADW') && !watch('') && !watch(null) && !watch('K1AAM'));
+    const literal = matcher('A.B (x)+');
+    assert.ok(literal('A.B') && !literal('AXB') && literal('(X)+'));
+    assert.ok(!matcher('')('ADW') && !matcher(' , ')('ADW'));
+    console.log('9 ALE watchlist checks passed');
+}

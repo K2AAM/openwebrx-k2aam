@@ -39,6 +39,9 @@ class Source:
     def removeClient(self,c): self.clients.remove(c)
     def setCenterFreq(self,f):
         self.retunes.append(f);self.props.change('center_freq',f)
+    def getProfileId(self): return self.props['profile_id']
+    def activateProfile(self,profile):
+        if profile in ('hf','night'): self.props.change('profile_id',profile)
 
 
 def wait_for(condition):
@@ -165,6 +168,83 @@ class ServerScanTests(unittest.TestCase):
             self.assertTrue(module.request(reader,{'action':'status'})['running'])
             module.request(reader,{'action':'stop','key':'secret'})
             scan.thread.join(timeout=2);self.assertFalse(scan.running)
+
+    def test_control_is_locked_without_a_key_unless_public(self):
+        source,chains,now,scan=self.fixture()
+        for stack in ({'magic_key':''},{}):
+            with self.assertRaisesRegex(ValueError,'locked'):module.check_control(SimpleNamespace(stack=stack),{'key':''})
+        keyed=SimpleNamespace(stack={'magic_key':'secret','ale_scan_public':False})
+        for key in (None,'','secre','secret ',5):
+            with self.assertRaisesRegex(ValueError,'magic key'):module.check_control(keyed,{'key':key})
+        module.check_control(keyed,{'key':'secret'})
+        module.check_control(SimpleNamespace(stack={'magic_key':'','ale_scan_public':True}),{})
+        # Only a literal True opens control; a damaged setting keeps it locked.
+        with self.assertRaises(ValueError):module.check_control(SimpleNamespace(stack={'magic_key':'','ale_scan_public':'yes'}),{})
+        client=SimpleNamespace(sdr=source,stack={'magic_key':'','allow_center_freq_changes':True})
+        with patch.dict(module._registry,{'airspy':scan},clear=True):
+            with self.assertRaisesRegex(ValueError,'locked'):module.request(client,dict(OPTIONS,action='start'))
+            self.assertFalse(module.request(client,{'action':'status'})['running'])
+    def state_fixture(self):
+        import tempfile
+        folder=tempfile.TemporaryDirectory();self.addCleanup(folder.cleanup)
+        path=Path(folder.name)/'ale-log'/'scan-state.json'
+        source=Source();chains=[]
+        def factory(source, frequency, callback):
+            chain=SimpleNamespace(stop=lambda:None);chains.append(chain);return chain
+        journal=Mock(recent=Mock(return_value=[]),append=Mock(return_value=1))
+        scan=module.AleBackgroundScan(source,factory,settle=0,retune_allowed=lambda:True,journal=journal,state=path)
+        def finish():
+            scan.stop()
+            if scan.thread: scan.thread.join(timeout=2)
+        self.addCleanup(finish)
+        return path,source,chains,scan
+    def test_running_scan_is_saved_and_forgotten_when_stopped(self):
+        path,source,chains,scan=self.state_fixture()
+        scan.start(OPTIONS.copy());wait_for(lambda:len(chains)==1)
+        saved=json.loads(path.read_text())
+        self.assertEqual(saved,{'airspy':{'options':OPTIONS,'profile':'hf'}})
+        scan.stop();scan.thread.join(timeout=2)
+        self.assertEqual(json.loads(path.read_text()),{})
+    def test_scan_stays_saved_across_service_shutdown(self):
+        path,source,chains,scan=self.state_fixture()
+        scan.start(OPTIONS.copy());wait_for(lambda:len(chains)==1)
+        with patch.object(module,'_shutting_down',True):
+            scan.onShutdown();scan.thread.join(timeout=2)
+        self.assertFalse(scan.running)
+        self.assertIn('airspy',json.loads(path.read_text()))
+    def test_resume_restarts_saved_scans_and_drops_bad_entries(self):
+        path,source,chains,scan=self.state_fixture()
+        source.props['profile_id']='night'
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'airspy':{'options':OPTIONS,'profile':'hf'},
+            'gone':{'options':OPTIONS,'profile':'hf'},'bad':{'options':dict(OPTIONS,bank='nope')},'worse':7}))
+        lookup={'airspy':source,'bad':Source(),'worse':Source()}.get
+        created=[]
+        def build(source,**kwargs):
+            created.append(kwargs);return scan
+        with patch.dict(module._registry,{},clear=True),patch.object(module,'AleBackgroundScan',build),\
+                patch.object(module,'native_retune_allowed',lambda:True),self.assertLogs(module.logger,level='INFO') as logs:
+            resumed=module.resume_saved(path=path,sources=lookup,features=lambda:True,catalog=CATALOG,start=False)
+        self.assertEqual(resumed,['airspy'])
+        self.assertEqual(source.props['profile_id'],'hf')
+        self.assertEqual(created[0]['startup'],45)
+        wait_for(lambda:len(chains)==1)
+        self.assertTrue(scan.running)
+        self.assertEqual(list(json.loads(path.read_text())),['airspy'])
+        self.assertEqual(sum('not resumed' in line for line in logs.output),3)
+    def test_resume_does_nothing_without_decoder_or_state_and_never_raises(self):
+        path,source,chains,scan=self.state_fixture()
+        self.assertEqual(module.resume_saved(path=path,sources={}.get,features=lambda:True,catalog=CATALOG,start=False),[])
+        path.parent.mkdir(parents=True);path.write_text(json.dumps({'airspy':{'options':OPTIONS,'profile':'hf'}}))
+        with self.assertLogs(module.logger,level='WARNING'):
+            self.assertEqual(module.resume_saved(path=path,sources={'airspy':source}.get,features=lambda:False,catalog=CATALOG,start=False),[])
+        self.assertIn('airspy',json.loads(path.read_text()))
+        path.write_text('{broken')
+        with self.assertLogs(module.logger,level='ERROR'):
+            self.assertEqual(module.resume_saved(path=path,sources={}.get,features=lambda:True,catalog=CATALOG,start=False),[])
+        with patch.object(module,'native_retune_allowed',lambda:False),self.assertLogs(module.logger,level='WARNING'):
+            path.write_text(json.dumps({'airspy':{'options':OPTIONS,'profile':'hf'}}))
+            self.assertEqual(module.resume_saved(path=path,sources={'airspy':source}.get,features=lambda:True,catalog=CATALOG,start=False),[])
 
 
 if __name__=='__main__': unittest.main()

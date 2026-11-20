@@ -1,5 +1,6 @@
 """Receive-only ALE background scanner; no browser owns its lifetime."""
 from collections import deque
+import hmac
 import json
 import logging
 import math
@@ -64,8 +65,47 @@ def native_retune_allowed():
     return bool(Config.get()['allow_center_freq_changes'])
 
 
+def state_path():
+    from owrx.config.core import CoreConfig
+    return Path(CoreConfig().get_data_directory())/'ale-log'/'scan-state.json'
+
+
+_state_lock = threading.Lock()
+_shutting_down = False
+
+
+def _update_saved(path, source_id, entry):
+    """Record (entry) or forget (None) the scan to resume for one receiver."""
+    if path is None:
+        return
+    try:
+        path = path() if callable(path) else path
+        with _state_lock:
+            try:
+                saved = json.loads(path.read_text())
+                if not isinstance(saved, dict):
+                    saved = {}
+            except (OSError, ValueError):
+                saved = {}
+            if entry is None:
+                if source_id not in saved:
+                    return
+                del saved[source_id]
+            else:
+                saved[source_id] = entry
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            temporary = path.with_name(path.name+'.tmp')
+            temporary.write_text(json.dumps(saved))
+            temporary.replace(path)
+    except Exception:
+        logger.exception('Cannot update saved ALE scan state')
+
+
 class AleBackgroundScan:
-    def __init__(self, source, factory=native_chain, clock=time.monotonic, settle=0.25, retune_allowed=native_retune_allowed, journal=None):
+    def __init__(self, source, factory=native_chain, clock=time.monotonic, settle=0.25, retune_allowed=native_retune_allowed, journal=None, state=None, startup=10):
+        # state: path (or callable returning one) of the resume file; None keeps nothing.
+        self.state = state
+        self.startup = startup
         self.source = source
         self.factory = factory
         self.clock = clock
@@ -163,6 +203,8 @@ class AleBackgroundScan:
             self.status = 'Server scanner starting…'
             logger.info('ALE server scanner starting: receiver=%s bank=%s dwell=%s across=%s',
                         self.source.getId(), self.options['bank'], self.options['dwell'], self.options['across'])
+            # Saved with the options as requested, so a resumed scan re-derives its channel list.
+            _update_saved(self.state, self.source.getId(), {'options': options, 'profile': self.profile})
             self.thread = threading.Thread(target=self.run, name='ALE-scan-'+self.source.getId(), daemon=True)
             self.thread.start()
 
@@ -261,7 +303,7 @@ class AleBackgroundScan:
             self.source.addClient(self)
             attached = True
             self.subscription = self.source.getProps().wire(self.properties_changed)
-            deadline = self.clock()+10
+            deadline = self.clock()+self.startup
             while getattr(self.source.getState(), 'name', '') != 'RUNNING':
                 if self.cancel.wait(0.1):
                     return
@@ -294,6 +336,9 @@ class AleBackgroundScan:
                 with self.lock:
                     self.running = False
                     self.status = self.reason
+                # A scan that ends for any reason other than service shutdown is not resumed.
+                if not _shutting_down:
+                    _update_saved(self.state, self.source.getId(), None)
                 logger.info('ALE server scanner stopped: receiver=%s reason=%s', self.source.getId(), self.reason)
 
     def snapshot(self, after=0):
@@ -307,6 +352,92 @@ class AleBackgroundScan:
 
 _registry = {}
 _registry_lock = threading.Lock()
+
+
+def check_control(client, params):
+    """Starting or stopping a scan takes over the SDR for every listener.
+
+    Unless the operator sets ale_scan_public, it needs the receiver magic
+    key, and an empty magic key locks scanner control instead of opening it.
+    """
+    stack = client.stack
+    if 'ale_scan_public' in stack and stack['ale_scan_public'] is True:
+        return
+    magic = stack['magic_key'] if 'magic_key' in stack else ''
+    if not isinstance(magic, str) or not magic:
+        raise ValueError('Scanner control is locked: set a receiver magic key, or allow public ALE scanner control in the settings')
+    key = params.get('key')
+    if not isinstance(key, str) or not hmac.compare_digest(key.encode(), magic.encode()):
+        raise ValueError('Scanner control requires the receiver magic key')
+
+
+def prepare_shutdown():
+    """Called before the service stops its SDRs, so running scans stay saved for resume."""
+    global _shutting_down
+    _shutting_down = True
+
+
+def resume_saved(delay=5, path=state_path, sources=None, features=None, catalog=None, start=True):
+    """Restart scans that were running when the service last stopped. Never raises."""
+    def work():
+        resumed = []
+        try:
+            file = path() if callable(path) else path
+            if not file.exists():
+                return resumed
+            saved = json.loads(file.read_text())
+            if not isinstance(saved, dict) or not saved:
+                return resumed
+            if features is None:
+                from owrx.feature import FeatureDetector
+                available = FeatureDetector().is_available('ale2g')
+            else:
+                available = features()
+            if not available:
+                logger.warning('Saved ALE scan not resumed: the owrx-ale decoder is unavailable')
+                return resumed
+            if sources is None:
+                from owrx.sdr import SdrService
+                lookup = SdrService.getSource
+            else:
+                lookup = sources
+            banks = catalog if catalog is not None else json.loads(Path(__file__).with_name('ale_channels.json').read_text())
+            for source_id, entry in saved.items():
+                try:
+                    source = lookup(source_id)
+                    if source is None or not isinstance(entry, dict):
+                        raise ValueError('receiver is not available')
+                    options = validate_options(entry.get('options'), banks) if isinstance(entry.get('options'), dict) else None
+                    if options is None:
+                        raise ValueError('saved options are invalid')
+                    if options['across'] and not native_retune_allowed():
+                        raise ValueError('SDR retuning is no longer allowed')
+                    profile = entry.get('profile')
+                    if isinstance(profile, str) and source.getProfileId() != profile:
+                        source.activateProfile(profile)
+                        if source.getProfileId() != profile:
+                            raise ValueError('saved profile no longer exists')
+                    with _registry_lock:
+                        scan = _registry.get(source_id)
+                        if scan is None or scan.source is not source:
+                            # SDR start-up can include a firmware upload; allow longer than an interactive start.
+                            scan = _registry[source_id] = AleBackgroundScan(source, state=path, startup=45)
+                    scan.start(options)
+                    resumed.append(source_id)
+                    logger.info('ALE server scanner resumed after restart: receiver=%s', source_id)
+                except Exception as error:
+                    logger.warning('Saved ALE scan for %s not resumed: %s', source_id, error)
+                    _update_saved(path, source_id, None)
+        except Exception:
+            logger.exception('Cannot resume saved ALE scans')
+        return resumed
+    if not start:
+        return work()
+    timer = threading.Timer(delay, work)
+    timer.daemon = True
+    timer.name = 'ALE-scan-resume'
+    timer.start()
+    return timer
 
 
 def request(client, params):
@@ -336,16 +467,14 @@ def request(client, params):
     if type(after) is not int or not 0 <= after <= 2**53-1:
         raise ValueError('Invalid history cursor')
     if action != 'status':
-        magic = client.stack['magic_key']
-        if magic and params.get('key') != magic:
-            raise ValueError('Scanner control requires the receiver magic key')
+        check_control(client, params)
     with _registry_lock:
         source_id = client.sdr.getId()
         scan = _registry.get(source_id)
         if scan is None or scan.source is not client.sdr:
             if scan is not None:
                 scan.stop('Stopped: SDR replaced')
-            scan = _registry[source_id] = AleBackgroundScan(client.sdr)
+            scan = _registry[source_id] = AleBackgroundScan(client.sdr, state=state_path)
     if action == 'start':
         catalog = json.loads(Path(__file__).with_name('ale_channels.json').read_text())
         options = validate_options(params, catalog)
