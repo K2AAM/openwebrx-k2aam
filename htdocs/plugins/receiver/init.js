@@ -1,7 +1,7 @@
 // Receiver plugins for this station. See contrib/PLUGINS.md.
 //
-// To change the interface visitors get first, uncomment and edit:
-// window.ui_select_config = { default: 'stock' };   // 'dock' (default), 'rig' or 'stock'
+// The interface a visitor gets until they pick another: 'console', 'dock', 'rig' or 'stock'.
+window.ui_select_config = { default: 'console' };
 
 Plugins.load('ale');         // ALE panel and scanner; stays hidden unless the server has the ALE backend
 Plugins.load('ui_select');   // interface chooser: K2AAM Dock, RIG skin or stock controls

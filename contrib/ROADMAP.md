@@ -11,6 +11,10 @@
 
 - Done: compact phone and landscape layouts, touch step buttons, band buttons, bookmarks, S-meter
   beside the frequency, restyled native controls, renamed to `k2aam_dock`.
+- Done: K2AAM Console arrangement (receiver strip, side decoder panel, decoder tabs).
+- Done for the Console: two-line aircraft entries for HFDL/VDL2/ACARS/UAT and ADS-B.
+- Next for the Console: bookmark and band markers on the waterfall, a draggable filter band, and a
+  "what's on" start screen.
 - Next: review all of it on a real phone and receiver; the browser tests simulate the receiver.
 
 ## ALE
