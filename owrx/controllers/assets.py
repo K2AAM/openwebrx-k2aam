@@ -79,7 +79,10 @@ class AssetsController(GzipMixin, ModificationAwareController, metaclass=ABCMeta
 
             if content_type is None:
                 (content_type, encoding) = mimetypes.guess_type(self.getFilePath(file))
-            self.send_response(data, content_type=content_type, last_modified=modified, max_age=3600)
+            # Plugin files are revalidated on every load, so an updated plugin
+            # shows up at once instead of after the hour other assets are cached.
+            max_age = 0 if str(file).startswith("plugins") else 3600
+            self.send_response(data, content_type=content_type, last_modified=modified, max_age=max_age)
         except FileNotFoundError:
             self.send_response("file not found", code=404)
 
