@@ -13,11 +13,12 @@ load is decided by `htdocs/plugins/receiver/init.js`; none is forced by the fork
 
 ## Community plugins
 
-`init.js` also loads a set of plugins from the 0xAF collection (`utils`, `notify`, `screenshot`,
-`freq_scanner`, `tune_precise` and others) straight from `0xaf.github.io` on every page view, as
-this station did before the fork. They are third-party code that updates without review here. Edit
-the list between the "remote plugins" markers in `init.js` to change it. The browser tests strip
-that block, so those plugins are not covered by the tests.
+`init.js` also loads fourteen plugins from the 0xAF collection (`utils`, `notify`, `screenshot`,
+`freq_scanner`, `tune_precise` and others). They are pinned local copies under
+`htdocs/plugins/receiver/community/`, so nothing is fetched from another site when the page loads.
+`community/PROVENANCE.md` records the source commit, the few address changes made, and what the
+plugins still contact when used. Edit the list between the "community plugins" markers in `init.js`
+to change which ones load.
 
 ## Choosing the interface
 

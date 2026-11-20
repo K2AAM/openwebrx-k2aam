@@ -19,7 +19,7 @@ const server=http.createServer((req,res)=>{
     if(url==='/'){data=html;type='text/html';}
     else if(url==='/static/plugins/receiver/init.js'){
         // The station file as shipped, minus third-party plugins fetched from the internet.
-data=read('htdocs/plugins/receiver/init.js').replace(/\/\/ BEGIN remote plugins[\s\S]*?\/\/ END remote plugins/,'');type='application/javascript';
+data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').includes('community=1'))data=data.replace(/\/\/ BEGIN community plugins[\s\S]*?\/\/ END community plugins/,'');type='application/javascript';
     }
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.js'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.js');type='application/javascript';}
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.css'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.css');type='text/css';}
@@ -724,6 +724,22 @@ data=read('htdocs/plugins/receiver/init.js').replace(/\/\/ BEGIN remote plugins[
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.evaluate(()=>Plugins.ui_select.choose('dock'))]);
         await page.waitForSelector('body.k2aam-dock-active');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!document.body.classList.contains('theme-rig')&&UI.theme!=='rig'),'returning to the dock unloads the RIG skin and clears its theme');
+        // Community plugins: pinned local copies, loaded alongside the dock.
+        const community=await browser.newPage({viewport:{width:1440,height:900}});const communityErrors=[],outside=[];
+        community.on('pageerror',e=>communityErrors.push(e.message));
+        community.on('request',r=>{const u=new URL(r.url());if(u.hostname!=='127.0.0.1'&&u.protocol.startsWith('http'))outside.push(r.url());});
+        await community.goto(`http://127.0.0.1:${server.address().port}/?community=1`,{waitUntil:'domcontentloaded'});
+        await community.waitForSelector('body.k2aam-dock-active');
+        const communityNames=['utils','notify','colorful_spectrum','connect_notify','doppler','freq_scanner','frequency_far_jump','mouse_freq','screenshot','search_bookmarks','show_band_plan','toggle_scannable','tune_checkbox','tune_precise'];
+        await community.waitForFunction(names=>names.every(n=>Plugins[n]&&Plugins[n]._script_loaded!==undefined)&&Plugins.tune_precise._script_loaded,communityNames,{timeout:20000}).catch(()=>{});
+        await community.waitForTimeout(1500);
+        const communityState=await community.evaluate(names=>names.map(n=>n+':'+(Plugins[n]?String(Plugins[n]._script_loaded):'absent')),communityNames);
+        check(communityState.every(s=>s.includes('/static/plugins/receiver/community/')),'all fourteen community plugins load from the pinned local copies '+JSON.stringify(communityState.filter(s=>!s.includes('/community/'))));
+        check(outside.length===0,'community plugins fetch nothing from other hosts on page load '+JSON.stringify(outside));
+        check(await community.evaluate(()=>Plugins.utils._version>=0.9&&document.body.classList.contains('k2aam-dock-active')&&!!document.getElementById('k2aam-dock')),'the dock stays active with the newer utils plugin loaded');
+        check(communityErrors.length===0,'no browser errors with community plugins loaded: '+communityErrors.join('; '));
+        await community.screenshot({path:path.join(root,'test-results/k2aam-dock-community.png')});
+        await community.close();
         await page.addInitScript(()=>{if(location.search.includes('map-test'))window.mapManager={};});
         await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`,{waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>Plugins._type==='map');
