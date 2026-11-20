@@ -4,7 +4,7 @@ on:
   push:
     branches: [k2aam-ui, ale-scanlists]
   pull_request:
-    branches: [master, k2aam-ui]
+    branches: [master, k2aam-ui, ale-scanlists]
   workflow_dispatch:
 
 permissions:
