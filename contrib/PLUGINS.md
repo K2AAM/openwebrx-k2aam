@@ -9,7 +9,7 @@ load is decided by `htdocs/plugins/receiver/init.js`; none is forced by the fork
 | `rig_dock` | The K2AAM dock: compact controls along the bottom and a shared decoder tray above them. | — |
 | `rig_skin` | The original RIG skin by SV1DOD / HB9ISH, pinned at 0.10.20 and unmodified. See its `PROVENANCE.md`. | — |
 | `ale` | ALE message panel, bank scanner controls, reception log and CSV export. | This fork's ALE backend |
-| `rsp_antenna` | Antenna buttons for an RSPdx. | An antenna-switcher backend (not in this repository) |
+| `rsp_antenna` | Antenna buttons for an RSPdx. | This fork's antenna handler and a config file |
 
 ## Choosing the interface
 
@@ -33,15 +33,14 @@ itself runs on the server; see [ALE](ale/README.md).
 
 ## Antenna buttons
 
-`rsp_antenna` talks to the server with `getantenna` / `setantenna` messages and expects
-`rsp_antenna_state` replies. That server handler is a separate patch used on the RSPdx receiver and
-is not part of this repository yet, so the plugin is left commented out in `init.js`. The dock shows
-the buttons in its top row when the plugin is loaded; with stock controls they appear as an
-**Antenna** section.
+`rsp_antenna` is loaded by default and stays hidden unless the server reports switchable antennas
+for the current SDR, which requires `/etc/openwebrx/antenna-switcher.json`. See
+[antenna switcher](antenna/README.md). The dock shows the buttons in its top row; with stock
+controls they appear as an **Antenna** section.
 
 ## Using a plugin on stock OpenWebRX+
 
-`rig_dock`, `rig_skin`, `ui_select` and `rsp_antenna` do not depend on the fork. Copy the plugin's
+`rig_dock`, `rig_skin` and `ui_select` do not depend on the fork. Copy the plugin's
 folder into the receiver's `htdocs/plugins/receiver/` and add its `Plugins.load(...)` line to
 `init.js` there.
 

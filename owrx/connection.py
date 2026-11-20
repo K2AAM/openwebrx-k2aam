@@ -350,6 +350,10 @@ class OpenWebRxReceiverClient(OpenWebRxClient, SdrSourceEventClient):
                         profile = params["profile"].split("|")
                         self.setProfile(profile[0], profile[1], self._allowed(params))
 
+                elif message["type"] in ("getantenna", "setantenna"):
+                    from owrx.antenna_switcher import handle_antenna_message
+                    handle_antenna_message(self, message)
+
                 elif message["type"] == "ale_scan":
                     from owrx.ale_scan import request as ale_scan_request
                     try:

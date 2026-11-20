@@ -6,5 +6,4 @@
 Plugins.load('ale');         // ALE panel and scanner; stays hidden unless the server has the ALE backend
 Plugins.load('ui_select');   // interface chooser: dock, RIG skin or stock controls
 
-// RSPdx receivers with the antenna-switcher backend installed:
-// Plugins.load('rsp_antenna');
+Plugins.load('rsp_antenna'); // RSPdx antenna buttons; hidden unless /etc/openwebrx/antenna-switcher.json enables a device

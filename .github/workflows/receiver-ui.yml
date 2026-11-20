@@ -49,6 +49,8 @@ jobs:
           for file in htdocs/plugins.js htdocs/plugins/receiver/init.js htdocs/plugins/receiver/*/*.js; do
             node --check "$file"
           done
+      - name: Antenna switcher tests
+        run: python3 -m unittest discover -s contrib/antenna/tests -v
       - name: ALE scanner state and catalog tests
         run: |
           node contrib/ale/tests/scanner.cjs

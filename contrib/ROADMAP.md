@@ -22,7 +22,7 @@
 
 ## Antenna switcher
 
-- Bring the RSPdx server handler into this repository so `rsp_antenna` is complete on its own.
+- RSPdx handler and plugin are in the fork; confirm on the RSPdx receiver after it moves to this package.
 
 ## Upstream maintenance
 

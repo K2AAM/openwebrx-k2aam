@@ -1,0 +1,12 @@
+{
+  "access": "public",
+  "devices": {
+    "REPLACE-WITH-OWRX-DEVICE-ID": {
+      "antennas": [
+        { "value": "Antenna A", "label": "A - VHF" },
+        { "value": "Antenna B", "label": "B - Experimental" },
+        { "value": "Antenna C", "label": "C - HF" }
+      ]
+    }
+  }
+}
