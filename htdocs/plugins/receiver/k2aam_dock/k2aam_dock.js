@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.8.1';
+    plugin._version = '0.8.2';
     // "console" is a second arrangement of the same controls: one receiver
     // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
     const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
@@ -515,7 +515,15 @@
         refs.bookmarkSearch.type = 'search'; refs.bookmarkSearch.placeholder = 'Find a bookmark…';
         refs.bookmarkSearch.setAttribute('aria-label', 'Search bookmarks');
         refs.bookmarkList = el('div', 'rd-bookmark-list');
-        pop.node.append(refs.bookmarkSearch, refs.bookmarkList);
+        // Opens OpenWebRX+'s own bookmark dialog, pre-filled with the current frequency and mode.
+        refs.bookmarkAdd = button('Add bookmark here…', () => safely(() => {
+            if (typeof bookmarks === 'undefined' || !bookmarks || typeof bookmarks.showEditDialog !== 'function')
+                throw new Error('Bookmarks are not available on this receiver.');
+            closePopup(false);
+            bookmarks.showEditDialog();
+        }), 'rd-primary rd-bookmark-add');
+        refs.bookmarkAdd.title = 'Save the current frequency and mode as a bookmark in this browser';
+        pop.node.append(refs.bookmarkAdd, refs.bookmarkSearch, refs.bookmarkList);
         on(refs.bookmarkSearch, 'input', renderBookmarks);
         refs.bookmarksPopup = pop.node;
     }

@@ -281,3 +281,10 @@ body.k2aam-dock-active [data-toggle-panel='openwebrx-panel-log'] {
     #k2aam-dock:not(.rd-expanded) .rd-actions,
     #k2aam-dock:not(.rd-expanded) > .rd-toolbar > :not(.rd-volume) { display: none !important; }
 }
+
+/* The adopted Screenshot control is a <div>; centre its label like the buttons beside it. */
+#k2aam-dock .rd-actions > .rd-button { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+#k2aam-dock .rd-actions { align-items: center; }
+.rd-popover .rd-bookmark-add { width: 100%; margin-bottom: 8px; min-height: 36px; }
+/* Native dialogs (add bookmark, search) open above the dock. */
+body.k2aam-dock-active .openwebrx-dialog { z-index: 1300; }

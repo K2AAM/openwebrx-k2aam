@@ -22,15 +22,18 @@ to change which ones load.
 
 ## Choosing the interface
 
-`ui_select` loads the dock unless the visitor has picked something else. The choice is stored in the
-visitor's browser, and changing it reloads the page: the dock and the RIG skin both rebuild the
-receiver panel, so only one is loaded at a time.
+`ui_select` loads the interface named in `init.js` unless the visitor has picked something else;
+this station's `init.js` sets the K2AAM Console. The visitor's choice is stored in their browser,
+and changing it reloads the page: the dock, the console and the RIG skin all rebuild the receiver
+panel, so only one is loaded at a time.
 
-To change what a first-time visitor gets, set this in `init.js` before `Plugins.load('ui_select')`:
+The default is this line in `init.js`, before `Plugins.load('ui_select')`:
 
 ```js
-window.ui_select_config = { default: 'stock' };   // 'dock', 'console', 'rig' or 'stock'
+window.ui_select_config = { default: 'console' };   // 'console', 'dock', 'rig' or 'stock'
 ```
+
+Without that line the K2AAM Dock is the default.
 
 To offer only one interface, drop `ui_select` and load `k2aam_dock` or `rig_skin` directly.
 

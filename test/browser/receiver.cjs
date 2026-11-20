@@ -19,7 +19,10 @@ const server=http.createServer((req,res)=>{
     if(url==='/'){data=html;type='text/html';}
     else if(url==='/static/plugins/receiver/init.js'){
         // The station file as shipped, minus third-party plugins fetched from the internet.
-data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').includes('community=1'))data=data.replace(/\/\/ BEGIN community plugins[\s\S]*?\/\/ END community plugins/,'');type='application/javascript';
+data=read('htdocs/plugins/receiver/init.js');
+        // Most of the suite exercises the dock, so the station's default-interface line is dropped unless asked for.
+        if(!(req.headers.referer||'').includes('station-default=1'))data=data.replace(/^window\.ui_select_config = .*$/m,'');
+        if(!(req.headers.referer||'').includes('community=1'))data=data.replace(/\/\/ BEGIN community plugins[\s\S]*?\/\/ END community plugins/,'');type='application/javascript';
     }
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.js'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.js');type='application/javascript';}
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.css'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.css');type='text/css';}
@@ -163,6 +166,9 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
                 const rects=nodes.map(n=>n.getBoundingClientRect());
                 return nodes.every((n,i)=>n.scrollWidth<=n.clientWidth+1&&rects[i].left>=0&&rects[i].right<=innerWidth+1)&&rects.every((r,i)=>!i||r.left>=rects[i-1].right+4);
             }),`Record, Screenshot and More fit without overlap without antenna controls ${width}×${height}`);
+            check(await page.evaluate(()=>{const shot=document.querySelector('#k2aam-dock #screenshot-btn'),record=document.querySelector('#k2aam-dock .openwebrx-record-button');
+                const range=document.createRange();range.selectNodeContents(shot);const text=range.getBoundingClientRect(),box=shot.getBoundingClientRect(),other=record.getBoundingClientRect();
+                return Math.abs((text.top+text.bottom)/2-(box.top+box.bottom)/2)<=1.5&&Math.abs((box.top+box.bottom)/2-(other.top+other.bottom)/2)<=1.5;}),`Screenshot label is centred in its button and level with Record ${width}×${height}`);
             if(width===1918)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-desktop.png')});
             if(width===390)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-mobile.png')});
         }
@@ -681,6 +687,10 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         await page.waitForFunction(()=>!UI.getDemodulatorPanel().centerFreqTimeout&&UI.getDemodulator());
         // Bookmarks
         await page.evaluate(()=>{bookmarks.bookmarks={server:[{name:'<img src=x onerror="window.bookmarkXss=1">W1AW',frequency:7047500,modulation:'cw'},{name:'40m FT8',frequency:7074000,modulation:'usb'}],local:[{name:'40m FT8',frequency:7074000,modulation:'usb'},{name:'broken'}]};});
+        await page.evaluate(()=>{window.bookmarkDialogs=0;bookmarks.showEditDialog=function(b){window.bookmarkDialogs++;window.bookmarkDialogArg=b;};});
+        await page.locator('[aria-controls="rd-popover-bookmarks"]').click();
+        await page.getByRole('button',{name:'Add bookmark here…',exact:true}).click();
+        check(await page.evaluate(()=>bookmarkDialogs===1&&bookmarkDialogArg===undefined&&document.getElementById('rd-popover-bookmarks').hidden),'Add bookmark opens the native bookmark dialog for the current frequency and closes the list');
         await page.locator('[aria-controls="rd-popover-bookmarks"]').click();
         await page.waitForFunction(()=>document.querySelectorAll('#rd-popover-bookmarks .rd-bookmark').length===2);
         check(await page.evaluate(()=>!document.querySelector('#rd-popover-bookmarks img')&&!window.bookmarkXss&&document.querySelector('#rd-popover-bookmarks .rd-bookmark-name').textContent.includes('<img')),'bookmark names render as text; duplicates and malformed entries are dropped');
@@ -725,6 +735,15 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.evaluate(()=>Plugins.ui_select.choose('dock'))]);
         await page.waitForSelector('body.k2aam-dock-active');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!document.body.classList.contains('theme-rig')&&UI.theme!=='rig'),'returning to the dock unloads the RIG skin and clears its theme');
+        // The station's init.js makes the Console the default for a visitor with no saved choice.
+        const station=await browser.newPage({viewport:{width:1440,height:900}});
+        await station.goto(`http://127.0.0.1:${server.address().port}/?station-default=1`,{waitUntil:'domcontentloaded'});
+        await station.waitForSelector('body.k2aam-dock-active:not(.k2aam-dock-loading)');
+        check(await station.evaluate(()=>document.body.classList.contains('k2aam-console')&&Plugins.ui_select.current()==='console'&&localStorage.getItem('ui_select_choice')===null),'the shipped init.js makes K2AAM Console the default interface');
+        await Promise.all([station.waitForNavigation({waitUntil:'domcontentloaded'}),station.evaluate(()=>Plugins.ui_select.choose('dock'))]);
+        await station.waitForSelector('body.k2aam-dock-active:not(.k2aam-dock-loading)');
+        check(await station.evaluate(()=>!document.body.classList.contains('k2aam-console')&&Plugins.ui_select.current()==='dock'),'a visitor who picks another interface keeps it over the station default');
+        await station.close();
         // Console layout: the same plugin arranged as a receiver strip with a side decoder panel.
         const con=await browser.newPage({viewport:{width:1440,height:900}});const conErrors=[];
         con.on('pageerror',e=>conErrors.push(e.message));
