@@ -200,7 +200,7 @@ const server=http.createServer((req,res)=>{
         await page.evaluate(()=>{
             const samples=new Int16Array(24000);
             for(let i=0;i<samples.length;i++)samples[i]=Math.round(6000*Math.sin(2*Math.PI*1000*i/12000));
-            audioEngine.recorder.record(samples);
+            audioEngine.recorder.record([samples]);
         });
         const downloaded=page.waitForEvent('download');await record.click();
         const recording=await downloaded,bytes=fs.readFileSync(await recording.path());

@@ -19,7 +19,11 @@ setup(
             "htdocs",
         ]
     ),
-    package_data={"htdocs": [f[len("htdocs/") :] for f in glob("htdocs/**/*", recursive=True)]},
+    package_data={
+        "htdocs": [f[len("htdocs/") :] for f in glob("htdocs/**/*", recursive=True)],
+        # ALE channel banks are read at runtime by owrx/ale_scan.py
+        "owrx": ["ale_channels.json"],
+    },
     entry_points={"console_scripts": ["openwebrx=owrx.__main__:main"]},
     url="https://www.openwebrx.de/",
     author="Marat Fayzullin",
