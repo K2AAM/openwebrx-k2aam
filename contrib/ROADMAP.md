@@ -16,8 +16,10 @@
 ## ALE
 
 - Done: plugin front end, key-only scanner control, resume after restart, address watchlist,
-  one-line phone rows.
-- Next: qualify the 2G decoder on live signals (needs the receiver), scan fault recovery.
+  one-line phone rows, simultaneous decoding of every channel in view, cluster hopping, repeat
+  counts, fault retries; browser-side scanner removed.
+- Next: qualify the 2G decoder on live signals and measure parallel-decoding CPU load (both need
+  the receiver); fast in-place hopping for out-of-view channels; history-weighted hopping.
 - Later: 3G (MIL-STD-188-141 Appendix C), a new decoder; not started.
 - Server side stays a small patch to OpenWebRX+ core (`modes.py`, `feature.py`, `dsp.py`,
   `connection.py`, `__main__.py`, one default and one settings checkbox, plus new `owrx/ale*.py`

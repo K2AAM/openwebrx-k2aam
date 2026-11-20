@@ -4,6 +4,9 @@ This fork is installed as its own `openwebrx` package. The receiver plugins it s
 skin, interface chooser, ALE) are enabled in `htdocs/plugins/receiver/init.js`; see
 [plugins](PLUGINS.md).
 
+To replace stock OpenWebRX+ on a receiver you cannot reach in person, follow
+[MIGRATE.md](MIGRATE.md) instead; it adds backups and an automatic rollback.
+
 ## 1. Stock dependencies
 
 Set up the OpenWebRX+ package repository and install stock `openwebrx` once, following the upstream

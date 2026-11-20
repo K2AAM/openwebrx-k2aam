@@ -11,6 +11,15 @@ load is decided by `htdocs/plugins/receiver/init.js`; none is forced by the fork
 | `ale` | ALE message panel, bank scanner controls, reception log and CSV export. | This fork's ALE backend |
 | `rsp_antenna` | Antenna buttons for an RSPdx. | This fork's antenna handler and a config file |
 
+## Community plugins
+
+`init.js` also loads fourteen plugins from the 0xAF collection (`utils`, `notify`, `screenshot`,
+`freq_scanner`, `tune_precise` and others). They are pinned local copies under
+`htdocs/plugins/receiver/community/`, so nothing is fetched from another site when the page loads.
+`community/PROVENANCE.md` records the source commit, the few address changes made, and what the
+plugins still contact when used. Edit the list between the "community plugins" markers in `init.js`
+to change which ones load.
+
 ## Choosing the interface
 
 `ui_select` loads the dock unless the visitor has picked something else. The choice is stored in the

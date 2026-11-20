@@ -1,6 +1,6 @@
 # Experimental ALE 2G receiver and channel banks
 
-This directory now contains an experimental receive-only 2G ALE decoder and native OWRX integration, plus a 45-entry channel catalog in four banks. The decoder operates on one channel at a time. The experimental server scanner steps through enabled bank entries and holds on decoder activity, including with the browser closed. An optional browser scanner remains available. Receiver profiles and K2AAM Dock assets are not changed by the ALE installer.
+This directory contains an experimental receive-only 2G ALE decoder and its OpenWebRX+ integration, plus a 45-entry channel catalog in four banks. One decoder runs per channel. The server scanner decodes every selected channel inside the SDR's current view at once, and can optionally rotate through clusters of channels outside it. Receiver profiles are not changed.
 
 ## Installing
 
@@ -32,11 +32,11 @@ and **Only watched** hides the rest without discarding them. The list is kept in
 
 ## Mobile return and idle scheduling (0.5.1)
 
-Keep **Run on server — continues with tab closed** checked. An active server scan now reserves native receiver occupancy, preventing the idle profile scheduler from switching it to another profile after the last browser disconnects. This uses the native active-client classification and does not create a browser/WebSocket connection or change the profile schedule configuration. Explicit Stop, profile changes, source disable/failure and revoked retune permission still stop the scan. Normal idle scheduling resumes after the worker releases the receiver.
+An active server scan reserves native receiver occupancy, preventing the idle profile scheduler from switching it to another profile after the last browser disconnects. This uses the native active-client classification and does not create a browser/WebSocket connection or change the profile schedule configuration. Explicit Stop, profile changes, source disable/failure and revoked retune permission still stop the scan. Normal idle scheduling resumes after the worker releases the receiver.
 
 An observing tab records its source ID and scanner session in tab-local sessionStorage. When that tab reloads or reconnects with a profile's AM default, it rejoins the same still-running scanner after checking the acknowledged capture. It never sends Start or a hardware retune merely to restore the display. Other receiver IDs, unrelated scanner sessions and tabs that did not opt into following are left alone. Manual Stop/control clears the intent; stopped/stopping workers are not rejoined. Storage denial degrades to the current document's observer behavior. Returning online/visible or restoring a page prompts a fresh status request.
 
-The older browser scanner still stops when the tab is hidden. Scanner start/stop reasons now go to the normal journal at INFO level. For a continuing problem, collect:
+Scanner start/stop reasons go to the normal journal at INFO level. For a continuing problem, collect:
 
 ```bash
 sudo journalctl -u openwebrx --since "15 minutes ago" --no-pager | grep -Ei 'ALE server scanner|ALE background scanner failed'
@@ -73,25 +73,43 @@ MP3/WAV file conversion uses the receiver's `ffmpeg`; the pinned AU reference ne
 
 ## Using the ALE scanner
 
-After restarting, select **ALE 2G (experimental)** from Modes. The scanner controls are inside its native message panel/decoder tray, separate from the stock RIG **Scan** button.
+Select **ALE 2G (experimental)** from Modes. The scanner controls are in the ALE panel.
 
-1. Expand **ALE scanner**, then select HFN, HFL, COTHEN candidates, or HFGCS candidates. On a small phone, increase the decoder tray Height to make room for the controls.
-2. Expand **Channels / skip** to uncheck unwanted entries.
-3. Leave **Run on server — continues with tab closed** enabled. It owns a separate decoder and retains the newest 50,000 decoded receptions on disk across receivers; reconnect to see the latest 250 for this SDR, including after an OWRX restart. Leave **Scan across HF bands** unchecked to scan only entries whose entire USB passband fits inside the current SDR capture. A narrow capture may contain only one bank entry, or none.
-4. Check **Scan across HF bands (retunes SDR)** to scan beyond the current capture. Retuning changes the SDR capture available to connected browsers. Server control checks the receiver magic key and center-frequency permission, and each hardware hop rechecks the server retune permission. The optional browser scanner uses the native `setfrequency` request. It does not bypass permissions or alter profiles.
-5. Start with a **10-second dwell** and click **Start ALE scan**. Dwell is adjustable from 3–60 seconds and is experimental, not a validated optimum.
+1. Expand **ALE scanner** and choose a bank: HFN, HFL, COTHEN candidates or HFGCS candidates.
+2. Expand **Channels / skip** to uncheck entries you do not want.
+3. Click **Start ALE scan**. Supply the magic key in the page URL first; see "Who can run the scanner".
 
-Bank, channel exclusions, dwell, engine and cross-band selections are saved per SDR in this browser. Reload restores controls without starting a scan. These preferences do not configure service startup or restore an antenna after reboot.
+The scan always runs on the server and continues with the tab closed.
 
-The output separates decoded addresses from event labels. Sounding rows show Station identification with Raw decode details; empty destinations remain empty, and repeated soundings remain separate events. The [ALE sounding specification](https://hflink.com/standards/FED_STD_1045A.pdf) identifies the sending station with THIS IS/THIS WAS and requires no text-message section. AMD/DTM text is retained verbatim by the display. The RIG Fit button reduces excess ALE panel height while preserving the Height slider.
+**Channels inside the current view are all decoded at the same time.** Each gets its own decoder, so
+nothing is missed while the scanner is elsewhere, and the SDR is not retuned. The status reads
+"Watching N channels". While such a scan runs you can tune and listen anywhere in the view; only a
+profile, sample-rate or center-frequency change stops it. On a wide profile an entire bank fits one
+view. At most 16 channels are decoded at once; a larger selection is rotated in groups of 16.
 
-The scanner shows tuning/scanning/activity/decoded/stop status. It holds on decoder synchronization/activity, not waterfall signal strength, then resumes three seconds after activity ends. A decoded message also extends the idle hold. A 120-second maximum hold prevents a stuck activity flag from holding forever; a longer exchange can be cut off at that limit. Acquisition resets through the existing native decoder restart on each frequency change. Channels are integer USB dial frequencies, with no audio-frequency offset.
+**Channels outside the view are skipped** unless you tick **Also scan channels outside the current
+view**. The scanner then groups the remaining channels into clusters that each fit one capture,
+retunes the SDR to each cluster in turn and decodes every channel in it for the **dwell** time
+(3–60 seconds). It holds on a cluster while any channel shows decoder activity, resumes three
+seconds after activity ends, and gives up a hold after 120 seconds. Retuning moves the SDR for every
+listener, needs "Allow users to change center frequency", and makes the dock stop the scan before a
+manual tuning action.
 
-With server scanning enabled, hiding or closing the tab only detaches its display. Click **Stop** to end the scanner. Receiver profile, sample-rate or unexpected source-center changes stop it, as do source failure/shutdown or revoked retune permission. An explicitly started server scan reserves active RF use, so the native idle-service scheduler waits while it runs, including with no browser connected. Stop or failure releases that reservation; explicit operator profile changes still stop the scan. Updated RIG mode selection, Tune, step buttons and stock Scan stop the ALE scanner and wait for its acknowledgement before taking manual control. Other native controls still require stopping the scanner first. An observing ALE tab follows the scanned frequency when its capture has caught up.
+Decoding all channels at once costs CPU in proportion to the sample rate and the number of
+channels. Check the load on the receiver after the first start and trim the channel list or use a
+narrower profile if it is too high.
 
-The scanner does not resume automatically after an OWRX restart. Its latest 250 persisted receptions are restored to the display after restart; decoded messages are also written to the normal openwebrx journal, subject to system log retention. The backend does not retain browser connections. Uncheck **Run on server** for the older browser scanner, which stops on hidden tab, disconnect, manual tuning/mode/profile change, or failed tuning. An already-sent hardware retune cannot be recalled by Stop. The stock signal-level scanner is stopped when ALE scanning starts; do not run both simultaneously.
+Identical decodes on one channel within 15 seconds are one reception: the row shows a ×N count, and
+the log stores it once.
 
-The optional utility frequencies are historical monitoring candidates, not verified current assignments or guaranteed activity. User observations are still needed to choose a productive subset and dwell. Live receiver testing has recovered an ADW sounding on 11226 kHz; the operator also reports PLA and HAW addresses. These are decoded addresses, not independently verified station identities. Hold/resume performance still needs on-air evaluation. **3G ALE is not implemented.**
+A brief SDR or decoder fault is retried up to five times with increasing delays (2 to 60 seconds).
+Losing retune permission or the profile ends the scan.
+
+Bank, channel exclusions, dwell and scope are saved per SDR in the browser. The output separates
+decoded addresses from event labels; sounding rows show Station identification with the raw decode
+available. Empty destinations remain empty. AMD/DTM text is shown verbatim.
+
+The optional utility frequencies are historical monitoring candidates, not verified current assignments or guaranteed activity. User observations are still needed to choose a productive subset and dwell. Live receiver testing has recovered an ADW sounding on 11226 kHz; the operator also reports PLA and HAW addresses. These are decoded addresses, not independently verified station identities. Parallel decoding load and hold/resume behaviour still need on-air evaluation. **3G ALE is not implemented.**
 
 To hide ALE in the browser, remove `Plugins.load('ale')` from `init.js`. Removing `/usr/local/bin/owrx-ale` and restarting openwebrx removes the mode from the server.
 

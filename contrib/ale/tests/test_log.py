@@ -96,7 +96,7 @@ class LogTests(unittest.TestCase):
     def test_disk_failure_preserves_live_decodes(self):
         source=SimpleNamespace(getId=lambda:'one')
         scan=AleBackgroundScan(source,journal=self.log)
-        scan.running=True;scan.frequency=11226000;scan.options={'bank':'bank'}
+        scan.running=True;scan.chains={11226000:object()};scan.groups=[(11226000,[11226000])];scan.index=0;scan.options={'bank':'bank'}
         with patch.object(self.log,'append',side_effect=OSError('disk full')):
             with self.assertLogs('owrx.ale_scan',level='ERROR'): scan.event(0,event())
         self.assertEqual(len(scan.snapshot()['events']),1)

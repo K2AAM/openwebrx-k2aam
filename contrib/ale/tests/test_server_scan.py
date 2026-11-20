@@ -60,7 +60,7 @@ class ServerScanTests(unittest.TestCase):
             chains.append(chain)
             return chain
         journal=Mock(recent=Mock(return_value=[]),append=Mock(return_value=1))
-        scan=module.AleBackgroundScan(source,factory,clock=lambda:now[0],settle=0,retune_allowed=lambda:True,journal=journal)
+        scan=module.AleBackgroundScan(source,factory,clock=lambda:now[0],settle=0,retune_allowed=lambda:True,journal=journal,retry_delays=())
         self.addCleanup(lambda:self.cleanup(scan))
         return source,chains,now,scan
     def cleanup(self,scan):
@@ -192,7 +192,7 @@ class ServerScanTests(unittest.TestCase):
         def factory(source, frequency, callback):
             chain=SimpleNamespace(stop=lambda:None);chains.append(chain);return chain
         journal=Mock(recent=Mock(return_value=[]),append=Mock(return_value=1))
-        scan=module.AleBackgroundScan(source,factory,settle=0,retune_allowed=lambda:True,journal=journal,state=path)
+        scan=module.AleBackgroundScan(source,factory,settle=0,retune_allowed=lambda:True,journal=journal,state=path,retry_delays=())
         def finish():
             scan.stop()
             if scan.thread: scan.thread.join(timeout=2)
@@ -245,6 +245,96 @@ class ServerScanTests(unittest.TestCase):
         with patch.object(module,'native_retune_allowed',lambda:False),self.assertLogs(module.logger,level='WARNING'):
             path.write_text(json.dumps({'airspy':{'options':OPTIONS,'profile':'hf'}}))
             self.assertEqual(module.resume_saved(path=path,sources={'airspy':source}.get,features=lambda:True,catalog=CATALOG,start=False),[])
+
+    def test_group_planning(self):
+        plan=module.plan_groups
+        # Everything in view is one simultaneous group at the current center.
+        self.assertEqual(plan([7102000,7185500,7296000],768000,7100000,False),[(7100000,[7102000,7185500,7296000])])
+        # Out-of-view channels are ignored without across, clustered with it.
+        self.assertEqual(plan([7102000,14109000],768000,7100000,False),[(7100000,[7102000])])
+        groups=plan([7102000,14109000,14346000,18106000,3596000],768000,7100000,True)
+        self.assertEqual([channels for _,channels in groups],[[7102000],[3596000],[14109000,14346000],[18106000]])
+        for center,channels in groups[1:]:
+            self.assertIn(center,channels)
+            self.assertTrue(all(module.passband_fits(f,center,768000,module.USABLE) for f in channels))
+            self.assertFalse(any(f+600<=center<=f+2650 for f in channels))
+        # A group never exceeds the parallel decoder limit.
+        many=[7000000+i*3000 for i in range(40)]
+        sizes=[len(channels) for _,channels in plan(many,768000,7060000,False)]
+        self.assertEqual(sizes,[16,16,8])
+        # Every HF bank fits a single capture at RX888 rates.
+        for bank in CATALOG['banks']:
+            channels=[c['frequency_hz'] for c in bank['channels']]
+            self.assertEqual(len(plan(channels,64000000,16000000,False)),1,bank['id'])
+    def test_channels_in_view_are_decoded_together_without_hopping(self):
+        source,chains,now,scan=self.fixture()
+        source.props['center_freq']=11200000
+        options={'bank':'hfgcs_candidates','channels':[11175000,11226000,11244000],'dwell':3,'across':False}
+        scan.start(options);wait_for(lambda:len(chains)==3)
+        self.assertEqual(sorted(c.frequency for c in chains),[11175000,11226000,11244000])
+        state=scan.snapshot()
+        self.assertEqual((state['watching'],state['hops'],state['retunes'],state['frequency']),([11175000,11226000,11244000],False,False,None))
+        self.assertIn('Watching 3 channels',state['status'])
+        now[0]=500;time.sleep(.15)
+        self.assertEqual(len(chains),3);self.assertFalse(any(c.stopped for c in chains));self.assertEqual(source.retunes,[])
+        # Two channels are active at once; both decodes are kept and attributed.
+        chains[0].callback({'freq':11175000,'event':'sounding_this_was','source':'AAA','destination':'','message':'A'})
+        chains[2].callback({'freq':11244000,'event':'sounding_this_was','source':'CCC','destination':'','message':'C'})
+        self.assertEqual([(e['freq'],e['source']) for e in scan.snapshot()['events']],[(11175000,'AAA'),(11244000,'CCC')])
+        self.assertEqual(scan.snapshot()['frequency'],11244000)
+        scan.stop();scan.thread.join(timeout=2);self.assertTrue(all(c.stopped for c in chains))
+    def test_out_of_view_channels_hop_by_cluster_and_hold_on_any_activity(self):
+        source,chains,now,scan=self.fixture()
+        options={'bank':'cothen_candidates','channels':[8912000,7527000,10242000,13907000],'dwell':3,'across':True}
+        source.props['center_freq']=8912000
+        with patch.object(module,'validate_options',lambda o,c:o):
+            scan.start(options)
+        wait_for(lambda:len(chains)==1);self.assertEqual(chains[0].frequency,8912000)
+        now[0]=3;wait_for(lambda:len(chains)==2)
+        self.assertEqual(chains[1].frequency,7527000);self.assertEqual(source.retunes,[7527000])
+        self.assertTrue(scan.snapshot()['hops'] and scan.snapshot()['retunes'])
+        chains[1].callback({'freq':7527000,'event':'activity','active':True})
+        now[0]=60;time.sleep(.1);self.assertEqual(len(chains),2)
+        chains[1].callback({'freq':7527000,'event':'activity','active':False})
+        now[0]=63.1;wait_for(lambda:len(chains)==3)
+        self.assertTrue(chains[1].stopped)
+    def test_repeated_decodes_collapse_into_one_reception(self):
+        source,chains,now,scan=self.fixture();scan.start(dict(OPTIONS,across=False));wait_for(lambda:len(chains)==1)
+        word={'freq':9025000,'event':'sounding_this_was','source':'ADW','destination':'','message':'[TWS] ADW','timestamp':1}
+        for second in (1,2,3):
+            now[0]=second;chains[0].callback(dict(word,timestamp=second))
+        events=scan.snapshot()['events']
+        self.assertEqual(len(events),1)
+        self.assertEqual((events[0]['repeats'],events[0]['timestamp'],events[0]['timestamp_last'],events[0]['scan_seq']),(3,1,3,3))
+        self.assertEqual(scan.journal.append.call_count,1)
+        # A client that already has the row is sent the updated count, same uid.
+        self.assertEqual([e['uid'] for e in scan.snapshot(after=2)['events']],[events[0]['uid']])
+        chains[0].callback(dict(word,source='JNR'))
+        now[0]=30;chains[0].callback(dict(word,source='JNR'))
+        events=scan.snapshot()['events']
+        self.assertEqual([(e['source'],e['repeats']) for e in events],[('ADW',3),('JNR',1),('JNR',1)])
+        self.assertEqual(len({e['uid'] for e in events}),3)
+        self.assertEqual(scan.journal.append.call_count,3)
+    def test_transient_faults_are_retried_and_permanent_ones_are_not(self):
+        source,chains,now,scan=self.fixture();scan.retry_delays=(.01,.01)
+        attempts=[]
+        good=scan.factory
+        def flaky(source,frequency,callback):
+            attempts.append(frequency)
+            if len(attempts)<3: raise ValueError('DSP unavailable')
+            return good(source,frequency,callback)
+        scan.factory=flaky
+        with self.assertLogs(module.logger,level='WARNING') as logs:
+            scan.start(dict(OPTIONS,across=False));wait_for(lambda:len(chains)==1)
+        self.assertEqual(attempts,[9025000]*3);self.assertTrue(scan.running)
+        self.assertEqual(sum('retry' in line for line in logs.output),2)
+        self.assertIn('Watching',scan.snapshot()['status'])
+        scan.stop();scan.thread.join(timeout=2)
+        scan.factory=lambda *args:(_ for _ in ()).throw(ValueError('DSP unavailable'))
+        with self.assertLogs(module.logger,level='ERROR'):
+            scan.start(dict(OPTIONS,across=False));scan.thread.join(timeout=2)
+        self.assertFalse(scan.running);self.assertIn('DSP unavailable',scan.status);self.assertEqual(source.clients,[])
+        scan.factory=good
 
 
 if __name__=='__main__': unittest.main()

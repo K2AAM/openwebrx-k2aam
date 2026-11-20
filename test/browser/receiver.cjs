@@ -18,8 +18,8 @@ const server=http.createServer((req,res)=>{
     const url=req.url.split('?')[0];let data,type;
     if(url==='/'){data=html;type='text/html';}
     else if(url==='/static/plugins/receiver/init.js'){
-        // The station file as shipped.
-data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
+        // The station file as shipped, minus third-party plugins fetched from the internet.
+data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').includes('community=1'))data=data.replace(/\/\/ BEGIN community plugins[\s\S]*?\/\/ END community plugins/,'');type='application/javascript';
     }
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.js'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.js');type='application/javascript';}
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.css'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.css');type='text/css';}
@@ -436,34 +436,34 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.setViewportSize({width:1440,height:900});
         await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         await page.locator('.ale-scan-controls > summary').click();
-        check(await page.getByLabel('Run scanner on server').isChecked(),'server scanning is the default');
-        await page.getByLabel('Run scanner on server').uncheck();
+        check(await page.getByLabel('Run scanner on server').count()===0&&await page.evaluate(()=>typeof AleScanController==='undefined'),'scanning always runs on the server; the browser scanner is gone');
         check(await page.getByRole('button',{name:'Start ALE scan',exact:true}).isVisible(),'ALE scanner controls are visible in tray');
-        check(await page.getByLabel('Scan across HF bands').isChecked()===false,'ALE cross-band scanning is opt-in');
+        check(await page.getByLabel('Scan across HF bands').isChecked()===false,'scanning outside the current view is opt-in');
         await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
-        await page.waitForFunction(()=>window.alePanel.scanner.running&&!window.alePanel.scanner.tuning);
-        check(await page.evaluate(()=>UI.getFrequency()===7102000),'ALE bank start tunes native demodulator');
+        await page.waitForFunction(()=>alePanel.serverScanner.running);
+        check(await page.evaluate(()=>{const p=ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='start').pop().params;return p.across===false&&p.channels.length>1;}),'Start asks the server to watch the selected bank channels');
+        check(await page.locator('.ale-scan-status').innerText().then(s=>/Watching \d+ channels/.test(s)),'status shows channels being watched together');
+        check(await page.evaluate(()=>owrxAleScanner.isRunning()&&!owrxAleScanner.blocksManual()),'a scan of the current view does not block manual tuning');
+        await page.evaluate(()=>UI.setModulation('usb'));
+        await page.waitForFunction(()=>UI.getModulation()==='usb'&&UI.getDemodulator());
+        await page.evaluate(()=>{UI.setFrequency(7150000,false);alePanel.serverScanner.poll();});
+        await page.waitForTimeout(80);
+        const listening=await page.evaluate(()=>({f:UI.getFrequency(),m:UI.getModulation(),r:ws.scanState.running,s:document.querySelector('.ale-scan-status').textContent}));
+        check(listening.f===7150000&&listening.m==='usb'&&listening.r,'the listener can tune elsewhere while the server keeps watching '+JSON.stringify(listening));
+        await page.evaluate(()=>UI.setModulation('ale2g'));
         await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',freq:7102000,event:'activity',active:true}));
-        check(await page.locator('.ale-scan-status').innerText().then(s=>s.includes('Activity / hold')),'native ALE activity reaches scanner hold');
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===0,'activity events do not create message rows');
-        await page.evaluate(()=>alePanel.pushMessage({mode:'ALE2G',freq:7102000,event:'activity',active:false}));
         await page.getByRole('button',{name:'Stop',exact:true}).click();
-        check(await page.evaluate(()=>!alePanel.scanner.running),'ALE Stop cancels scanning');
+        await page.waitForFunction(()=>!alePanel.serverScanner.running&&!alePanel.serverScanner.pending);
+        check(await page.evaluate(()=>!ws.scanState.running),'ALE Stop stops the server scan');
         await page.getByLabel('ALE scan bank').selectOption('cothen_candidates');
-        await page.getByLabel('Scan across HF bands').check();
-        await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
-        await page.waitForFunction(()=>alePanel.scanner.running&&!alePanel.scanner.tuning&&UI.getFrequency()===5250000);
-        check(await page.evaluate(()=>UI.getModulation()==='ale2g'),'cross-band scan restores ALE after native center restart');
-        await page.getByRole('button',{name:'Stop',exact:true}).click();
-        await page.getByLabel('Scan across HF bands').uncheck();
         await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_offset_freq:0,start_mod:'usb'}}));
         await page.waitForTimeout(150);
         await page.evaluate(()=>UI.setModulation('ale2g'));
-        await page.getByLabel('Run scanner on server').check();
         await page.getByLabel('Scan across HF bands').check();
         await page.getByRole('button',{name:'Start ALE scan',exact:true}).click();
         await page.waitForFunction(()=>alePanel.serverScanner.running);
-        check(await page.evaluate(()=>!alePanel.scanner.running),'server scan does not run browser scan simultaneously');
+        check(await page.evaluate(()=>owrxAleScanner.blocksManual()),'a scan that retunes the SDR must stop before manual tuning');
         await page.evaluate(()=>{
             ws.scanState={...ws.scanState,sequence:1,events:[{mode:'ALE2G',freq:5250000,timestamp:Date.now(),source:'ADW',event:'sounding_this_was',message:'SERVER TEST',server_scan:true,scan_seq:1}]};
             alePanel.serverScanner.poll();
@@ -471,6 +471,19 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr').length===1);
         await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
         check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===1,'server history is deduplicated by sequence');
+        await page.evaluate(()=>{
+            const first={mode:'ALE2G',freq:5250000,timestamp:Date.now(),source:'JNR',destination:'',event:'sounding_this_was',message:'REPEAT',server_scan:true,uid:'fixture-1'};
+            ws.scanState={...ws.scanState,sequence:2,events:[...ws.scanState.events,{...first,repeats:1,scan_seq:2}]};alePanel.serverScanner.poll();
+        });
+        await page.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-ale2g-message tbody tr').length===2);
+        await page.evaluate(()=>{
+            const events=ws.scanState.events.filter(e=>e.uid!=='fixture-1');
+            ws.scanState={...ws.scanState,sequence:3,events:[...events,{mode:'ALE2G',freq:5250000,timestamp:Date.now(),timestamp_last:Date.now(),source:'JNR',destination:'',event:'sounding_this_was',message:'REPEAT',server_scan:true,uid:'fixture-1',repeats:4,scan_seq:3}]};
+            alePanel.serverScanner.poll();
+        });
+        await page.waitForFunction(()=>document.querySelector('#openwebrx-panel-ale2g-message tbody tr:last-child .ale-repeats').textContent.includes('×4'));
+        check(await page.locator('#openwebrx-panel-ale2g-message tbody tr').count()===2,'a repeated server decode updates its row count instead of adding rows');
+        await page.evaluate(()=>{ws.scanState={...ws.scanState,events:ws.scanState.events.filter(e=>e.uid!=='fixture-1')};document.querySelector('#openwebrx-panel-ale2g-message tbody tr:last-child').remove();});
         const stopsBefore=await page.evaluate(()=>ws.sent.filter(p=>p.type==='ale_scan'&&p.params.action==='stop').length);
         await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
         check(await page.evaluate(()=>ws.scanState.running),'closing/hiding a tab does not stop the server worker');
@@ -496,7 +509,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.evaluate(()=>alePanel.serverScanner.poll());await page.waitForTimeout(50);
         check(await page.evaluate(()=>UI.getModulation()==='usb'),'later scanner status does not pull manual mode back to ALE');
         const savedScan = await page.evaluate(()=>JSON.parse(localStorage.getItem('owrx_ale_scan_preferences_v1')).sdrplay);
-        check(savedScan.bank==='cothen_candidates'&&savedScan.across&&savedScan.server,'scan bank, engine and scope are saved per receiver in this browser');
+        check(savedScan.bank==='cothen_candidates'&&savedScan.across,'scan bank and scope are saved per receiver in this browser');
         await page.evaluate(()=>UI.setModulation('ale2g'));
         await page.locator('#k2aam-decoder-tray').getByRole('button',{name:'Clear',exact:true}).click();
         await page.evaluate(()=>ws.reply({type:'config',value:{center_freq:7100000,start_mod:'usb'}}));
@@ -690,7 +703,7 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await page.getByRole('button',{name:'K2AAM Dock',exact:true}).click();await page.waitForSelector('#k2aam-dock');
         await page.reload();await page.waitForSelector('#k2aam-dock');
         await page.waitForFunction(()=>document.querySelector('[aria-label="ALE scan bank"]').value==='cothen_candidates');
-        check(await page.getByLabel('Scan across HF bands').isChecked()&&await page.getByLabel('Run scanner on server').isChecked(),'saved scan selections restore after a page reload');
+        check(await page.getByLabel('Scan across HF bands').isChecked(),'saved scan selections restore after a page reload');
         check(await page.evaluate(()=>!window.owrxAleScanner.isRunning()),'restoring scan preferences does not start an unattended scan');
         // Interface chooser: dock by default, stock and the original RIG skin by choice.
         await page.locator('[aria-controls="rd-popover-more"]').click();
@@ -711,6 +724,22 @@ data=read('htdocs/plugins/receiver/init.js');type='application/javascript';
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.evaluate(()=>Plugins.ui_select.choose('dock'))]);
         await page.waitForSelector('body.k2aam-dock-active');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!document.body.classList.contains('theme-rig')&&UI.theme!=='rig'),'returning to the dock unloads the RIG skin and clears its theme');
+        // Community plugins: pinned local copies, loaded alongside the dock.
+        const community=await browser.newPage({viewport:{width:1440,height:900}});const communityErrors=[],outside=[];
+        community.on('pageerror',e=>communityErrors.push(e.message));
+        community.on('request',r=>{const u=new URL(r.url());if(u.hostname!=='127.0.0.1'&&u.protocol.startsWith('http'))outside.push(r.url());});
+        await community.goto(`http://127.0.0.1:${server.address().port}/?community=1`,{waitUntil:'domcontentloaded'});
+        await community.waitForSelector('body.k2aam-dock-active');
+        const communityNames=['utils','notify','colorful_spectrum','connect_notify','doppler','freq_scanner','frequency_far_jump','mouse_freq','screenshot','search_bookmarks','show_band_plan','toggle_scannable','tune_checkbox','tune_precise'];
+        await community.waitForFunction(names=>names.every(n=>Plugins[n]&&Plugins[n]._script_loaded!==undefined)&&Plugins.tune_precise._script_loaded,communityNames,{timeout:20000}).catch(()=>{});
+        await community.waitForTimeout(1500);
+        const communityState=await community.evaluate(names=>names.map(n=>n+':'+(Plugins[n]?String(Plugins[n]._script_loaded):'absent')),communityNames);
+        check(communityState.every(s=>s.includes('/static/plugins/receiver/community/')),'all fourteen community plugins load from the pinned local copies '+JSON.stringify(communityState.filter(s=>!s.includes('/community/'))));
+        check(outside.length===0,'community plugins fetch nothing from other hosts on page load '+JSON.stringify(outside));
+        check(await community.evaluate(()=>Plugins.utils._version>=0.9&&document.body.classList.contains('k2aam-dock-active')&&!!document.getElementById('k2aam-dock')),'the dock stays active with the newer utils plugin loaded');
+        check(communityErrors.length===0,'no browser errors with community plugins loaded: '+communityErrors.join('; '));
+        await community.screenshot({path:path.join(root,'test-results/k2aam-dock-community.png')});
+        await community.close();
         await page.addInitScript(()=>{if(location.search.includes('map-test'))window.mapManager={};});
         await page.goto(`http://127.0.0.1:${server.address().port}/?map-test=1`,{waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>Plugins._type==='map');

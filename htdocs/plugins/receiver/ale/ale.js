@@ -8,147 +8,6 @@
  */
 'use strict';
 
-class AleScanController {
-    constructor(api) { this.api = api; this.running = false; this.generation = 0; }
-    status(text) { this.api.status(text); }
-    stop(reason = 'Stopped') {
-        this.running = false; this.generation++; this.tuning = false;
-        if (this.cancelTune) this.cancelTune();
-        this.cancelTune = null; this.status(reason);
-    }
-    async start(channels, options) {
-        this.stop();
-        if (!Number.isFinite(options.dwell) || options.dwell < 3 || options.dwell > 60)
-            throw new Error('Dwell must be between 3 and 60 seconds.');
-        const snap = this.api.snapshot();
-        if (!snap.connected || snap.mode !== 'ale2g') throw new Error('Select ALE 2G on a connected receiver first.');
-        this.shared = !!options.shared; this.dwell = options.dwell * 1000;
-        this.channels = [...new Set(channels)].filter(f => Number.isSafeInteger(f) && f > 0 &&
-            (this.shared || this.api.fits(f)));
-        if (!this.channels.length) throw new Error('No enabled bank channels fit this capture. Select another profile or enable Scan across HF bands.');
-        this.api.stopNativeScanner(); this.profile = snap.profile; this.socket = snap.socket;
-        this.running = true; this.index = -1;
-        await this.next();
-    }
-    async next() {
-        if (!this.running) return;
-        const generation = this.generation;
-        this.index = (this.index + 1) % this.channels.length;
-        this.frequency = this.channels[this.index]; this.active = false; this.holdStart = null;
-        this.releaseAt = 0; this.tuning = true;
-        this.status('Tuning ' + (this.frequency / 1000).toFixed(1) + ' kHz…');
-        try {
-            await this.api.tune(this.frequency, this.shared, () => this.running && generation === this.generation,
-                cancel => { this.cancelTune = cancel; });
-            if (!this.running || generation !== this.generation) return;
-            this.cancelTune = null; this.capture = this.api.snapshot().center;
-            this.tuning = false; this.deadline = this.api.now() + this.dwell;
-            this.status('Scanning ' + (this.index + 1) + '/' + this.channels.length + ' · ' +
-                (this.frequency / 1000).toFixed(1) + ' kHz');
-        } catch (error) {
-            if (generation === this.generation) this.stop(error.message);
-        }
-    }
-    event(message) {
-        if (message.test_audio) { this.stop('TEST AUDIO — scanning stopped'); return; }
-        if (!this.running || this.tuning || message.freq !== this.frequency) return;
-        const now = this.api.now();
-        if (message.event === 'activity') {
-            this.active = message.active;
-            if (!message.active && this.holdStart === null) return;
-        }
-        if (this.holdStart === null) this.holdStart = now;
-        this.releaseAt = now + 3000;
-        this.status((message.event === 'activity' ? 'Activity / hold' : 'Decoded / hold') + ' · ' +
-            (this.frequency / 1000).toFixed(1) + ' kHz');
-    }
-    tick() {
-        if (!this.running) return;
-        const snap = this.api.snapshot();
-        if (!snap.connected || snap.socket !== this.socket) return this.stop('Stopped: receiver disconnected');
-        if (snap.profile !== this.profile) return this.stop('Stopped: receiver/profile changed');
-        if (snap.hidden) return this.stop('Stopped: receiver tab is hidden');
-        if (snap.nativeScanner) return this.stop('Stopped: stock Scanner started');
-        if (this.tuning) return;
-        if (snap.mode !== 'ale2g' || Math.abs(snap.frequency - this.frequency) > 1 || snap.center !== this.capture)
-            return this.stop('Stopped: manual tuning, mode, or SDR center changed');
-        const now = this.api.now();
-        if (this.holdStart !== null) {
-            if (now - this.holdStart < 120000 && (this.active || now < this.releaseAt)) return;
-        } else if (now < this.deadline) return;
-        void this.next();
-    }
-}
-
-function aleNativeScanApi(status) {
-    const fits = frequency => {
-        const demod = UI.getDemodulator();
-        const pass = demod && demod.get_bandpass ? demod.get_bandpass() : {low_cut:600, high_cut:2650};
-        return typeof center_freq === 'number' && typeof bandwidth === 'number' && bandwidth > 0 &&
-            frequency + Math.min(200, pass.low_cut) > center_freq - bandwidth / 2 &&
-            frequency + Math.max(2800, pass.high_cut) < center_freq + bandwidth / 2;
-    };
-    const snapshot = () => ({
-        connected: typeof ws !== 'undefined' && ws && ws.readyState === 1,
-        socket: typeof ws !== 'undefined' ? ws : null,
-        mode: UI.getModulation(), frequency: UI.getFrequency(),
-        center: typeof center_freq !== 'undefined' ? center_freq : null,
-        profile: $('#openwebrx-sdr-profiles-listbox').val(), hidden: document.hidden,
-        nativeScanner: typeof scanner !== 'undefined' && scanner.isRunning()
-    });
-    return {
-        now: () => performance.now(), status, snapshot, fits,
-        stopNativeScanner: () => UI.toggleScanner(false),
-        tune: (frequency, shared, alive, onCancel) => new Promise((resolve, reject) => {
-            if (!alive()) return reject(new Error('Scan cancelled'));
-            if (fits(frequency)) {
-                if (UI.setFrequency(frequency, false) === false || Math.abs(UI.getFrequency() - frequency) > 1)
-                    return reject(new Error('Receiver refused tuning'));
-                return resolve();
-            }
-            if (!shared) return reject(new Error('Channel no longer fits the capture'));
-            const initial = snapshot(), sock = initial.socket;
-            if (!initial.connected) return reject(new Error('Receiver disconnected'));
-            let acknowledged = false, timer, settled = false;
-            const deadline = performance.now() + 10000;
-            const done = error => {
-                if (settled) return;
-                settled = true;
-                clearInterval(timer); sock.removeEventListener('message', receive);
-                error ? reject(new Error(error)) : resolve();
-            };
-            const receive = event => {
-                if (typeof event.data !== 'string') return;
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'config' && data.value) {
-                        if (data.value.allow_center_freq_changes === false) return done('Server does not allow SDR retuning');
-                        if (data.value.center_freq === frequency) acknowledged = true;
-                    }
-                } catch (_) { /* Non-config messages are irrelevant. */ }
-            };
-            sock.addEventListener('message', receive);
-            onCancel(() => done('Scan cancelled'));
-            timer = setInterval(() => {
-                const current = snapshot(), panel = UI.getDemodulatorPanel();
-                if (!alive() || current.hidden || current.profile !== initial.profile || current.socket !== sock || !current.connected)
-                    return done('Tuning cancelled: receiver changed or disconnected');
-                if (!acknowledged && (current.center !== initial.center || Math.abs(current.frequency-initial.frequency)>1))
-                    return done('Tuning cancelled: manual tuning or external SDR center change');
-                if (performance.now() > deadline) return done('Retune timed out: check server permission, magic key, and SDR range');
-                if (!acknowledged || panel.centerFreqTimeout || panel.center_freq !== center_freq || !fits(frequency)) return;
-                UI.setModulation('ale2g');
-                if (UI.setFrequency(frequency, false) === false || Math.abs(UI.getFrequency() - frequency) > 1)
-                    return done('SDR moved but listening frequency was refused');
-                done();
-            }, 100);
-            try {
-                sock.send(JSON.stringify({type:'setfrequency',params:{frequency, key:UI.getDemodulatorPanel().getMagicKey()}}));
-            } catch (error) { done(error.message); }
-        })
-    };
-}
-
 // Generated from contrib/ale/channels.json; no live activity is implied.
 const ALE_SCAN_BANKS = [
   {
@@ -360,7 +219,7 @@ class AleServerScanClient {
             this.following = true;
             this.observerIntent(selectedSource, state.session, true);
         }
-        if (this.running && this.following && !this.manualTakeover && Number.isSafeInteger(state.frequency)) {
+        if (this.running && this.following && !this.manualTakeover && state.hops !== false && Number.isSafeInteger(state.frequency)) {
             // Follow inside the hardware capture only; never send a hardware retune from polling.
             const panel = UI.getDemodulatorPanel();
             if (!panel.centerFreqTimeout && panel.center_freq === center_freq &&
@@ -413,7 +272,7 @@ function aleWatchMatcher(text) {
 /* Browser integration. Skipped when this file is loaded outside OpenWebRX+ (unit tests). */
 if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typeof jQuery !== 'undefined') (function ($) {
     const plugin = Plugins.ale = Plugins.ale || {};
-    plugin._version = '0.7.0';
+    plugin._version = '0.8.0';
     plugin.no_css = true;
     const MODE = 'ale2g', PANEL = 'openwebrx-panel-ale2g-message';
 
@@ -435,7 +294,7 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
                 '#openwebrx-panel-ale2g-message .ale-layout th,#openwebrx-panel-ale2g-message .ale-layout td{text-align:left;min-width:0;width:auto!important;padding:5px 7px;overflow-wrap:anywhere;white-space:normal;box-sizing:border-box}' +
                 '#openwebrx-panel-ale2g-message .ale-layout th{color:#a7bad0;font-size:11px}' +
                 '.ale-layout tbody tr{border-top:1px solid #ffffff0a;font-variant-numeric:tabular-nums}' +
-                '.ale-event{color:#9de2c3}.ale-raw{display:inline-block;margin-left:10px;vertical-align:top;font-size:11px;color:#a7bad0}' +
+                '.ale-event{color:#9de2c3}.ale-repeats{color:#a7bad0;font-variant-numeric:tabular-nums}.ale-raw{display:inline-block;margin-left:10px;vertical-align:top;font-size:11px;color:#a7bad0}' +
                 '.ale-raw summary{cursor:pointer}.ale-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0}' +
                 '@media(max-width:620px){#openwebrx-panel-ale2g-message .ale-layout tr{grid-template-columns:66px 62px minmax(0,1fr) minmax(0,.7fr) 104px}' +
                 '#openwebrx-panel-ale2g-message .ale-layout th,#openwebrx-panel-ale2g-message .ale-layout td{padding:5px 4px}' +
@@ -464,22 +323,18 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
         const layout = $('<div class="ale-layout">').appendTo(this.el);
         const controls = $('<details class="ale-scan-controls">').appendTo(layout);
         const summary = $('<summary>').text('ALE scanner · ').appendTo(controls);
-        const status = $('<span class="ale-scan-status" role="status">').text('Stopped · current capture only').appendTo(summary);
+        const status = $('<span class="ale-scan-status" role="status">').text('Stopped').appendTo(summary);
         const row = $('<div class="ale-scan-row">').appendTo(controls);
         const bank = $('<select aria-label="ALE scan bank">').appendTo(row);
         ALE_SCAN_BANKS.forEach(b => $('<option>').val(b.id).text(b.name).appendTo(bank));
         const dwellLabel = $('<label>').text('Dwell (s) ').appendTo(row);
         const dwell = $('<input type="number" min="3" max="60" value="10" aria-label="ALE dwell seconds">').appendTo(dwellLabel);
-        const start = $('<button type="button">').text('Start ALE scan').appendTo(row);
+        const start = $('<button type="button">').text('Start ALE scan').attr('title','Runs on the server and continues with this tab closed. Channels inside the current view are all decoded at once.').appendTo(row);
         const stop = $('<button type="button">').text('Stop').prop('disabled',true).appendTo(row);
-        const engineRow = $('<div class="ale-scan-row">').appendTo(controls);
-        const engineLabel = $('<label>').appendTo(engineRow);
-        const server = $('<input type="checkbox" checked aria-label="Run scanner on server">').appendTo(engineLabel);
-        engineLabel.append(document.createTextNode(' Run on server — continues with tab closed'));
         const scopeRow = $('<div class="ale-scan-row">').appendTo(controls);
         const scopeLabel = $('<label>').appendTo(scopeRow);
         const shared = $('<input type="checkbox" aria-label="Scan across HF bands">').appendTo(scopeLabel);
-        scopeLabel.append(document.createTextNode(' Scan across HF bands (retunes SDR)'));
+        scopeLabel.append(document.createTextNode(' Also scan channels outside the current view (retunes the SDR for everyone)'));
         const details = $('<details>').appendTo(controls);
         $('<summary>').text('Channels / skip · published plans and monitoring candidates').appendTo(details);
         const channels = $('<div class="ale-scan-channels">').appendTo(details);
@@ -492,23 +347,20 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
             });
         }
         function updateControls(text) {
-            const busy = !!(me.scanner && me.scanner.running) || !!(me.serverScanner && (me.serverScanner.running || me.serverScanner.pending));
+            const busy = !!(me.serverScanner && (me.serverScanner.running || me.serverScanner.pending));
             status.text(text); start.prop('disabled', busy); stop.prop('disabled', !busy);
-            bank.add(dwell).add(shared).add(server).add(channels.find('input')).prop('disabled',busy);
+            bank.add(dwell).add(shared).add(channels.find('input')).prop('disabled',busy);
         }
-        this.scanner = new AleScanController(aleNativeScanApi(updateControls));
         this.serverScanner = new AleServerScanClient(text => {
             const state = me.serverScanner.state;
             if (me.serverScanner.running && state && state.options) {
-                server.prop('checked',true);
                 if (bank.val() !== state.bank) { bank.val(state.bank); renderChannels(); }
                 dwell.val(state.options.dwell); shared.prop('checked',state.options.across);
                 channels.find('input').each(function(){this.checked=state.options.channels.includes(Number(this.value));});
             }
             if (!me.serverScanner.running && me.serverWasRunning) restoreChannels();
             me.serverWasRunning = me.serverScanner.running;
-            if (me.serverScanner.running && me.scanner.running) me.scanner.stop('Server scanner owns this SDR');
-            if (server.prop('checked') || me.serverScanner.running) updateControls(text);
+            updateControls(text);
             if (state && state.log_error && me.logWarning) me.logWarning(state.log_error);
         }, event => me.pushMessage(event), () => me.el.find('tbody').empty());
         let loadedSource = null, preferences = {enabled:{}};
@@ -517,7 +369,7 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
         function savePreferences() {
             const source = currentSource(); if (!source) return;
             preferences.bank = bank.val(); preferences.dwell = Number(dwell.val());
-            preferences.across = shared.prop('checked'); preferences.server = server.prop('checked');
+            preferences.across = shared.prop('checked');
             preferences.enabled[bank.val()] = channels.find('input:checked').map(function(){return Number(this.value);}).get();
             try {
                 const stored = JSON.parse(localStorage.getItem(preferenceKey) || '{}');
@@ -541,40 +393,33 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
             const savedBank = ALE_SCAN_BANKS.find(item => item.id === preferences.bank);
             bank.val(savedBank ? savedBank.id : ALE_SCAN_BANKS[0].id);
             dwell.val(Number.isFinite(preferences.dwell) && preferences.dwell >= 3 && preferences.dwell <= 60 ? preferences.dwell : 10);
-            shared.prop('checked',preferences.across === true); server.prop('checked',preferences.server !== false);
+            shared.prop('checked',preferences.across === true);
             restoreChannels();
         }
         window.owrxAleScanner = {
-            isRunning: () => me.scanner.running || me.serverScanner.running || me.serverScanner.pending,
+            isRunning: () => me.serverScanner.running || me.serverScanner.pending,
+            // Only a scan that moves the SDR has to stop before manual tuning;
+            // one that watches the current view leaves the listener free to tune.
+            blocksManual: () => me.serverScanner.pending ||
+                (me.serverScanner.running && !!(me.serverScanner.state && me.serverScanner.state.retunes)),
             status: () => status.text(),
-            takeControl: () => {
-                me.scanner.stop('Stopped: manual receiver control');
-                return me.serverScanner.running || me.serverScanner.pending ? me.serverScanner.takeControl() : Promise.resolve();
-            }
+            takeControl: () => me.serverScanner.running || me.serverScanner.pending ? me.serverScanner.takeControl() : Promise.resolve()
         };
         renderChannels(); loadPreferences();
         bank.on('change', () => { restoreChannels(); savePreferences(); });
         channels.on('change','input',savePreferences);
-        dwell.add(shared).add(server).on('change',savePreferences);
-        server.on('change', () => updateControls('Stopped · '+(server.prop('checked') ? 'server' : 'browser')));
-        start.on('click', async () => {
+        dwell.add(shared).on('change',savePreferences);
+        start.on('click', () => {
             try {
                 savePreferences();
                 const selected = channels.find('input:checked').map(function(){return Number(this.value);}).get();
-                if (server.prop('checked')) {
-                    UI.toggleScanner(false);
-                    me.scanner.stop();
-                    me.serverScanner.start({bank:bank.val(), channels:selected, dwell:Number(dwell.val()), across:shared.prop('checked')});
-                } else await me.scanner.start(selected, {dwell:Number(dwell.val()), shared:shared.prop('checked')});
+                UI.toggleScanner(false);
+                me.serverScanner.start({bank:bank.val(), channels:selected, dwell:Number(dwell.val()), across:shared.prop('checked')});
             } catch(error) { updateControls(error.message); }
         });
-        stop.on('click', () => {
-            if (me.serverScanner.running || me.serverScanner.pending) me.serverScanner.stop();
-            else me.scanner.stop();
-        });
-        this.scanTimer = setInterval(() => { this.scanner.tick(); if (!window.owrxAleScanner.isRunning()) loadPreferences(); }, 200);
+        stop.on('click', () => me.serverScanner.stop());
+        this.scanTimer = setInterval(() => { if (!window.owrxAleScanner.isRunning()) loadPreferences(); }, 500);
         window.addEventListener('pagehide', () => {
-            this.scanner.stop('Stopped: page closed');
             this.serverScanner.destroy();
         });
         window.addEventListener('pageshow', () => this.serverScanner.resume());
@@ -686,9 +531,27 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
     Ale2gMessagePanel.prototype.pushMessage = function(message) {
         if (message.test_audio && this.serverScanner.running) this.serverScanner.stop();
         if (this.serverScanner.running && !message.server_scan && !message.test_audio) return;
-        if (!message.restored) this.scanner.event(message);
         if (message.event === 'activity') return;
+        // The same words repeated within one transmission update a count instead of adding rows.
+        const key = [message.freq, message.event, message.source, message.destination, message.message].join('\u0001');
+        let existing = null;
+        if (message.uid) existing = this.el.find('tbody tr').get().find(node => node.dataset.uid === message.uid) || null;
+        else {
+            const last = this.el.find('tbody tr').last()[0];
+            if (last && !last.dataset.uid && last.dataset.key === key &&
+                Math.abs(message.timestamp - Number(last.dataset.time)) <= 15000) existing = last;
+        }
+        if (existing) {
+            const count = message.uid ? Number(message.repeats) || 1 : Number(existing.dataset.repeats || 1) + 1;
+            existing.dataset.repeats = String(count);
+            existing.dataset.time = String(message.timestamp_last || message.timestamp);
+            $(existing).find('.ale-repeats').text(count > 1 ? ' ×' + count : '');
+            return;
+        }
         const row = $('<tr>');
+        row[0].dataset.key = key; row[0].dataset.time = String(message.timestamp_last || message.timestamp);
+        row[0].dataset.repeats = String(Number(message.repeats) || 1);
+        if (message.uid) row[0].dataset.uid = String(message.uid);
         const events = {
             sounding_this_was:['Sounding · TWS','Station identification'],
             sounding_this_is:['Sounding · TIS','Station identification'],
@@ -703,6 +566,8 @@ if (typeof Plugins !== 'undefined' && typeof MessagePanel !== 'undefined' && typ
             // Decoder output is untrusted radio text, never HTML.
             $('<td>').addClass(index === 4 ? 'ale-event' : '').text(String(value)).appendTo(row);
         });
+        $('<span class="ale-repeats">').attr('title', 'Times repeated in this transmission')
+            .text(message.repeats > 1 ? ' ×' + Number(message.repeats) : '').appendTo(row.children().eq(4));
         const body = $('<td class="message">').appendTo(row);
         if (event[1] === null) body.text(String(message.message || ''));
         else {
