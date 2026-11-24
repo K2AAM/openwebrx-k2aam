@@ -34,7 +34,8 @@ The existing **NR button and slider** drive the noise reduction. The slider is
 strength: far left is gentle (about 6 dB of noise reduction), the middle is
 about 15 dB, far right is about 24 dB.
 
-Two buttons appear under the slider:
+Two buttons appear beside the NR control: under the slider in the stock UI,
+or in the noise reduction group of the K2AAM Dock and Console:
 
 - **Notch** removes tones that sit still, such as a carrier on top of an SSB
   signal, within about a second. It works with NR on or off. It is only
@@ -53,8 +54,7 @@ own NR is switched off while the plugin is active.
 ### From a custom UI
 
 Anything that calls `UI.toggleNR()` or `UI.setNR()` controls the NR. The
-buttons are only added when the stock receiver panel is present; a custom UI
-can use:
+buttons follow the stock NR control and the K2AAM Dock; any other UI can use:
 
     Plugins.k2aam_nr.setNotch(true)          // or false
     Plugins.k2aam_nr.setProfile('beacon')    // or 'normal'

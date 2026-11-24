@@ -9,7 +9,8 @@
  *     audioNode -> [k2aam-nr-processor] -> gainNode -> speakers
  *
  * Any UI that calls UI.toggleNR() / UI.setNR() keeps working unchanged.
- * Two extra buttons are added under the NR slider:
+ * Two extra buttons are added beside the NR control (under the stock slider,
+ * or in the noise reduction group of the K2AAM Dock / Console):
  *
  *     Notch   removes steady tones (heterodynes) in voice modes
  *     Beacon  longer analysis, digs out weak steady carriers
@@ -25,7 +26,7 @@
  * Enable with:  Plugins.load('k2aam_nr');  in plugins/receiver/init.js
  */
 
-Plugins.k2aam_nr._version = 0.3;
+Plugins.k2aam_nr._version = 0.4;
 
 // Modes where the audio is already clean, is music, or is not audio at all.
 // Everything is bypassed in these.
@@ -135,7 +136,6 @@ Plugins.k2aam_nr.takeOver = function () {
     var self = this;
     self.stockUpdateNR = UI.updateNR;
     UI.updateNR = function () { self.apply(); };
-    self.addButtons();
     self.apply();
     // follow mode changes
     setInterval(function () { self.apply(); }, 500);
@@ -158,17 +158,19 @@ Plugins.k2aam_nr.apply = function () {
     var s = this.getState();
     var msg = { enabled: s.enabled, strength: s.strength, notch: s.notch, profile: s.profile };
     var key = JSON.stringify(msg) + s.bypass + s.notchAvailable + this.notch;
-    if (key === this.sent) return;
-    this.sent = key;
+    var rebuilt = this.placeButtons();
+    if (key === this.sent && !rebuilt) return;
 
-    if (this.node) this.node.port.postMessage(msg);
+    if (this.node && key !== this.sent) this.node.port.postMessage(msg);
+    this.sent = key;
 
     $('#openwebrx-panel-nr').attr('title', s.bypass
         ? 'Noise reduction is bypassed in ' + s.mode.toUpperCase() + ' mode'
         : 'Noise reduction strength (' + Math.round(s.strength * 100) + '%)');
 
     $('.k2aam-nr-notch')
-        .toggleClass('highlighted', s.notch)
+        .toggleClass('highlighted rd-active', s.notch)
+        .attr('aria-pressed', String(s.notch))
         .toggleClass('disabled', !s.notchAvailable)
         .attr('title', s.notchAvailable
             ? 'Auto-notch: remove steady tones (heterodynes)'
@@ -176,7 +178,8 @@ Plugins.k2aam_nr.apply = function () {
                 ? 'Auto-notch is off in beacon mode, where steady tones are the signal'
                 : 'Auto-notch works in SSB, AM and FM voice modes only'));
     $('.k2aam-nr-beacon')
-        .toggleClass('highlighted', s.profile === 'beacon')
+        .toggleClass('highlighted rd-active', s.profile === 'beacon')
+        .attr('aria-pressed', String(s.profile === 'beacon'))
         .toggleClass('disabled', s.bypass)
         .attr('title', 'Beacon mode: longer analysis for weak steady carriers. Smears speech and fast CW.');
 
@@ -187,22 +190,40 @@ Plugins.k2aam_nr.apply = function () {
     }
 };
 
-// Two small buttons under the stock NR line. Skipped quietly when the stock
-// receiver panel is not there (custom UIs can use setNotch / setProfile).
-Plugins.k2aam_nr.addButtons = function () {
+// The Notch and Beacon buttons. They go wherever the NR control currently
+// lives: in the K2AAM Dock / Console noise reduction group when that UI is
+// mounted, otherwise on a line of their own under the stock NR slider. The
+// dock can be mounted or removed at any time, so this is re-checked on every
+// poll and the buttons follow. Returns true when they were (re)built.
+Plugins.k2aam_nr.placeButtons = function () {
     var self = this;
-    var $line = $('.openwebrx-nr-toggle').closest('.openwebrx-panel-line');
-    if (!$line.length || $('.k2aam-nr-line').length) return;
-    $line.after(
-        '<div class="openwebrx-panel-line k2aam-nr-line">'
-      + '<div class="openwebrx-button k2aam-nr-notch">Notch</div>'
-      + '<div class="openwebrx-button k2aam-nr-beacon">Beacon</div>'
+    var dockGroup = document.querySelector('#k2aam-dock .rd-nr');
+    var $stockLine = $('.openwebrx-nr-toggle').closest('.openwebrx-panel-line');
+    var where = dockGroup ? 'dock' : ($stockLine.length ? 'stock' : '');
+    var $box = $('.k2aam-nr-buttons');
+
+    if ($box.length && $box.attr('data-where') === where && $box[0].isConnected) return false;
+    $('.k2aam-nr-line').remove();
+    $box.remove();
+    if (!where) return false;
+
+    var kind = where === 'dock' ? 'rd-button' : 'openwebrx-button';
+    $box = $(
+        '<div class="k2aam-nr-buttons" data-where="' + where + '">'
+      + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-notch">Notch</button>'
+      + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-beacon">Beacon</button>'
       + '</div>'
     );
-    $('.k2aam-nr-notch').on('click', function () { self.setNotch(!self.notch); });
-    $('.k2aam-nr-beacon').on('click', function () {
+    if (where === 'dock') {
+        $(dockGroup).append($box);
+    } else {
+        $stockLine.after($('<div class="openwebrx-panel-line k2aam-nr-line"></div>').append($box));
+    }
+    $box.find('.k2aam-nr-notch').on('click', function () { self.setNotch(!self.notch); });
+    $box.find('.k2aam-nr-beacon').on('click', function () {
         self.setProfile(self.profile === 'beacon' ? 'normal' : 'beacon');
     });
+    return true;
 };
 
 Plugins.k2aam_nr.serverNrOff = function () {
