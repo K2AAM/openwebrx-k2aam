@@ -202,6 +202,31 @@ for (const strength of [0.25, 0.5, 1.0]) {
     check('recovers after +12 dB noise step', t >= 0 && t <= 3, t >= 0 ? 'within ' + t.toFixed(2) + ' s' : 'did not recover');
 }
 
+// 6a. Silence (squelch closed, stream gaps) must not wreck the noise estimate
+{
+    const nrBackWithin = (x, y, from) => {
+        for (let s = from; s + SEC / 4 <= x.length; s += SEC / 8) {
+            if (db(power(x, s, s + SEC / 4) / power(y, s, s + SEC / 4)) > 10) return (s - from) / SEC;
+        }
+        return -1;
+    };
+    for (const profile of ['normal', 'beacon']) {
+        const n = 16 * SEC;
+        let x = bandNoise(n, 300, 3000, 0.1);
+        for (let i = 6 * SEC; i < 10 * SEC; i++) x[i] = 0;
+        let t = nrBackWithin(x, run(new SpectralNR(FS, profile), x), 10 * SEC);
+        check(profile + ': working again after 4 s of silence', t >= 0 && t <= 0.5, t >= 0 ? 'within ' + t.toFixed(2) + ' s' : 'did not recover');
+        x = bandNoise(n, 300, 3000, 0.1);
+        for (let i = 0; i < 2 * SEC; i++) x[i] = 0;
+        t = nrBackWithin(x, run(new SpectralNR(FS, profile), x), 2 * SEC);
+        check(profile + ': working after a silent start', t >= 0 && t <= 0.5, t >= 0 ? 'within ' + t.toFixed(2) + ' s' : 'did not recover');
+        x = bandNoise(n, 300, 3000, 0.003);
+        for (let i = 6 * SEC; i < n; i++) x[i] *= 31.6;
+        t = nrBackWithin(x, run(new SpectralNR(FS, profile), x), 6 * SEC);
+        check(profile + ': recovers after +30 dB noise step', t >= 0 && t <= 2.5, t >= 0 ? 'within ' + t.toFixed(2) + ' s' : 'did not recover');
+    }
+}
+
 // 6b. Ringing: share of the leftover noise energy coming from stray bins opened well above the floor
 for (const strength of [0.5, 1.0]) {
     const nr = new SpectralNR(FS); nr.setStrength(strength);

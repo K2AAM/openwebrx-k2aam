@@ -159,6 +159,17 @@ class SpectralNR {
 
         this.frames = 0;
         this.primed = false;
+        // Frames quieter than about -80 dBFS count as silence. The sum over
+        // bins of windowed FFT power is size^2 / 4 times the mean square.
+        this.silence = 1e-8 * size * size / 4;
+        // When nearly every bin sits well above its noise estimate for a
+        // while, the floor itself has moved (band, antenna or gain change):
+        // catch up quickly instead of at the normal cautious rate.
+        this.fastRise = Math.pow(10, (60 / 10) / this.framesPerSec);
+        this.jumpAfter = Math.round(0.3 * this.framesPerSec);
+        this.jumpFrames = 0;
+        this.live = 0;
+        this.capDue = this.notchDue = true;
         this.setStrength(0.5);
     }
 
@@ -187,7 +198,8 @@ class SpectralNR {
         this.smooth.fill(0); this.noise.fill(0); this.cap.fill(0); this.steady.fill(0);
         this.prevGain.fill(0); this.prevPost.fill(0);
         this.hold.fill(0); this.notchRef.fill(0); this.notchGain.fill(1);
-        this.fill = 0; this.frames = 0; this.primed = false;
+        this.fill = 0; this.frames = 0; this.primed = false; this.jumpFrames = 0; this.live = 0;
+        this.capDue = this.notchDue = true;
     }
 
     get latency() { return this.size; }
@@ -235,8 +247,18 @@ class SpectralNR {
             power[k] = p;
         }
 
-        this.updateNoise();
-        this.updateGain();
+        // Digital silence (squelch closed, stream gap) says nothing about the
+        // noise floor. Learning from it would leave the estimate at zero, and
+        // the filter doing nothing for many seconds once audio returns.
+        var total = 0;
+        for (k = 0; k < bins; k++) total += power[k];
+        this.live = total > this.silence ? this.live + 1 : 0;
+        // The first frames after silence still contain part of it, so they
+        // are too quiet to learn from. Wait for one that is all audio.
+        var whole = this.live >= this.size / this.hop;
+        if (whole) this.updateNoise();
+        if (whole || (this.live > 0 && this.primed)) this.updateGain();
+        else this.gain.fill(1);
 
         // Apply the gain, go back to the time domain, overlap-add.
         var gain = this.gain;
@@ -266,19 +288,29 @@ class SpectralNR {
             // First frame: start from what we hear instead of from silence.
             for (k = 0; k < bins; k++) { smooth[k] = power[k]; noise[k] = power[k]; this.steady[k] = power[k]; }
             this.hold.fill(0);
+            // the neighbourhood levels below must be worked out from this
+            // first real frame, not left at zero until their next update
+            this.capDue = this.notchDue = true;
             this.primed = true;
         }
 
+        if (this.jumpFrames > this.jumpAfter) rise = this.fastRise;
+        var active = 0, above = 0, lift = 10 * this.bias, quiet = this.silence / bins * 1e-3;
         for (k = 0; k < bins; k++) {
             var s = smooth[k] = a * smooth[k] + (1 - a) * power[k];
+            if (s > quiet) { active++; if (s > noise[k] * lift) above++; }
             if (s < noise[k]) noise[k] += (s - noise[k]) * fall;
             else noise[k] = Math.min(noise[k] * rise + 1e-30, s);
         }
+        this.jumpFrames = active > 8 && above > 0.9 * active ? this.jumpFrames + 1 : 0;
 
         // Tone protection: every few frames, work out how loud the broadband
         // noise is around each bin (upper quartile across neighbouring bins)
         // and do not let any single bin's estimate climb far above that.
-        if (this.frames % this.capEvery === 0) this.quantile(noise, this.cap, 0.75);
+        if (this.capDue || this.frames % this.capEvery === 0) {
+            this.quantile(noise, this.cap, 0.75);
+            this.capDue = false;
+        }
         var cap = this.cap, f = this.capFactor;
         for (k = 0; k < bins; k++) {
             var limit = cap[k] * f;
@@ -335,7 +367,10 @@ class SpectralNR {
             else { h = h * rise; if (h < p * 1e-3) h = p * 1e-3; if (h > p) h = p; }
             hold[k] = h;
         }
-        if (this.frames % this.capEvery === 0) this.quantile(hold, this.notchRef, this.notchQuantile);
+        if (this.notchDue || this.frames % this.capEvery === 0) {
+            this.quantile(hold, this.notchRef, this.notchQuantile);
+            this.notchDue = false;
+        }
         var ref = this.notchRef, ng = this.notchGain, gain = this.gain;
         var margin = this.notchMargin, depth = this.notchDepth, slew = this.notchSlew;
         for (k = 0; k < bins; k++) {

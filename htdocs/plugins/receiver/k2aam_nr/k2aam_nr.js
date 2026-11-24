@@ -26,7 +26,7 @@
  * Enable with:  Plugins.load('k2aam_nr');  in plugins/receiver/init.js
  */
 
-Plugins.k2aam_nr._version = 0.4;
+Plugins.k2aam_nr._version = 0.5;
 
 // Modes where the audio is already clean, is music, or is not audio at all.
 // Everything is bypassed in these.
