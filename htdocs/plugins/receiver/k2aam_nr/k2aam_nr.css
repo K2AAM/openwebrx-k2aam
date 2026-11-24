@@ -1,0 +1,7 @@
+/* K2AAM NR: the Notch and Beacon buttons under the stock NR slider */
+.k2aam-nr-line .openwebrx-button {
+    font-size: 11px;
+    line-height: 14px;
+    padding: 3px 10px;
+    margin-right: 4px;
+}
