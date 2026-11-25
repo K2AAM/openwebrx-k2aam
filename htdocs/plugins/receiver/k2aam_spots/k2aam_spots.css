@@ -1,0 +1,25 @@
+/* K2AAM Spots */
+#openwebrx-bookmarks-container .bookmark[data-source=dxspots] { background-color: #F7A1E8; }
+#openwebrx-bookmarks-container .bookmark[data-source=dxspots]:after { border-top-color: #F7A1E8; }
+
+.rd-popover.ks-popover { width: 460px; }
+.ks-panel { font: 12px system-ui, -apple-system, sans-serif; color: #e7eff9; }
+.ks-controls { display: flex; flex-direction: column; gap: 0; }
+.ks-controls .rd-check { margin: 6px 0; }
+.ks-controls select { margin: 6px 0 4px; }
+.ks-status { color: #9fb3ca; margin: 6px 0; }
+.ks-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; }
+.ks-row {
+    display: grid; grid-template-columns: 66px 90px 1fr 38px 34px; gap: 6px; align-items: center;
+    width: 100%; text-align: left; padding: 5px 6px; border: 1px solid transparent; border-radius: 4px;
+    background: #1a293c; color: #e7eff9; font: inherit; cursor: pointer;
+}
+.ks-row:hover, .ks-row:focus-visible { border-color: #5d839f; background: #283d55; }
+.ks-freq, .ks-age, .ks-mode { font-family: ui-monospace, 'DejaVu Sans Mono', monospace; color: #9fb3ca; }
+.ks-age { text-align: right; }
+.ks-call { font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-weight: 700; color: #F7A1E8; overflow: hidden; text-overflow: ellipsis; }
+.ks-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c7d5e6; }
+@media (max-width: 520px) {
+    .ks-row { grid-template-columns: 60px 80px 1fr 32px; }
+    .ks-row .ks-mode { display: none; }
+}

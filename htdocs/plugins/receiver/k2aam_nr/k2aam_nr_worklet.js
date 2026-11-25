@@ -24,6 +24,14 @@
  *     and pulls them down to the level of the audio around them.
  *   - Beacon profile: twice the frame length and longer averaging, to dig
  *     out weak steady carriers at the cost of smearing speech and fast CW.
+ *
+ * Also:
+ *   - Treble tilt (used for AM): above about 1.2 kHz the attenuation floor is
+ *     only half as deep. Speech treble (consonants) sits close to the noise,
+ *     so without this it is pulled down with the hiss and AM sounds muffled.
+ *   - Bypass (the A/B button): everything keeps running and learning, but
+ *     the output is the unprocessed audio with the same delay, so switching
+ *     back is instant and the comparison is fair.
  */
 
 'use strict';
@@ -151,6 +159,10 @@ class SpectralNR {
         this.notchSlew = 1 - Math.exp(-1 / (0.05 * this.framesPerSec));
         this.nrOn = true;
         this.notchOn = false;
+        this.bypass = false;
+        this.unity = new Float64Array(this.bins).fill(1);
+        this.floorBins = new Float64Array(this.bins);
+        this.tilt = 0;
         this.capHalfWidth = Math.max(4, Math.round(550 / (sampleRate / size)));
         this.capStep = Math.max(1, Math.round(this.capHalfWidth / 4));
         this.capEvery = 4;                                   // frames between updates
@@ -180,11 +192,28 @@ class SpectralNR {
         // deepest attenuation allowed: -6 dB .. -24 dB. Going deeper makes the
         // background so quiet that every stray bin is heard as a tone.
         this.floor = Math.pow(10, -(6 + 18 * strength) / 20);
+        this.updateFloor();
         // gain smoothing: more of it at high strength, where stray bins that
         // open for a frame or two (ringing) are most exposed
         this.ddAlpha = this.ddAlphaBase + this.ddAlphaSlope * strength;
         // how much to over-estimate the noise: 1.0 .. 1.3
         this.over = 1 + 0.3 * strength;
+    }
+
+    // tilt: 0 (flat) .. 1 (treble floor half as deep, in dB, above ~1.2 kHz)
+    setTilt(tilt) {
+        this.tilt = Math.min(1, Math.max(0, tilt || 0));
+        this.updateFloor();
+    }
+
+    updateFloor() {
+        if (!this.floorBins) return; // called from setStrength during construction
+        var floorDb = -(6 + 18 * this.strength), hz = this.sampleRate / this.size;
+        for (var k = 0; k < this.bins; k++) {
+            // ramp from 1.2 kHz to 3 kHz
+            var ramp = Math.min(1, Math.max(0, (k * hz - 1200) / 1800));
+            this.floorBins[k] = Math.pow(10, floorDb * (1 - 0.5 * this.tilt * ramp) / 20);
+        }
     }
 
     setNotchRise(dbPerSec) {
@@ -260,8 +289,9 @@ class SpectralNR {
         if (whole || (this.live > 0 && this.primed)) this.updateGain();
         else this.gain.fill(1);
 
-        // Apply the gain, go back to the time domain, overlap-add.
-        var gain = this.gain;
+        // Apply the gain, go back to the time domain, overlap-add. In bypass
+        // the state above is still updated, but the audio passes unchanged.
+        var gain = this.bypass ? this.unity : this.gain;
         var scale = 1 / (2 * n); // 1/n for the inverse FFT, 1/2 for the windows
         for (c = 0; c < channels; c++) {
             re = this.re[c]; im = this.im[c];
@@ -385,7 +415,7 @@ class SpectralNR {
     updateNrGain() {
         var bins = this.bins, power = this.power, noise = this.noise;
         var gain = this.gain, prevGain = this.prevGain, prevPost = this.prevPost;
-        var alpha = this.ddAlpha, floor = this.floor, steady = this.steady;
+        var alpha = this.ddAlpha, floorBins = this.floorBins, steady = this.steady;
         var up = this.steadyRise, down = this.steadyFall, thr = this.steadyThreshold;
         var clamp = this.steadyClamp;
         var noiseScale = this.bias * this.over;
@@ -406,7 +436,8 @@ class SpectralNR {
             var g = prio / (1 + prio);                // Wiener gain
             prevGain[k] = g;
             prevPost[k] = post;
-            gain[k] = g > floor ? g : floor;
+            var fl = floorBins[k];
+            gain[k] = g > fl ? g : fl;
         }
     }
 }
@@ -426,7 +457,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     class K2aamNrProcessor extends AudioWorkletProcessor {
         constructor(options) {
             super(options);
-            this.state = { enabled: false, strength: 0.5, notch: false, profile: 'normal' };
+            this.state = { enabled: false, strength: 0.5, notch: false, profile: 'normal', tilt: 0, bypass: false };
             this.tuned = {};
             this.build();
             this.update((options && options.processorOptions) || {});
@@ -439,6 +470,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
             this.nr.setStrength(this.state.strength);
             this.nr.nrOn = this.state.enabled;
             this.nr.notchOn = this.state.notch;
+            this.nr.setTilt(this.state.tilt);
+            this.nr.bypass = this.state.bypass;
         }
 
         update(d) {
@@ -457,6 +490,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
             if (typeof d.strength === 'number') { st.strength = d.strength; this.nr.setStrength(d.strength); }
             if (typeof d.enabled === 'boolean') st.enabled = d.enabled;
             if (typeof d.notch === 'boolean') st.notch = d.notch;
+            if (typeof d.tilt === 'number') { st.tilt = d.tilt; this.nr.setTilt(d.tilt); }
+            if (typeof d.bypass === 'boolean') { st.bypass = d.bypass; this.nr.bypass = d.bypass; }
             if ((d.profile === 'normal' || d.profile === 'beacon') && d.profile !== st.profile) {
                 st.profile = d.profile;
                 this.build();

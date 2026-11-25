@@ -104,3 +104,20 @@ and `SpectralNR.BIAS_BEACON`:
 
 Synthetic signals only: band-limited noise, steady and keyed tones, a
 speech-like signal with a heterodyne, a noise level step, stereo, and CPU cost.
+
+## Audio extras (0.6)
+
+- **Peak** (CW only): a narrow filter centred on the CW tone. It follows the
+  middle of the passband, so narrowing or shifting the filter moves it too.
+  The CW tone keeps its loudness; everything around it drops about 12 dB.
+- **A/B**: hold it to hear the audio without NR, Notch or Peak. The NR keeps
+  learning underneath, so letting go returns to the processed audio at once.
+- **Audio** panel in the K2AAM Dock / Console: bass (250 Hz shelf), mid
+  (1.2 kHz) and treble (2.5 kHz shelf), each -12..+12 dB, with presets.
+- **Per-mode memory**: NR on/off, strength, Notch and Beacon are remembered
+  separately for SSB, CW, AM and FM.
+- **AM treble**: in AM and SAM the NR's deepest cut above about 1.2 kHz is
+  half as deep, so speech consonants survive. On white noise at mid strength:
+  -15 dB of treble noise reduction becomes -8 dB; the low end is unchanged.
+
+All of this runs in the listener's browser and changes only their audio.

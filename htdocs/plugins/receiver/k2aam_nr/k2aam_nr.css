@@ -16,3 +16,9 @@
     #k2aam-dock .rd-nr .k2aam-nr-buttons { flex: 1 1 100%; }
     #k2aam-dock .rd-nr .k2aam-nr-btn { flex: 1 1 0; }
 }
+
+/* EQ panel (Audio popover in the K2AAM Dock / Console) */
+.k2aam-nr-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+.k2aam-nr-eq-row { display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; gap: 8px; margin: 8px 0; }
+.k2aam-nr-eq-value { text-align: right; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; color: #9fb3ca; }
+.k2aam-nr-ab { touch-action: none; user-select: none; -webkit-user-select: none; }

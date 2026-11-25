@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.9.2';
+    plugin._version = '0.9.3';
     // "console" is a second arrangement of the same controls: one receiver
     // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
     const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
@@ -21,6 +21,20 @@
     const lastFamilyMode = {}, familyExpanded = {};
     let startupNotice, startupHidden, startupVisibility;
     const refs = {};
+    // Shared links look like #tune=14074000,mode=usb (see shareLink). Read the
+    // hash now: OpenWebRX rewrites it as soon as the demodulator starts.
+    const startLink = (function () {
+        const params = {};
+        (window.location.hash || '').replace(/^#/, '').split(',').forEach(part => {
+            const i = part.indexOf('='); if (i > 0) params[part.slice(0, i)] = decodeURIComponent(part.slice(i + 1));
+        });
+        const value = Math.round(Number(params.tune));
+        return Number.isSafeInteger(value) && value > 0 ? {value, mode: params.mode || '', underlying: params.under || ''} : null;
+    }());
+    // Recently tuned frequencies, newest first, for Back / Forward and the list.
+    const HISTORY_MAX = 15;
+    let history = [], historyPos = 0, historyCandidate = null, historyQuiet = 0;
+    try { const saved = JSON.parse(localStorage.getItem('k2aam_dock_history') || '[]'); if (Array.isArray(saved)) history = saved.filter(h => h && Number.isSafeInteger(h.value)).slice(0, HISTORY_MAX); } catch (e) { history = []; }
     const $ = (selector, root) => (root || document).querySelector(selector);
     const all = (selector, root) => Array.from((root || document).querySelectorAll(selector));
 
@@ -395,6 +409,71 @@
         listeners.push(() => { if (animation) animation.cancel(); });
         apply(); dock.prepend(handle);
     }
+    // Tune to a frequency and mode, inside or outside the current view.
+    function tuneTo(value, mode, underlying) {
+        if (mode && mode !== UI.getModulation()) UI.setModulation(mode, underlying || undefined);
+        return manualControl(() => tuneFrequency(value));
+    }
+    function shareLink() {
+        const value = Math.round(UI.getFrequency());
+        if (!value) throw new Error('Nothing is tuned yet.');
+        const parts = ['tune=' + value, 'mode=' + encodeURIComponent(UI.getModulation())];
+        if (UI.getUnderlying()) parts.push('under=' + encodeURIComponent(UI.getUnderlying()));
+        // never include the magic key
+        return window.location.origin + window.location.pathname + '#' + parts.join(',');
+    }
+    async function copyLink(trigger) {
+        const link = shareLink();
+        try { await navigator.clipboard.writeText(link); }
+        catch (error) {
+            // clipboard needs https or localhost; show the link to copy by hand
+            window.prompt('Copy this link:', link); return;
+        }
+        const text = trigger.textContent; trigger.textContent = 'Link copied';
+        window.setTimeout(() => { trigger.textContent = text; }, 1500);
+    }
+    function formatFrequency(value) {
+        return value >= 1e6 ? (value / 1e6).toFixed(value % 1000 ? 4 : 3) + ' MHz' : (value / 1e3).toFixed(value % 1000 ? 2 : 0) + ' kHz';
+    }
+    function saveHistory() {
+        try { localStorage.setItem('k2aam_dock_history', JSON.stringify(history)); } catch (e) { /* storage blocked */ }
+    }
+    // Called every tick: a frequency counts once it has stayed put for 2 s.
+    function trackHistory() {
+        if (pendingTune || typeof UI === 'undefined' || !UI.getDemodulator()) return;
+        const value = Math.round(UI.getFrequency()), mode = UI.getModulation();
+        if (!value) return;
+        const key = value + '/' + mode;
+        if (!historyCandidate || historyCandidate.key !== key) { historyCandidate = {key, value, mode, underlying: UI.getUnderlying()}; historyQuiet = 0; return; }
+        if (++historyQuiet !== 4) return;
+        const here = history[historyPos];
+        if (here && Math.abs(here.value - value) < 500 && here.mode === mode) return;
+        // a new frequency after going Back drops the entries ahead of it, like a browser
+        history = history.slice(historyPos).filter(h => Math.abs(h.value - value) >= 500 || h.mode !== mode);
+        history.unshift({value, mode, underlying: historyCandidate.underlying});
+        history = history.slice(0, HISTORY_MAX); historyPos = 0;
+        saveHistory(); renderHistory();
+    }
+    function goHistory(pos) {
+        const entry = history[pos];
+        if (!entry) return;
+        historyPos = pos;
+        historyCandidate = {key: entry.value + '/' + entry.mode, value: entry.value, mode: entry.mode, underlying: entry.underlying};
+        historyQuiet = 5; // already in the list; don't add it again
+        renderHistory();
+        safely(() => tuneTo(entry.value, entry.mode, entry.underlying));
+    }
+    function renderHistory() {
+        if (!refs.historyList) return;
+        refs.historyBack.disabled = historyPos >= history.length - 1;
+        refs.historyForward.disabled = historyPos <= 0;
+        refs.historyList.replaceChildren(...history.map((h, i) => {
+            const item = button(formatFrequency(h.value) + '  ' + (h.mode || '').toUpperCase(), () => goHistory(i), 'rd-history-item');
+            if (i === historyPos) item.setAttribute('aria-current', 'true');
+            return item;
+        }));
+        refs.historyEmpty.hidden = history.length > 0;
+    }
     function buildTune(main) {
         const frequency = group(main);
         frequency.classList.add('rd-frequency');
@@ -419,6 +498,17 @@
         refs.tuneCancel = button('Stop waiting', () => finishTune('Stopped waiting for receiver tuning.'));
         refs.tuneCancel.hidden = true;
         pop.node.append(refs.tuneFeedback, refs.tuneCancel);
+        const nav = group(pop.node); nav.classList.add('rd-history-nav');
+        refs.historyBack = button('‹ Back', () => goHistory(historyPos + 1));
+        refs.historyForward = button('Forward ›', () => goHistory(historyPos - 1));
+        const share = button('Copy link', () => safely(() => copyLink(share)));
+        share.title = 'Copy a link that opens this receiver on this frequency and mode';
+        nav.append(refs.historyBack, refs.historyForward, share);
+        pop.node.append(el('div', 'rd-menu-label', 'Recent'));
+        refs.historyEmpty = el('p', 'rd-note', 'Frequencies you stay on for a couple of seconds show up here.');
+        refs.historyList = el('div', 'rd-history');
+        pop.node.append(refs.historyEmpty, refs.historyList);
+        renderHistory();
         on(form, 'submit', async event => {
             event.preventDefault();
             if (pendingTune) return;
@@ -626,6 +716,26 @@
         });
         pop.node.append(refs.prop.node);
         on(pop.trigger, 'click', () => { if (popup === pop.node) refs.prop.show(); });
+        refs.toolbar.append(pop.trigger);
+    }
+    // DX spots list from the optional k2aam_spots plugin.
+    function buildSpots() {
+        const spots = Plugins.k2aam_spots;
+        if (refs.spots || !refs.toolbar || !spots || !spots._script_loaded || typeof spots.create !== 'function') return;
+        const pop = popover('spots', 'DX spots', 'Spots ▴');
+        pop.node.classList.add('ks-popover');
+        refs.spots = spots.create({ tune: (hz, mode) => safely(() => tuneTo(hz, mode)) });
+        pop.node.append(refs.spots.node);
+        on(pop.trigger, 'click', () => { if (popup === pop.node) refs.spots.show(); });
+        refs.toolbar.append(pop.trigger);
+    }
+    // EQ panel from k2aam_nr, adopted the same way as the propagation panel.
+    function buildAudio() {
+        const nr = Plugins.k2aam_nr;
+        if (refs.audio || !refs.toolbar || !nr || !nr._script_loaded || typeof nr.createAudioPanel !== 'function') return;
+        const pop = popover('audio', 'Audio', 'Audio ▴');
+        refs.audio = nr.createAudioPanel();
+        pop.node.append(refs.audio.node);
         refs.toolbar.append(pop.trigger);
     }
     function buildMore(toolbar) {
@@ -948,6 +1058,8 @@
     function adoptPlugins() {
         adoptScreenshot();
         buildProp();
+        buildSpots();
+        buildAudio();
         const antenna = $('.rsp-antenna', panel);
         if (antenna && !refs.antennas.contains(antenna)) move(antenna, refs.antennas);
         const sectionIds = new Set(['openwebrx-section-modes', 'openwebrx-section-controls',
@@ -998,6 +1110,7 @@
     function tick() {
         if (!mounted) return;
         adoptPlugins();
+        trackHistory();
         syncDecoders();
         const nextSocket = typeof ws !== 'undefined' ? ws : null;
         if (socket !== nextSocket) {
@@ -1135,6 +1248,12 @@
         if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(reserveSpace); observer.observe(panel); }
         timer = window.setInterval(tick, 500);
         tick(); reserveSpace();
+        // A shared link outside the starting view: OpenWebRX ignores it, so tune it here.
+        if (startLink && !startLink.used) {
+            startLink.used = true;
+            if (Math.abs(UI.getFrequency() - startLink.value) > 1 || (startLink.mode && startLink.mode !== UI.getModulation()))
+                safely(() => tuneTo(startLink.value, startLink.mode, startLink.underlying));
+        }
     }
     plugin.init = async function () {
         if (mounted) return true;
@@ -1179,6 +1298,8 @@
         refs.decoderTabs = refs.decoderModes = refs.decoderSide = null;
         closePopup(false);
         if (refs.prop) { refs.prop.destroy(); refs.prop = null; }
+        if (refs.audio) { refs.audio.destroy(); refs.audio = null; }
+        if (refs.spots) { refs.spots.destroy(); refs.spots = null; }
         refs.toolbar = null;
         clearInterval(timer); if (observer) observer.disconnect();
         if (socket) socket.removeEventListener('message', receive);
@@ -1198,7 +1319,7 @@
         document.documentElement.style.removeProperty('--k2aam-dock-height');
         document.documentElement.style.removeProperty('--k2aam-dock-reserve');
         document.documentElement.style.removeProperty('--k2aam-decoder-height');
-        refs.screenshot = null; refs.actions = null;
+        refs.screenshot = null; refs.actions = null; refs.historyList = null;
         mounted = false; modeSignature = '';
         if (chatWasVisible) toggle_panel('openwebrx-panel-log', true);
         if (typeof waterfall_setup_done !== 'undefined' && waterfall_setup_done && typeof scale_canvas !== 'undefined' && scale_canvas && typeof scale_ctx !== 'undefined' && scale_ctx && typeof openwebrx_resize === 'function') openwebrx_resize();

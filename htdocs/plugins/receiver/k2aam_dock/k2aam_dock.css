@@ -306,3 +306,9 @@ body.k2aam-dock-active .openwebrx-dialog { z-index: 1300; }
 }
 /* A swipe on the dock must not rubber-band the whole page (iOS Safari). */
 html:has(body.k2aam-dock-active) { overscroll-behavior: none; }
+
+/* Tune popover: Back / Forward / Copy link and the recent list */
+.rd-history-nav { margin-top: 12px; flex-wrap: wrap; }
+.rd-history { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow: auto; }
+.rd-popover .rd-history-item { text-align: left; white-space: pre; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; }
+.rd-popover .rd-history-item[aria-current='true'] { border-color: #68d7f3; }
