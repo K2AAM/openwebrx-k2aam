@@ -1,7 +1,8 @@
 /*
  * ui_select: lets each visitor choose the receiver interface.
  *
- *   dock   K2AAM dock UI (plugin k2aam_dock)
+ *   dock     K2AAM Dock (plugin k2aam_dock)
+ *   console  K2AAM Console (same plugin, receiver strip and side decoder panel)
  *   rig    original RIG skin by SV1DOD / HB9ISH (plugin rig_skin)
  *   stock  unmodified OpenWebRX+ controls
  *
@@ -15,10 +16,10 @@
 (function () {
     'use strict';
     const plugin = Plugins.ui_select;
-    plugin._version = '0.1.0';
+    plugin._version = '0.2.0';
     plugin.no_css = true;
     const KEY = 'ui_select_choice';
-    const choices = [['dock', 'K2AAM Dock'], ['rig', 'RIG skin'], ['stock', 'Stock']];
+    const choices = [['dock', 'K2AAM Dock'], ['console', 'K2AAM Console'], ['rig', 'RIG skin'], ['stock', 'Stock']];
     const valid = name => choices.some(choice => choice[0] === name);
 
     function current() {
@@ -72,7 +73,11 @@
         } else {
             // A saved "rig" theme has no stylesheet unless the skin is loaded.
             if (typeof UI !== 'undefined' && UI.theme === 'rig') UI.setTheme('default');
-            if (active === 'dock') await Plugins.load('k2aam_dock');
+            if (active === 'dock' || active === 'console') {
+                // The console is the dock plugin in its second arrangement.
+                window.k2aam_dock_layout = active;
+                await Plugins.load('k2aam_dock');
+            }
         }
         return true;
     };

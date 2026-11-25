@@ -12,7 +12,7 @@ Do this only after the fork has run on a receiver you can reach (the OptiplexSDR
 ```bash
 ssh websdrv2
 tmux new -s owrx                                   # survives a dropped SSH session
-git clone --branch ale-scanlists https://github.com/K2AAM/openwebrx-k2aam.git
+git clone https://github.com/K2AAM/openwebrx-k2aam.git
 cd openwebrx-k2aam
 sudo contrib/migrate.sh check                      # read-only
 sudo contrib/migrate.sh install                    # add --no-ale to skip the ALE decoder

@@ -1,6 +1,6 @@
 /* Scoped to the dock so stock controls can be restored without a reload. */
 body.k2aam-dock-active { --rd-bg: #111c2c; --rd-surface: #1a293c; --rd-border: #34465c; --rd-text: #e7eff9; --rd-muted: #9fb3ca; --rd-cyan: #68d7f3; }
-body.k2aam-dock-active #webrx-page-container { height: calc(100% - var(--k2aam-dock-height, 142px) - var(--k2aam-decoder-height, 0px)); min-height: 0; }
+body.k2aam-dock-active #webrx-page-container { height: calc(100% - var(--k2aam-dock-reserve, var(--k2aam-dock-height, 142px)) - var(--k2aam-decoder-height, 0px)); min-height: 0; }
 body.k2aam-dock-active .openwebrx-waterfall-container { min-height: 0; }
 body.k2aam-dock-active #openwebrx-panel-receiver {
     position: fixed !important; inset: auto 0 0 0 !important; z-index: 1050 !important;
@@ -281,3 +281,34 @@ body.k2aam-dock-active [data-toggle-panel='openwebrx-panel-log'] {
     #k2aam-dock:not(.rd-expanded) .rd-actions,
     #k2aam-dock:not(.rd-expanded) > .rd-toolbar > :not(.rd-volume) { display: none !important; }
 }
+
+/* The adopted Screenshot control is a <div>; centre its label like the buttons beside it. */
+#k2aam-dock .rd-actions > .rd-button { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+#k2aam-dock .rd-actions { align-items: center; }
+.rd-popover .rd-bookmark-add { width: 100%; margin-bottom: 8px; min-height: 36px; }
+/* Native dialogs (add bookmark, search) open above the dock. */
+body.k2aam-dock-active .openwebrx-dialog { z-index: 1300; }
+
+/* Phone grab handle: swipe down or tap to leave only the frequency and meter. */
+#k2aam-dock .rd-handle { display: none; }
+@media (max-width: 620px), (max-height: 500px) {
+    /* Sits in the dock's top padding, clear of the step buttons at either end, so it adds no height. */
+    #k2aam-dock .rd-handle { display: block; position: absolute; top: 0; left: 25%; right: 25%; z-index: 1; height: 20px; padding: 0;
+        border: 0; background: none; color: inherit; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; }
+    #k2aam-dock .rd-handle::before { content: ''; display: block; width: 44px; height: 4px; margin: 3px auto 0; border-radius: 2px;
+        background: currentColor; opacity: .45; }
+    #k2aam-dock .rd-handle:focus-visible::before { opacity: 1; }
+    /* The doubled id outranks every per-control phone rule in both layouts. */
+    #k2aam-dock#k2aam-dock.rd-min > .rd-main > :not(.rd-tuning):not(.rd-frequency):not(.rd-meter),
+    #k2aam-dock#k2aam-dock.rd-min > .rd-toolbar > *,
+    #k2aam-dock#k2aam-dock.rd-min > .rd-footer { display: none !important; }
+    #k2aam-dock#k2aam-dock.rd-min { padding-bottom: 8px; }
+}
+/* A swipe on the dock must not rubber-band the whole page (iOS Safari). */
+html:has(body.k2aam-dock-active) { overscroll-behavior: none; }
+
+/* Tune popover: Back / Forward / Copy link and the recent list */
+.rd-history-nav { margin-top: 12px; flex-wrap: wrap; }
+.rd-history { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow: auto; }
+.rd-popover .rd-history-item { text-align: left; white-space: pre; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; }
+.rd-popover .rd-history-item[aria-current='true'] { border-color: #68d7f3; }

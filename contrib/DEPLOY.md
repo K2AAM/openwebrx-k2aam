@@ -17,7 +17,7 @@ that this fork depends on but does not build.
 
 ```bash
 sudo apt install git build-essential debhelper dh-python python3-all python3-setuptools
-git clone --branch ale-scanlists https://github.com/K2AAM/openwebrx-k2aam.git
+git clone https://github.com/K2AAM/openwebrx-k2aam.git
 cd openwebrx-k2aam
 dpkg-buildpackage -us -uc -b
 sudo apt install ../openwebrx_*_all.deb

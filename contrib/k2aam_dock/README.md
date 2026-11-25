@@ -6,6 +6,33 @@ the page and a shared decoder tray directly above it. Source: `htdocs/plugins/re
 Load it through the interface chooser (`Plugins.load('ui_select')`, the default in this fork) or on
 its own with `Plugins.load('k2aam_dock')`. It cannot run together with the RIG skin.
 
+## K2AAM Console
+
+The same plugin has a second arrangement, chosen as **K2AAM Console** in the Interface list (or
+`window.k2aam_dock_layout = 'console'` before loading the plugin directly). It uses every control
+described below, laid out differently:
+
+- **Receiver strip:** a large frequency readout with the S-meter directly beneath it, then mode,
+  filter width, step, bands and bookmarks, then profile, volume with mute, squelch and noise
+  reduction, each labelled.
+- **Side decoder panel:** on screens at least 900 px wide, decoder output opens as a full-height
+  panel on the right and the waterfall narrows beside it. **Side panel** in the panel header moves
+  decoders back below the waterfall. With no decoder running the waterfall has the full width.
+- **Decoder tabs:** FT8, Aircraft, Packet and ALE, limited to what the receiver offers. A tab
+  switches to the mode last used in that family; a family with several modes (HFDL, VDL2, ACARS,
+  ADS-B) shows a button for each; a family with more than five shows four and a **More** button.
+  CQ calls are highlighted in the FT8 list.
+- **Aircraft lists:** HFDL, VDL2, ACARS and UAT reports are two-line entries (time, flight and
+  aircraft, then position or message type, with free text beneath). ADS-B shows one entry per
+  aircraft with labelled altitude, speed and squawk. These are the native lists restyled, so the
+  flight, aircraft and map links work as before.
+- **Phone:** tuning, meter, mode/filter/step/bands, volume, squelch, noise reduction and profile
+  are always shown; recording, bookmarks, antenna and waterfall settings are behind **Controls**.
+
+The side panel narrows the page so the native waterfall and frequency scale stay aligned. That has
+been checked in the browser tests against a simulated receiver, not yet on a real one; if the
+waterfall and scale ever disagree, switch **Side panel** off.
+
 ## Controls
 
 - Frequency readout with native digit and wheel tuning. Click it, or **Tune**, to type a frequency

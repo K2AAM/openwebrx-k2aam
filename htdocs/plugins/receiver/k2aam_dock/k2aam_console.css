@@ -1,0 +1,199 @@
+/* K2AAM Console: a second arrangement of the dock's controls. Loaded after
+   k2aam_dock.css and scoped to body.k2aam-console, so the dock is unaffected. */
+body.k2aam-console.k2aam-dock-active {
+    --rd-bg: #0E1116; --rd-surface: #171C24; --rd-border: #323B4A; --rd-text: #E6EAF0; --rd-muted: #9AA7B8;
+    --rd-cyan: #F2B441; --rc-live: #5FD3A6; --rc-line: #252C38; --rc-panel: #12161D;
+    --rc-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+}
+
+/* Side decoder panel: the page narrows, so the waterfall and its scale stay in step. */
+body.k2aam-console.k2aam-side { width: calc(100% - var(--k2aam-decoder-width, 0px)); }
+body.k2aam-console .rd-decoder-tray { background: var(--rc-panel); border-top-color: var(--rc-line); }
+body.k2aam-console .rd-decoder-tray.rd-side {
+    top: 0; right: 0; left: auto; bottom: var(--k2aam-dock-height, 142px);
+    width: var(--k2aam-decoder-width, 400px); height: auto !important;
+    border-top: 0; border-left: 1px solid var(--rc-line); box-shadow: none;
+}
+body.k2aam-console .rd-side .rd-decoder-height,
+body.k2aam-console .rd-side [aria-controls='k2aam-decoder-body'] { display: none !important; }
+body.k2aam-console .rd-side .rd-decoder-body { flex-direction: column; overflow: auto; padding: 0 8px 8px; }
+body.k2aam-console .rd-side .rd-decoder-native { flex: 1 1 auto; height: auto !important; min-height: 120px; }
+body.k2aam-console .rd-side #openwebrx-panel-digimodes { flex: 0 0 72px !important; min-height: 72px; }
+body.k2aam-console .rd-decoder-native { background: transparent; }
+body.k2aam-console .rd-decoder-header { flex-wrap: wrap; }
+
+.rd-decoder-tabs { display: flex; gap: 4px; padding: 6px 12px 0; border-bottom: 1px solid var(--rc-line); flex: 0 0 auto; overflow-x: auto; }
+.rd-decoder-tabs .rd-tab {
+    background: transparent; color: var(--rd-muted); border: 0; border-bottom: 2px solid transparent;
+    padding: 9px 12px; min-height: 40px; font: inherit; cursor: pointer; white-space: nowrap;
+}
+.rd-decoder-tabs .rd-tab[aria-selected='true'] { color: var(--rd-text); border-bottom-color: var(--rc-live); font-weight: 600; }
+.rd-decoder-tabs .rd-tab:hover { color: var(--rd-text); }
+.rd-decoder-modes { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0; flex: 0 0 auto; }
+.rd-decoder-modes[hidden] { display: none !important; }
+.rd-decoder-modes .rd-family-mode[aria-pressed='true'] { color: #F2B441; border-color: #7A5A1C; background: #2A2110; }
+
+/* Decode lists */
+body.k2aam-console .rd-decoder-body .openwebrx-message-panel td,
+body.k2aam-console .rd-decoder-body .openwebrx-message-panel th { padding: 6px 6px; }
+body.k2aam-console .rd-decoder-body .openwebrx-message-panel td { font-family: var(--rc-mono); border-top: 1px solid #1D2430; }
+body.k2aam-console .rd-decoder-body .openwebrx-message-panel th { color: var(--rd-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+body.k2aam-console .rd-decoder-body tr.rd-cq { background: #173A2E; box-shadow: inset 3px 0 0 var(--rc-live); }
+body.k2aam-console .rd-decoder-body tr.rd-cq .message { color: var(--rc-live); font-weight: 600; }
+
+/* Aircraft: HFDL, VDL2, ACARS and UAT share one list. Each report is a
+   two-line entry: time, flight and aircraft, then position or message type.
+   The row's own colour (set by OpenWebRX+ per aircraft) shows as a stripe. */
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message thead { display: none; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message tbody tr {
+    display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; width: 100%; box-sizing: border-box;
+    border-top: 1px solid #1D2430;
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message tbody td {
+    background: var(--rc-panel); color: var(--rd-text); border-top: 0; padding: 7px 6px 2px;
+    min-width: 0; width: auto !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.timestamp {
+    grid-column: 1; grid-row: 1 / 3; color: var(--rd-muted); border-left: 4px solid transparent; background-clip: padding-box; overflow: visible; text-overflow: clip;
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.flight { grid-column: 2; grid-row: 1; font: 600 13px system-ui, -apple-system, sans-serif; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.aircraft { grid-column: 3; grid-row: 1; color: var(--rd-muted); text-align: right; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.data {
+    grid-column: 2 / 4; grid-row: 2; padding-top: 0; padding-bottom: 7px; color: var(--rd-muted);
+    font: 12px system-ui, -apple-system, sans-serif;
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.data:empty { padding-bottom: 5px; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.message {
+    grid-column: 1 / -1; padding: 0 6px 8px 92px; white-space: pre-wrap; overflow-wrap: anywhere;
+    color: #C7D0DC; font-size: 11px; line-height: 1.4;
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message tbody tr:has(> td.message) { border-top: 0; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message a { color: var(--rd-text); }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-hfdl-message td.data a { color: var(--rc-live); }
+
+/* ADS-B: one entry per aircraft, refreshed in place. */
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message thead { display: none; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 110px; column-gap: 10px; width: 100%;
+    box-sizing: border-box; padding: 7px 6px; border-top: 1px solid #1D2430;
+    background-color: transparent !important; color: var(--rd-text);
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message tbody td {
+    border-top: 0; padding: 0; min-width: 0; width: auto !important; text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.flight { grid-column: 1; grid-row: 1; font: 600 13px system-ui, -apple-system, sans-serif; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.aircraft { grid-column: 2; grid-row: 1; color: var(--rd-muted); }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.distance { grid-column: 3; grid-row: 1; text-align: right; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.altitude { grid-column: 1; grid-row: 2; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.speed { grid-column: 2; grid-row: 2; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.squawk { grid-column: 3; grid-row: 2; text-align: right; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.rssi { grid-column: 3; grid-row: 3; text-align: right; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.altitude,
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.speed,
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.squawk,
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.rssi { color: var(--rd-muted); font-size: 11px; padding-top: 3px; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.altitude:not(:empty)::before { content: 'Alt ft '; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.speed:not(:empty)::before { content: 'Speed kt '; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.squawk:not(:empty)::before { content: 'Squawk '; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.rssi:empty { display: none; }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message a { color: var(--rd-text); }
+body.k2aam-console .rd-decoder-body #openwebrx-panel-adsb-message td.distance a { color: var(--rc-live); }
+
+/* Receiver strip */
+body.k2aam-console #openwebrx-panel-receiver { border-top-color: var(--rc-line) !important; background: var(--rc-panel) !important; }
+body.k2aam-console #k2aam-dock { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; padding: 12px 20px 0; }
+body.k2aam-console #k2aam-dock > .rd-main,
+body.k2aam-console #k2aam-dock > .rd-toolbar { display: contents; }
+body.k2aam-console #k2aam-dock > .rd-footer,
+body.k2aam-console #k2aam-dock > .rd-message { flex: 1 1 100%; order: 30; }
+body.k2aam-console #k2aam-dock > .rd-footer { border-top-color: var(--rc-line); }
+
+body.k2aam-console .rd-tuning { order: 1; display: flex; flex-direction: column; gap: 8px; min-width: 300px; }
+body.k2aam-console .rd-tuning .rd-frequency { gap: 10px; align-items: center; }
+body.k2aam-console .rd-frequency .webrx-actual-freq {
+    font-family: var(--rc-mono) !important; font-size: 40px !important; line-height: 1; letter-spacing: 0;
+    color: #F2B441 !important;
+}
+body.k2aam-console .rd-tuning .rd-meter { flex: 0 0 auto; width: 100%; min-width: 0; }
+body.k2aam-console .rd-meter #openwebrx-smeter { height: 10px; }
+body.k2aam-console .rd-meter #openwebrx-smeter-db { font-family: var(--rc-mono); color: var(--rd-text); }
+
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-mode'] { order: 2; color: #F2B441; border-color: #7A5A1C; background: #2A2110; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-bandpass'] { order: 3; }
+body.k2aam-console #k2aam-dock .rd-step { order: 4; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-bands'] { order: 5; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-bookmarks'] { order: 6; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-prop'] { order: 7; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-spots'] { order: 8; }
+body.k2aam-console #k2aam-dock .rd-profiles { order: 10; margin-left: auto; flex: 0 1 240px; max-width: 300px; }
+body.k2aam-console #k2aam-dock .rd-volume { order: 11; }
+body.k2aam-console #k2aam-dock .rd-squelch { order: 12; }
+body.k2aam-console #k2aam-dock .rd-nr { order: 13; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-audio'] { order: 13; }
+body.k2aam-console #k2aam-dock .rd-actions { order: 14; margin-left: 0; }
+body.k2aam-console #k2aam-dock .rd-antennas { order: 15; margin-left: 0; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-waterfall'] { order: 16; }
+body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-button:not([aria-controls]) { order: 17; }
+body.k2aam-console #k2aam-dock .rd-button,
+body.k2aam-console #k2aam-dock .rd-antennas button { min-height: 40px; border-radius: 6px; }
+
+body.k2aam-console #k2aam-dock .rd-antennas { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+body.k2aam-console #k2aam-dock .rd-antennas > .rd-label { font-size: 11px; }
+
+/* Label above, control below */
+body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-group {
+    display: grid; grid-auto-flow: column; grid-template-rows: auto auto; align-items: center;
+    gap: 5px 8px; padding-right: 0; border-right: 0;
+}
+body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-group > .rd-label { grid-row: 1; grid-column: 1 / -1; font-size: 11px; width: 0; overflow: visible; }
+body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-group > :not(.rd-label) { grid-row: 2; }
+body.k2aam-console .rd-toolbar .openwebrx-slider-button { flex: 0 0 40px; width: 40px; height: 40px; }
+body.k2aam-console .rd-toolbar .openwebrx-panel-slider { width: 96px !important; }
+/* Dropdowns drawn to match the buttons; Safari otherwise keeps its own small control. */
+body.k2aam-console .rd-toolbar select,
+body.k2aam-console.k2aam-dock-active #openwebrx-panel-receiver select {
+    -webkit-appearance: none; appearance: none; box-sizing: border-box;
+    height: 40px; min-height: 40px; padding: 0 30px 0 12px; border-radius: 6px; line-height: 38px;
+    background-color: #0B1522; border: 1px solid var(--rd-border); color: var(--rd-text); font: inherit;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239AA7B8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+}
+body.k2aam-console .rd-toolbar .rd-step select { width: 96px !important; }
+body.k2aam-console .rd-toolbar .openwebrx-slider-button.highlighted { color: var(--rc-live); }
+
+@media (max-width: 1100px) {
+    body.k2aam-console .rd-frequency .webrx-actual-freq { font-size: 34px !important; }
+    body.k2aam-console #k2aam-dock .rd-profiles { margin-left: 0; }
+}
+
+/* Phone: frequency, meter, four tags, volume, squelch and NR, profile. The rest is behind Controls. */
+@media (max-width: 620px) {
+    body.k2aam-console #k2aam-dock { gap: 10px; padding: 10px 12px 0; align-items: center; }
+    body.k2aam-console .rd-tuning { flex: 1 1 100%; min-width: 0; }
+    body.k2aam-console .rd-tuning .rd-frequency { flex: 1 1 auto; }
+    body.k2aam-console .rd-frequency .webrx-actual-freq { font-size: 26px !important; }
+    body.k2aam-console .rd-tuning .rd-meter { order: 0; }
+    body.k2aam-console #k2aam-dock [aria-controls='rd-popover-mode'],
+    body.k2aam-console #k2aam-dock > .rd-toolbar > [aria-controls='rd-popover-bandpass'],
+    body.k2aam-console #k2aam-dock > .rd-toolbar > [aria-controls='rd-popover-bands'] { flex: 1 1 0; min-width: 0; min-height: 44px; display: inline-flex !important; justify-content: center; align-items: center; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-step { flex: 1 1 0; min-width: 0; display: flex !important; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-step > .rd-label,
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-step > .rd-button { display: none; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-step select { width: 100% !important; height: 44px; min-height: 44px; }
+    body.k2aam-console.k2aam-dock-active #openwebrx-panel-receiver .rd-profiles select { height: 44px; min-height: 44px; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-volume { order: 7; flex: 1 1 100%; display: flex !important; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-volume > .rd-label { display: none; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-volume .openwebrx-panel-slider { flex: 1 1 auto; width: auto !important; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-squelch,
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-nr { order: 8; flex: 1 1 40%; min-width: 0; display: flex !important; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-squelch > .rd-label,
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-nr > .rd-label { display: none; }
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-squelch .openwebrx-panel-slider,
+    body.k2aam-console #k2aam-dock > .rd-toolbar > .rd-nr .openwebrx-panel-slider { flex: 1 1 auto; width: auto !important; min-width: 0; }
+    body.k2aam-console .rd-toolbar .openwebrx-slider-button { flex: 0 0 44px; width: 44px; height: 44px; }
+    body.k2aam-console #k2aam-dock .rd-profiles { order: 9; flex: 1 1 60%; max-width: none; display: flex !important; }
+    body.k2aam-console #k2aam-dock .rd-profiles .rd-label { display: none; }
+    body.k2aam-console #k2aam-dock .rd-expand { order: 9; }
+    
+}

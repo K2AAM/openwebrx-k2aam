@@ -1,0 +1,24 @@
+/* K2AAM NR: the Notch and Beacon buttons */
+.k2aam-nr-buttons { display: inline-flex; align-items: center; gap: 6px; }
+.k2aam-nr-btn.disabled { opacity: .45; }
+
+/* Under the stock NR slider */
+.k2aam-nr-line .k2aam-nr-btn {
+    border: 0; font-family: inherit; font-size: 11px; line-height: 14px; padding: 3px 10px; margin: 0;
+}
+
+/* In the K2AAM Dock / Console noise reduction group. On phones the pair
+   drops onto its own row under the slider. */
+@media (max-width: 620px) {
+    #k2aam-dock .rd-nr { flex-wrap: wrap; }
+    /* keep the slider on the button's row instead of wrapping under it */
+    #k2aam-dock .rd-nr .openwebrx-panel-slider { flex: 1 1 0 !important; }
+    #k2aam-dock .rd-nr .k2aam-nr-buttons { flex: 1 1 100%; }
+    #k2aam-dock .rd-nr .k2aam-nr-btn { flex: 1 1 0; }
+}
+
+/* EQ panel (Audio popover in the K2AAM Dock / Console) */
+.k2aam-nr-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+.k2aam-nr-eq-row { display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; gap: 8px; margin: 8px 0; }
+.k2aam-nr-eq-value { text-align: right; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; color: #9fb3ca; }
+.k2aam-nr-ab { touch-action: none; user-select: none; -webkit-user-select: none; }

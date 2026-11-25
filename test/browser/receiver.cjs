@@ -19,7 +19,10 @@ const server=http.createServer((req,res)=>{
     if(url==='/'){data=html;type='text/html';}
     else if(url==='/static/plugins/receiver/init.js'){
         // The station file as shipped, minus third-party plugins fetched from the internet.
-data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').includes('community=1'))data=data.replace(/\/\/ BEGIN community plugins[\s\S]*?\/\/ END community plugins/,'');type='application/javascript';
+data=read('htdocs/plugins/receiver/init.js');
+        // Most of the suite exercises the dock, so the station's default-interface line is dropped unless asked for.
+        if(!(req.headers.referer||'').includes('station-default=1'))data=data.replace(/^window\.ui_select_config = .*$/m,'');
+        if(!(req.headers.referer||'').includes('community=1'))data=data.replace(/\/\/ BEGIN community plugins[\s\S]*?\/\/ END community plugins/,'');type='application/javascript';
     }
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.js'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.js');type='application/javascript';}
     else if(url==='/static/plugins/receiver/rsp_antenna/rsp_antenna.css'){data=read('htdocs/plugins/receiver/rsp_antenna/rsp_antenna.css');type='text/css';}
@@ -135,6 +138,7 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         check(await page.evaluate(()=>Plugins.ui_select.current()==='dock'&&!Plugins.rig_skin&&!Plugins.audio_filter),'dock is the default interface and the RIG skin is not loaded with it');
         check(await page.evaluate(()=>savedProfileNode===document.getElementById('openwebrx-sdr-profiles-listbox')&&savedFrequencyNode===document.querySelector('.webrx-actual-freq')),'native profile and frequency nodes retained');
         check(await page.locator('.rd-antennas button').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().height>=30&&n.scrollWidth<=n.clientWidth+1)),'antenna buttons are full height and labels fit');
+        check(await page.locator('#k2aam-dock .rd-antennas > .rd-label').count()===0,'the dock layout keeps its antenna buttons unlabelled');
         check(await page.locator('#openwebrx-panel-status').isHidden(),'floating status hidden');
         check(await page.locator('#openwebrx-panel-log').isHidden(),'chat is hidden in the dock');
         await page.evaluate(()=>toggle_panel('openwebrx-panel-log',true));
@@ -162,6 +166,9 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
                 const rects=nodes.map(n=>n.getBoundingClientRect());
                 return nodes.every((n,i)=>n.scrollWidth<=n.clientWidth+1&&rects[i].left>=0&&rects[i].right<=innerWidth+1)&&rects.every((r,i)=>!i||r.left>=rects[i-1].right+4);
             }),`Record, Screenshot and More fit without overlap without antenna controls ${width}×${height}`);
+            check(await page.evaluate(()=>{const shot=document.querySelector('#k2aam-dock #screenshot-btn'),record=document.querySelector('#k2aam-dock .openwebrx-record-button');
+                const range=document.createRange();range.selectNodeContents(shot);const text=range.getBoundingClientRect(),box=shot.getBoundingClientRect(),other=record.getBoundingClientRect();
+                return Math.abs((text.top+text.bottom)/2-(box.top+box.bottom)/2)<=1.5&&Math.abs((box.top+box.bottom)/2-(other.top+other.bottom)/2)<=1.5;}),`Screenshot label is centred in its button and level with Record ${width}×${height}`);
             if(width===1918)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-desktop.png')});
             if(width===390)await page.locator('#openwebrx-panel-receiver').screenshot({path:path.join(root,'test-results/rig-screenshot-fix-mobile.png')});
         }
@@ -621,18 +628,26 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
                 await page.locator('#k2aam-dock .rd-expand').click();
                 check(await page.locator('#k2aam-dock .openwebrx-record-button').isVisible()&&await page.locator('#k2aam-dock .rd-profiles select').isVisible(),'Controls reveals the full phone dock');
                 check(await page.evaluate(()=>document.querySelector('.rd-nudge')&&getComputedStyle(document.querySelector('.rd-expand')).display!=='none'),'toggle remains available when expanded');
+                await page.locator('#k2aam-dock .rd-handle').click();await page.waitForTimeout(450);
+                check(await page.evaluate(()=>{const h=q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height;
+                    return h('.rd-frequency .webrx-actual-freq')>0&&h('#openwebrx-smeter')>0&&h('[aria-controls="rd-popover-mode"]')===0&&h('.rd-volume')===0&&h('.rd-footer')===0&&document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height<=100;}),'the dock slides down to frequency and meter on a phone');
+                await page.locator('#k2aam-dock .rd-handle').click();await page.waitForTimeout(450);
+                check(await page.locator('#k2aam-dock .rd-profiles select').isVisible(),'and comes back with its controls');
                 await page.evaluate(()=>{UI.setModulation('ft8');
                     $('#openwebrx-panel-wsjt-message').wsjtMessagePanel().pushMessage({mode:'FT8',timestamp:Date.now(),db:-14,dt:.2,freq:7074000,msg:'CQ K2AAM FN33'});});
                 await page.waitForSelector('#k2aam-decoder-tray',{state:'visible'});
                 check(await page.locator('#openwebrx-digimode-canvas-container').isHidden(),'phone defaults to full-width decoder results with an optional IF view');
             }
             check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`no horizontal overflow ${width}×${height}`);
-            check(await page.evaluate(()=>document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().top+1),`waterfall reserved ${width}×${height}`);
+            // Phones lay the waterfall out for the slid-down dock; the raised dock covers its lower part.
+            check(await page.evaluate(()=>{const css=n=>parseInt(getComputedStyle(document.documentElement).getPropertyValue(n))||0,reserve=css('--k2aam-dock-reserve'),
+                dock=Math.ceil(document.querySelector('#openwebrx-panel-receiver').getBoundingClientRect().height),phone=innerWidth<=620||innerHeight<=500;
+                return reserve>0&&(phone?reserve<=dock&&reserve<=110:reserve===dock)&&document.querySelector('#webrx-page-container').getBoundingClientRect().bottom<=innerHeight-reserve-css('--k2aam-decoder-height')+1;}),`waterfall reserved ${width}×${height}`);
             check(await page.evaluate(()=>{
                 const tray=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
                 return tray.left>=0&&tray.right<=innerWidth+1&&tray.top>=document.getElementById('webrx-canvas-background').getBoundingClientRect().top-1&&
                     tray.bottom<=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().top+1&&
-                    document.getElementById('webrx-page-container').getBoundingClientRect().bottom<=tray.top+1;
+                    (innerWidth<=620||innerHeight<=500||document.getElementById('webrx-page-container').getBoundingClientRect().bottom<=tray.top+1);
             }),`decoder and main waterfall fit the viewport ${width}×${height}`);
             await page.locator('[aria-controls="rd-popover-mode"]').click();
             const bounds=await page.locator('#rd-popover-mode').boundingBox();
@@ -680,6 +695,10 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         await page.waitForFunction(()=>!UI.getDemodulatorPanel().centerFreqTimeout&&UI.getDemodulator());
         // Bookmarks
         await page.evaluate(()=>{bookmarks.bookmarks={server:[{name:'<img src=x onerror="window.bookmarkXss=1">W1AW',frequency:7047500,modulation:'cw'},{name:'40m FT8',frequency:7074000,modulation:'usb'}],local:[{name:'40m FT8',frequency:7074000,modulation:'usb'},{name:'broken'}]};});
+        await page.evaluate(()=>{window.bookmarkDialogs=0;bookmarks.showEditDialog=function(b){window.bookmarkDialogs++;window.bookmarkDialogArg=b;};});
+        await page.locator('[aria-controls="rd-popover-bookmarks"]').click();
+        await page.getByRole('button',{name:'Add bookmark here…',exact:true}).click();
+        check(await page.evaluate(()=>bookmarkDialogs===1&&bookmarkDialogArg===undefined&&document.getElementById('rd-popover-bookmarks').hidden),'Add bookmark opens the native bookmark dialog for the current frequency and closes the list');
         await page.locator('[aria-controls="rd-popover-bookmarks"]').click();
         await page.waitForFunction(()=>document.querySelectorAll('#rd-popover-bookmarks .rd-bookmark').length===2);
         check(await page.evaluate(()=>!document.querySelector('#rd-popover-bookmarks img')&&!window.bookmarkXss&&document.querySelector('#rd-popover-bookmarks .rd-bookmark-name').textContent.includes('<img')),'bookmark names render as text; duplicates and malformed entries are dropped');
@@ -724,6 +743,135 @@ data=read('htdocs/plugins/receiver/init.js');if(!(req.headers.referer||'').inclu
         await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.evaluate(()=>Plugins.ui_select.choose('dock'))]);
         await page.waitForSelector('body.k2aam-dock-active');
         check(await page.evaluate(()=>!Plugins.rig_skin&&!document.body.classList.contains('theme-rig')&&UI.theme!=='rig'),'returning to the dock unloads the RIG skin and clears its theme');
+        // The station's init.js makes the Console the default for a visitor with no saved choice.
+        const station=await browser.newPage({viewport:{width:1440,height:900}});
+        await station.goto(`http://127.0.0.1:${server.address().port}/?station-default=1`,{waitUntil:'domcontentloaded'});
+        await station.waitForSelector('body.k2aam-dock-active:not(.k2aam-dock-loading)');
+        check(await station.evaluate(()=>document.body.classList.contains('k2aam-console')&&Plugins.ui_select.current()==='console'&&localStorage.getItem('ui_select_choice')===null),'the shipped init.js makes K2AAM Console the default interface');
+        await Promise.all([station.waitForNavigation({waitUntil:'domcontentloaded'}),station.evaluate(()=>Plugins.ui_select.choose('dock'))]);
+        await station.waitForSelector('body.k2aam-dock-active:not(.k2aam-dock-loading)');
+        check(await station.evaluate(()=>!document.body.classList.contains('k2aam-console')&&Plugins.ui_select.current()==='dock'),'a visitor who picks another interface keeps it over the station default');
+        await station.close();
+        // Console layout: the same plugin arranged as a receiver strip with a side decoder panel.
+        const con=await browser.newPage({viewport:{width:1440,height:900}});const conErrors=[];
+        con.on('pageerror',e=>conErrors.push(e.message));
+        await con.addInitScript(()=>{try{localStorage.setItem('ui_select_choice','console');}catch(e){}});
+        await con.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'domcontentloaded'});
+        await con.waitForSelector('body.k2aam-console.k2aam-dock-active:not(.k2aam-dock-loading)');
+        await con.waitForSelector('.rd-antennas button');
+        check(await con.evaluate(()=>Plugins.k2aam_dock.layout==='console'&&document.getElementById('ui-select-listbox').value==='console'&&document.getElementById('ui-select-listbox').options.length===4),'Console is a fourth interface choice and loads the dock plugin in its console layout');
+        check(await con.evaluate(()=>{const f=document.querySelector('.rd-tuning .webrx-actual-freq').getBoundingClientRect(),m=document.querySelector('.rd-tuning .rd-meter #openwebrx-smeter').getBoundingClientRect();
+            return parseFloat(getComputedStyle(document.querySelector('.rd-tuning .webrx-actual-freq')).fontSize)>=34&&m.top>=f.bottom-1&&m.width>=200;}),'console shows a large frequency with the S-meter directly beneath it');
+        check(await con.evaluate(()=>['.rd-profiles select','.rd-volume .openwebrx-mute-button','#openwebrx-panel-volume','.rd-squelch .openwebrx-squelch-auto','.rd-squelch .openwebrx-squelch-slider','.rd-nr .openwebrx-nr-toggle','#openwebrx-panel-nr','.openwebrx-record-button','[aria-controls="rd-popover-bands"]'].every(q=>{const n=document.querySelector('#k2aam-dock '+q);if(!n)return false;const r=n.getBoundingClientRect();return r.width>0&&r.height>0&&r.left>=0&&r.right<=innerWidth+1;})),'receiver strip shows profile, mute, volume, squelch, noise reduction, record and bands');
+        check(await con.locator('#k2aam-dock .rd-nr .rd-label').innerText().then(t=>/noise reduction/i.test(t)),'noise reduction is labelled in the console strip');
+        check(await con.evaluate(()=>{const l=document.querySelector('#k2aam-dock .rd-antennas > .rd-label'),b=document.querySelector('#k2aam-dock .rd-antennas button');
+            return !!l&&/antenna/i.test(l.textContent)&&l.getBoundingClientRect().height>0&&l.getBoundingClientRect().bottom<=b.getBoundingClientRect().top+1;}),'the antenna buttons have an Antenna label above them');
+        check(await con.evaluate(()=>!document.body.classList.contains('k2aam-side')&&Math.abs(document.body.getBoundingClientRect().width-innerWidth)<2),'with no decoder running the waterfall keeps the full width');
+        await con.evaluate(()=>{UI.setModulation('ft8');const p=$('#openwebrx-panel-wsjt-message').wsjtMessagePanel();
+            p.pushMessage({mode:'FT8',timestamp:Date.now(),db:-4,dt:.2,freq:7074812,msg:'CQ K2AAM FN33'});
+            p.pushMessage({mode:'FT8',timestamp:Date.now(),db:-11,dt:.1,freq:7075340,msg:'K2AAM W1AW -09'});});
+        await con.waitForSelector('#k2aam-decoder-tray.rd-side',{state:'visible'});
+        await con.waitForTimeout(400);
+        const sideGeometry=await con.evaluate(()=>{const t=document.getElementById('k2aam-decoder-tray').getBoundingClientRect(),d=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect(),b=document.body.getBoundingClientRect(),w=document.getElementById('webrx-page-container').getBoundingClientRect();
+            return {trayLeft:Math.round(t.left),trayRight:Math.round(t.right),trayTop:Math.round(t.top),trayBottom:Math.round(t.bottom),dockTop:Math.round(d.top),dockWidth:Math.round(d.width),body:Math.round(b.width),page:Math.round(w.right),inner:innerWidth};});
+        check(sideGeometry.trayRight===sideGeometry.inner&&sideGeometry.trayTop===0&&Math.abs(sideGeometry.trayBottom-sideGeometry.dockTop)<=1&&sideGeometry.trayRight-sideGeometry.trayLeft>=340,'decoders open as a full-height panel on the right, above the strip '+JSON.stringify(sideGeometry));
+        check(Math.abs(sideGeometry.body-sideGeometry.trayLeft)<=1&&sideGeometry.page<=sideGeometry.trayLeft+1&&sideGeometry.dockWidth===sideGeometry.inner,'the waterfall narrows to make room for the panel and the strip stays full width');
+        check(await con.evaluate(()=>{const rows=[...document.querySelectorAll('#openwebrx-panel-wsjt-message tbody tr')];return rows.length===2&&rows[0].classList.contains('rd-cq')&&!rows[1].classList.contains('rd-cq');}),'CQ calls are highlighted in the FT8 list');
+        check(await con.locator('.rd-decoder-tabs .rd-tab').evaluateAll(tabs=>tabs.map(t=>t.textContent+':'+t.getAttribute('aria-selected')).join()==='FT8:true,Aircraft:false,Packet:false,ALE:false'),'decoder tabs list the families this receiver offers, with the current one selected');
+        check(await con.locator('#rd-popover-bandpass').count()===1&&await con.locator('[aria-controls="rd-popover-bandpass"]').innerText().then(t=>/^Filter \d/.test(t)),'the filter button shows the current filter width');
+        check(await con.evaluate(()=>['.rd-profiles select','.rd-step select'].every(q=>{const n=document.querySelector('#k2aam-dock '+q),c=getComputedStyle(n);return Math.round(n.getBoundingClientRect().height)===40&&c.appearance==='none'&&c.backgroundImage.includes('svg');})),'profile and step dropdowns are drawn at button height with their own arrow');
+        check(await con.evaluate(()=>{const c=getComputedStyle(document.querySelector('#openwebrx-panel-wsjt-message tbody tr.rd-cq'));return c.backgroundColor==='rgb(23, 58, 46)'&&c.boxShadow.includes('inset');}),'CQ rows carry a visible tint and edge marker');
+        check(await con.locator('.rd-decoder-modes .rd-family-more').count()===0,'a short mode family shows every mode with no More button');
+        await con.evaluate(()=>{['jt65','jt9','fst4'].forEach(m=>Modes.modes.push(new Mode({modulation:m,name:m.toUpperCase(),type:'digimode',squelch:false,underlying:['usb'],secondaryFft:true})));});
+        await con.waitForSelector('.rd-decoder-modes .rd-family-more');
+        check(await con.locator('.rd-decoder-modes .rd-family-mode').count()===4&&await con.locator('.rd-family-more').innerText()==='More','a long mode family shows four modes and a More button');
+        await con.locator('.rd-family-more').click();
+        check(await con.locator('.rd-decoder-modes .rd-family-mode').count()===7&&await con.locator('.rd-family-more').innerText()==='Fewer','More reveals the rest of the family');
+        await con.locator('.rd-family-more').click();
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-desktop.png')});
+        await con.locator('.rd-decoder-tabs .rd-tab',{hasText:'Aircraft'}).click();
+        await con.waitForFunction(()=>UI.getModulation()==='hfdl');
+        await con.waitForFunction(()=>document.querySelectorAll('.rd-decoder-modes .rd-family-mode').length>=4);
+        check(await con.locator('.rd-decoder-modes .rd-family-mode').evaluateAll(n=>n.map(b=>b.textContent+':'+b.getAttribute('aria-pressed')).join()).then(t=>t.startsWith('HFDL:true')&&t.includes('ACARS:false')&&t.includes('ADSB:false')),'the Aircraft tab switches to HFDL and offers the other aircraft modes');
+        await con.evaluate(()=>{const h=$('#openwebrx-panel-hfdl-message').hfdlMessagePanel();
+            h.pushMessage({mode:'HFDL',timestamp:Date.now(),flight:'UAL123',aircraft:'N12345',lat:41.5,lon:-52.25,altitude:36000,type:'Position',color:'#3366CC'});
+            h.pushMessage({mode:'HFDL',timestamp:Date.now(),flight:'DAL45',icao:'A1B2C3',type:'Logon request',message:'FREE TEXT <b>NOT MARKUP</b>'});});
+        await con.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-hfdl-message tbody tr').length===3);
+        const report=await con.evaluate(()=>{const rows=[...document.querySelectorAll('#openwebrx-panel-hfdl-message tbody tr')],r=rows[0],q=c=>r.querySelector('td.'+c).getBoundingClientRect();
+            const time=q('timestamp'),flight=q('flight'),craft=q('aircraft'),data=q('data'),note=rows[2].querySelector('td.message');
+            return {grid:getComputedStyle(r).display,height:Math.round(r.getBoundingClientRect().height),firstLine:Math.abs(flight.top-craft.top)<2&&flight.left>=time.right-1&&craft.right>flight.right,
+                secondLine:data.top>=flight.bottom-1&&Math.abs(data.left-flight.left)<2,timeFits:r.querySelector('td.timestamp').scrollWidth<=r.querySelector('td.timestamp').clientWidth+1,stripe:getComputedStyle(r).backgroundColor,ink:getComputedStyle(r.querySelector('td.flight')).color,
+                position:r.querySelector('td.data').textContent.includes('41.5000'),noteWide:note.getBoundingClientRect().width>250,noteText:note.textContent,noteMarkup:!!note.querySelector('b'),
+                header:getComputedStyle(document.querySelector('#openwebrx-panel-hfdl-message thead')).display};});
+        check(report.grid==='grid'&&report.header==='none'&&report.firstLine&&report.secondLine&&report.timeFits&&report.height>=36&&report.height<=64,'an aircraft report is a two-line entry: time, flight and aircraft, then position '+JSON.stringify(report));
+        check(report.stripe==='rgb(51, 102, 204)'&&report.ink==='rgb(230, 234, 240)'&&report.position,'the per-aircraft colour shows as an edge stripe and the text stays readable');
+        check(report.noteWide&&report.noteText==='FREE TEXT <b>NOT MARKUP</b>'&&!report.noteMarkup,'free text sits under its report and is shown as text');
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-aircraft.png')});
+        await con.locator('.rd-decoder-modes .rd-family-mode',{hasText:'ADSB'}).click();
+        await con.waitForFunction(()=>UI.getModulation()==='adsb');
+        await con.evaluate(()=>$('#openwebrx-panel-adsb-message').adsbMessagePanel().pushMessage({mode:'ADSB-LIST',aircraft:[
+            {flight:'UAL123',icao:'A1B2C3',altitude:36000,speed:450,course:90,squawk:'1200',rssi:-12},{flight:'DAL45',aircraft:'N54321',altitude:12000,vspeed:-800,speed:280}]}));
+        await con.waitForFunction(()=>document.querySelectorAll('#openwebrx-panel-adsb-message tbody tr').length===2);
+        const adsb=await con.evaluate(()=>{const r=document.querySelector('#openwebrx-panel-adsb-message tbody tr'),c=getComputedStyle(r);
+            return {grid:c.display,fill:c.backgroundColor,ink:getComputedStyle(r.querySelector('td.flight')).color,alt:getComputedStyle(r.querySelector('td.altitude'),'::before').content,
+                below:r.querySelector('td.altitude').getBoundingClientRect().top>=r.querySelector('td.flight').getBoundingClientRect().bottom-1,panel:getComputedStyle(document.getElementById('openwebrx-panel-adsb-message')).display};});
+        check(adsb.grid==='grid'&&adsb.fill==='rgba(0, 0, 0, 0)'&&adsb.ink==='rgb(230, 234, 240)'&&adsb.alt.includes('Alt')&&adsb.below&&adsb.panel!=='none','ADS-B lists one readable entry per aircraft with labelled altitude and speed '+JSON.stringify(adsb));
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-adsb.png')});
+        await con.locator('.rd-decoder-modes .rd-family-mode',{hasText:'ACARS'}).click();
+        await con.waitForFunction(()=>UI.getModulation()==='acars');
+        await con.locator('.rd-decoder-tabs .rd-tab',{hasText:'FT8'}).click();
+        await con.waitForFunction(()=>UI.getModulation()==='ft8');
+        await con.locator('.rd-decoder-tabs .rd-tab',{hasText:'Aircraft'}).click();
+        await con.waitForFunction(()=>UI.getModulation()==='acars');
+        check(true,'a tab returns to the mode last used in that family');
+        await con.getByRole('button',{name:'Side panel',exact:true}).click();
+        await con.waitForTimeout(300);
+        check(await con.evaluate(()=>{const t=document.getElementById('k2aam-decoder-tray'),r=t.getBoundingClientRect(),d=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect();
+            return !t.classList.contains('rd-side')&&!document.body.classList.contains('k2aam-side')&&Math.abs(document.body.getBoundingClientRect().width-innerWidth)<2&&r.left===0&&Math.abs(r.bottom-d.top)<=1&&r.top>100;}),'Side panel can be switched off, putting decoders back below the waterfall at full width');
+        await con.getByRole('button',{name:'Side panel',exact:true}).click();
+        await con.waitForSelector('#k2aam-decoder-tray.rd-side');
+        await con.evaluate(()=>UI.setModulation('usb'));
+        await con.waitForFunction(()=>!document.body.classList.contains('k2aam-side')&&document.getElementById('k2aam-decoder-tray').hidden);
+        check(await con.evaluate(()=>Math.abs(document.body.getBoundingClientRect().width-innerWidth)<2),'leaving a decoder mode gives the waterfall its full width back');
+        await con.evaluate(()=>UI.setModulation('ft8'));
+        await con.setViewportSize({width:390,height:844});await con.waitForTimeout(500);
+        const conPhone=await con.evaluate(()=>({side:document.body.classList.contains('k2aam-side'),overflow:document.documentElement.scrollWidth>innerWidth+1,dock:Math.round(document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height),
+            shown:['.rd-nudge','#openwebrx-panel-volume','.rd-squelch .openwebrx-squelch-slider','#openwebrx-panel-nr','.rd-profiles select','[aria-controls="rd-popover-mode"]','[aria-controls="rd-popover-bandpass"]','[aria-controls="rd-popover-bands"]','.rd-step select','.rd-expand'].filter(q=>{const n=document.querySelector('#k2aam-dock '+q),r=n&&n.getBoundingClientRect();return !(r&&r.width>0&&r.height>0&&r.left>=0&&r.right<=innerWidth+1);}),
+            hidden:['.openwebrx-record-button','[aria-controls="rd-popover-waterfall"]'].filter(q=>document.querySelector('#k2aam-dock '+q).getBoundingClientRect().height>0)}));
+        check(!conPhone.side&&!conPhone.overflow&&conPhone.shown.length===0&&conPhone.hidden.length===0,'phone console shows tuning, tags, volume, squelch, noise reduction and profile, with the rest behind Controls '+JSON.stringify(conPhone));
+        check(conPhone.dock<=340,'phone console strip is at most 340 px tall ('+conPhone.dock+')');
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone-up.png')});
+        const pageBefore=await con.evaluate(()=>Math.round(document.getElementById('webrx-page-container').getBoundingClientRect().height));
+        // Sliding the strip down leaves the frequency and meter only.
+        const stripState=()=>con.evaluate(()=>{const h=q=>{const n=document.querySelector('#k2aam-dock '+q);return n?Math.round(n.getBoundingClientRect().height):-1;};
+            return {min:document.getElementById('k2aam-dock').classList.contains('rd-min'),dock:Math.round(document.getElementById('openwebrx-panel-receiver').getBoundingClientRect().height),
+                reserved:parseInt(getComputedStyle(document.documentElement).getPropertyValue('--k2aam-dock-height')),freq:h('.rd-frequency .webrx-actual-freq'),meter:h('#openwebrx-smeter'),
+                rest:['[aria-controls="rd-popover-mode"]','#openwebrx-panel-volume','.rd-profiles select','.rd-expand','.rd-footer'].map(h).reduce((a,b)=>a+b,0),handle:h('.rd-handle'),
+                expanded:document.querySelector('#k2aam-dock .rd-handle').getAttribute('aria-expanded'),saved:localStorage.getItem('k2aam_dock_minimized')};});
+        await con.locator('#k2aam-dock .rd-handle').click();await con.waitForTimeout(450);
+        const slid=await stripState();
+        check(await con.evaluate(h=>Math.abs(document.getElementById('webrx-page-container').getBoundingClientRect().height-h)<=1,pageBefore),'sliding the strip does not resize the waterfall, so nothing has to be redrawn');
+        check(slid.min&&slid.dock<=110&&slid.freq>0&&slid.meter>0&&slid.rest===0&&slid.handle>=16&&slid.expanded==='false'&&slid.saved==='true'&&Math.abs(slid.reserved-slid.dock)<=1,'tapping the handle slides the phone strip down to frequency and meter '+JSON.stringify(slid));
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone-down.png')});
+        check(await con.evaluate(()=>{const w=document.getElementById('webrx-page-container').getBoundingClientRect(),t=document.getElementById('k2aam-decoder-tray').getBoundingClientRect();
+            return Math.abs(w.bottom-t.top)<=2;}),'with the strip down the waterfall reaches the decoder list');
+        const grab=await con.locator('#k2aam-dock .rd-handle').boundingBox();
+        await con.mouse.move(grab.x+grab.width/2,grab.y+grab.height/2);await con.mouse.down();await con.mouse.move(grab.x+grab.width/2,grab.y-60,{steps:4});await con.mouse.up();await con.waitForTimeout(450);
+        const raised=await stripState();
+        check(!raised.min&&raised.rest>0&&raised.expanded==='true'&&Math.abs(raised.dock-conPhone.dock)<=2&&Math.abs(raised.reserved-raised.dock)<=1,'swiping the handle up brings the strip back '+JSON.stringify(raised));
+        const grab2=await con.locator('#k2aam-dock .rd-handle').boundingBox();
+        await con.mouse.move(grab2.x+grab2.width/2,grab2.y+grab2.height/2);await con.mouse.down();await con.mouse.move(grab2.x+grab2.width/2,grab2.y+70,{steps:4});await con.mouse.up();await con.waitForTimeout(450);
+        check((await stripState()).min,'swiping the handle down hides the controls');
+        await con.locator('#k2aam-dock .rd-handle').click();await con.waitForTimeout(450);
+        check(!(await stripState()).min,'a tap brings them back');
+        await con.setViewportSize({width:1280,height:800});await con.waitForTimeout(300);
+        check(await con.evaluate(()=>getComputedStyle(document.querySelector('#k2aam-dock .rd-handle')).display==='none'),'the handle is a phone control only');
+        await con.setViewportSize({width:390,height:844});await con.waitForTimeout(400);
+        check(await con.evaluate(()=>{const b=document.getElementById('k2aam-decoder-body').getBoundingClientRect(),d=document.getElementById('openwebrx-panel-receiver').getBoundingClientRect(),r=document.querySelector('#openwebrx-panel-wsjt-message tbody tr').getBoundingClientRect();
+            return b.height>=60&&b.bottom<=d.top+1&&r.bottom<=d.top+1&&r.height>0;}),'on a phone the decode list keeps room below the tabs and above the strip');
+        await con.screenshot({path:path.join(root,'test-results/k2aam-console-phone.png')});
+        check(conErrors.length===0,'no browser errors in the console layout: '+conErrors.join('; '));
+        await con.close();
         // Community plugins: pinned local copies, loaded alongside the dock.
         const community=await browser.newPage({viewport:{width:1440,height:900}});const communityErrors=[],outside=[];
         community.on('pageerror',e=>communityErrors.push(e.message));
