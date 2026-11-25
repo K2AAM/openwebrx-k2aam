@@ -19,8 +19,8 @@ On the receiver, set `PLUGINS` to the running install's
       | sudo tar xz -C "$PLUGINS" --strip-components=4 \
         "openwebrx-k2aam-$BRANCH/htdocs/plugins/receiver/k2aam_nr"
 
-Use `BRANCH=k2aam-nr` until that branch is merged. Running the same command
-again updates the plugin.
+Running the same command again updates the plugin. (This fork's own `.deb`
+already includes and loads it; this is for other OpenWebRX+ installs.)
 
 Then add this line to `init.js` in that folder (once) and reload the page:
 
