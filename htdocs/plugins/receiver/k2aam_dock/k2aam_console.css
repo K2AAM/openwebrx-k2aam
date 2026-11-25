@@ -124,6 +124,7 @@ body.k2aam-console #k2aam-dock [aria-controls='rd-popover-bandpass'] { order: 3;
 body.k2aam-console #k2aam-dock .rd-step { order: 4; }
 body.k2aam-console #k2aam-dock [aria-controls='rd-popover-bands'] { order: 5; }
 body.k2aam-console #k2aam-dock [aria-controls='rd-popover-bookmarks'] { order: 6; }
+body.k2aam-console #k2aam-dock [aria-controls='rd-popover-prop'] { order: 7; }
 body.k2aam-console #k2aam-dock .rd-profiles { order: 10; margin-left: auto; flex: 0 1 240px; max-width: 300px; }
 body.k2aam-console #k2aam-dock .rd-volume { order: 11; }
 body.k2aam-console #k2aam-dock .rd-squelch { order: 12; }

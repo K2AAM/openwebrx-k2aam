@@ -3,7 +3,7 @@
 (function () {
     'use strict';
     const plugin = Plugins.k2aam_dock;
-    plugin._version = '0.9.1';
+    plugin._version = '0.9.2';
     // "console" is a second arrangement of the same controls: one receiver
     // strip, with decoders in a side panel on wide screens. Chosen by ui_select.
     const layout = window.k2aam_dock_layout === 'console' ? 'console' : 'dock';
@@ -612,6 +612,22 @@
             d.setBandpass({low_cut: low, high_cut: high}); closePopup(true);
         }), 'rd-primary'));
     }
+    // Propagation panel from the optional k2aam_prop plugin, which may finish
+    // loading after the dock mounts; adoptPlugins() retries until it is there.
+    function buildProp() {
+        const prop = Plugins.k2aam_prop;
+        if (refs.prop || !refs.toolbar || !prop || !prop._script_loaded || typeof prop.create !== 'function') return;
+        const pop = popover('prop', 'Propagation', 'Prop ▴');
+        pop.node.classList.add('kp-popover');
+        refs.prop = prop.create({
+            tune: (f, mode) => Promise.resolve(manualControl(() => prop.tune(f, mode))),
+            message: text => message(text),
+            visible: () => popup === pop.node
+        });
+        pop.node.append(refs.prop.node);
+        on(pop.trigger, 'click', () => { if (popup === pop.node) refs.prop.show(); });
+        refs.toolbar.append(pop.trigger);
+    }
     function buildMore(toolbar) {
         const pop = popover('more', 'More controls'); toolbar.append(pop.trigger); refs.more = pop.node; refs.moreTrigger = pop.trigger;
         const actions = group(pop.node);
@@ -931,6 +947,7 @@
     }
     function adoptPlugins() {
         adoptScreenshot();
+        buildProp();
         const antenna = $('.rsp-antenna', panel);
         if (antenna && !refs.antennas.contains(antenna)) move(antenna, refs.antennas);
         const sectionIds = new Set(['openwebrx-section-modes', 'openwebrx-section-controls',
@@ -1082,6 +1099,7 @@
         move($('.openwebrx-nr-toggle', panel), nr); move($('#openwebrx-panel-nr'), nr);
         const step = group(toolbar, 'Step'); step.classList.add('rd-step'); move($('#openwebrx-tuning-step-listbox'), step);
         step.append(button('−', () => safely(() => manualControl(() => tuneBySteps(-1)))), button('+', () => safely(() => manualControl(() => tuneBySteps(1)))));
+        refs.toolbar = toolbar;
         buildBands(toolbar); buildBookmarks(toolbar); buildBandpass(toolbar); buildWaterfall(toolbar);
         const nativeRecord = $('.openwebrx-record-button', panel);
         refs.record = button('● Record', () => safely(() => { UI.toggleRecording(); tick(); }));
@@ -1160,6 +1178,8 @@
         all('.rd-seen').forEach(row => row.classList.remove('rd-seen', 'rd-cq'));
         refs.decoderTabs = refs.decoderModes = refs.decoderSide = null;
         closePopup(false);
+        if (refs.prop) { refs.prop.destroy(); refs.prop = null; }
+        refs.toolbar = null;
         clearInterval(timer); if (observer) observer.disconnect();
         if (socket) socket.removeEventListener('message', receive);
         socket = null; cpu = clients = null;

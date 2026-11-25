@@ -6,6 +6,8 @@ window.ui_select_config = { default: 'console' };
 Plugins.load('ale');         // ALE panel and scanner; stays hidden unless the server has the ALE backend
 Plugins.load('ui_select');   // interface chooser: K2AAM Dock, RIG skin or stock controls
 Plugins.load('rsp_antenna'); // RSPdx antenna buttons; hidden unless /etc/openwebrx/antenna-switcher.json enables a device
+Plugins.load('k2aam_nr');    // browser-side noise reduction; drives the NR button/slider, adds Notch and Beacon
+Plugins.load('k2aam_prop');  // propagation panel (NOAA band conditions, NCDXF beacons, MUF map); shown as Prop in the Console
 
 // BEGIN community plugins
 // Pinned local copies of plugins from the 0xAF collection; see community/PROVENANCE.md.
