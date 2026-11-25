@@ -37,7 +37,7 @@
  * Enable with:  Plugins.load('k2aam_nr');  in plugins/receiver/init.js
  */
 
-Plugins.k2aam_nr._version = 0.7;
+Plugins.k2aam_nr._version = 0.71;
 
 // Modes where the audio is already clean, is music, or is not audio at all.
 // Everything is bypassed in these.
@@ -182,6 +182,7 @@ Plugins.k2aam_nr.getState = function () {
     var voiceOk = !bypass && !mode.secondary && this.VOICE_MODES.indexOf(mode.primary) >= 0;
     return {
         mode: mode.secondary || mode.primary,
+        decoder: mode.secondary,
         bypass: bypass,
         notchAvailable: notchOk,
         wanted: { enabled: !!UI.nrEnabled, notch: this.notch, profile: this.profile },
@@ -305,7 +306,7 @@ Plugins.k2aam_nr._apply = function () {
     var msg = { enabled: s.enabled, strength: s.strength, notch: s.notch, profile: s.profile,
                 tilt: s.tilt, bypass: s.ab };
     var key = JSON.stringify(msg) + s.bypass + s.notchAvailable + this.notch + s.peak + s.peakAvailable
-        + s.voiceAvailable + this.profile + this.voiceState;
+        + s.voiceAvailable + this.profile + this.voiceState + s.decoder;
     var rebuilt = this.placeButtons();
     if (key === this.sent && !rebuilt) return;
 
@@ -324,14 +325,16 @@ Plugins.k2aam_nr._apply = function () {
             ? 'Auto-notch: remove steady tones (heterodynes)'
             : (this.profile === 'beacon'
                 ? 'Auto-notch is off in beacon mode, where steady tones are the signal'
-                : 'Auto-notch works in SSB, AM and FM voice modes only'));
+                : decoderNote || 'Auto-notch works in SSB, AM and FM voice modes only'));
+    // why a button is unavailable: a decoder on top of the mode says so plainly
+    var decoderNote = s.decoder ? 'Off while the ' + s.decoder.toUpperCase() + ' decoder is running' : '';
     $('.k2aam-nr-peak')
         .toggleClass('highlighted rd-active', s.peak)
         .attr('aria-pressed', String(s.peak))
         .toggleClass('disabled', !s.peakAvailable)
         .attr('title', s.peakAvailable
             ? 'CW peak: narrow filter on the CW tone, follows the passband centre'
-            : 'CW peak works in CW mode only');
+            : decoderNote || 'CW peak works in CW mode only');
     var voiceOn = this.profile === 'voice';
     $('.k2aam-nr-voice')
         .toggleClass('highlighted rd-active', voiceOn && s.voiceAvailable)
@@ -339,7 +342,7 @@ Plugins.k2aam_nr._apply = function () {
         .toggleClass('disabled', !s.voiceAvailable)
         .text(voiceOn && this.voiceState === 'loading' ? 'Voice…' : 'Voice')
         .attr('title', !s.voiceAvailable
-            ? 'Voice (AI) noise reduction works in SSB and AM only'
+            ? decoderNote || 'Voice (AI) noise reduction works in SSB and AM only'
             : /^failed/.test(this.voiceState)
                 ? 'Voice (AI) could not start (' + this.voiceState.slice(8) + '); the normal NR is used instead'
                 : 'Voice: AI speech noise reduction (RNNoise). Removes everything that is not speech. The NR slider blends in the original audio.');
