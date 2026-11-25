@@ -121,3 +121,22 @@ speech-like signal with a heterodyne, a noise level step, stereo, and CPU cost.
   -15 dB of treble noise reduction becomes -8 dB; the low end is unchanged.
 
 All of this runs in the listener's browser and changes only their audio.
+
+## Voice (0.7)
+
+**Voice** swaps the spectral NR for RNNoise 0.2, a small neural network
+trained to keep speech and remove everything else. It is offered in USB, LSB,
+AM and SAM only; elsewhere the normal NR runs. It removes CW, carriers and
+data signals by design, so leave it off for those.
+
+- The NR slider blends: far left is 40% RNNoise and 60% original audio, far
+  right is RNNoise only. Blending keeps weak speech from turning gated or
+  robotic. The two are time-aligned, so the mix does not sound hollow.
+- `rnnoise.wasm` (about 1.5 MB) is downloaded the first time a listener turns
+  Voice on, not on page load. It needs a browser with WebAssembly SIMD (any
+  current Chrome, Edge, Firefox or Safari 16.4+); without it the normal NR
+  stays in charge and the button's tooltip says why.
+- Notch, A/B, EQ and per-mode memory work with it. Adds about 30 ms of delay
+  and a few percent of one CPU core.
+
+How it was built and tested: `contrib/rnnoise/README.md`.

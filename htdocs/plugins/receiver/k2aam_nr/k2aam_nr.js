@@ -20,6 +20,8 @@
  *     Notch   removes steady tones (heterodynes) in voice modes
  *     Beacon  longer analysis, digs out weak steady carriers
  *     Peak    CW only: narrow filter on the CW tone (follows the passband)
+ *     Voice   AI speech noise reduction (RNNoise 0.2) in SSB and AM; the
+ *             slider blends in the original audio. Downloaded on first use.
  *     A/B     hold to hear the audio without NR, Notch or Peak
  *
  * The EQ panel is built by createAudioPanel(); the K2AAM Dock shows it as
@@ -35,7 +37,7 @@
  * Enable with:  Plugins.load('k2aam_nr');  in plugins/receiver/init.js
  */
 
-Plugins.k2aam_nr._version = 0.6;
+Plugins.k2aam_nr._version = 0.7;
 
 // Modes where the audio is already clean, is music, or is not audio at all.
 // Everything is bypassed in these.
@@ -50,6 +52,11 @@ Plugins.k2aam_nr.NOTCH_MODES = ['usb', 'lsb', 'am', 'sam', 'nfm'];
 
 // NR settings are remembered per family of modes.
 Plugins.k2aam_nr.FAMILIES = { usb: 'ssb', lsb: 'ssb', cw: 'cw', am: 'am', sam: 'am', nfm: 'fm' };
+// Modes where the Voice (RNNoise) engine is offered: speech only.
+Plugins.k2aam_nr.VOICE_MODES = ['usb', 'lsb', 'am', 'sam'];
+
+Plugins.k2aam_nr.PROFILES = ['normal', 'beacon', 'voice'];
+
 // Modes where the NR goes easier on the treble (see the worklet's tilt).
 Plugins.k2aam_nr.TILT_MODES = ['am', 'sam'];
 
@@ -76,8 +83,9 @@ Plugins.k2aam_nr.init = function () {
     self.sent = '';
     self.lastEnabled = null;
     self.notch = LS.has('k2aam_nr_notch') ? LS.loadBool('k2aam_nr_notch') : false;
-    self.profile = LS.has('k2aam_nr_profile') && LS.loadStr('k2aam_nr_profile') === 'beacon'
-        ? 'beacon' : 'normal';
+    var savedProfile = LS.has('k2aam_nr_profile') ? LS.loadStr('k2aam_nr_profile') : 'normal';
+    self.profile = self.PROFILES.indexOf(savedProfile) >= 0 ? savedProfile : 'normal';
+    self.voiceState = '';   // '', 'loading', 'ready' or 'failed: reason'
     var eq = self.load('k2aam_nr_eq', [0, 0, 0]);
     self.eq = Array.isArray(eq) && eq.length === 3 ? eq.map(Number) : [0, 0, 0];
     self.peak = self.load('k2aam_nr_peak', false) === true;
@@ -139,6 +147,7 @@ Plugins.k2aam_nr.attach = function () {
         treble.connect(dry); dry.connect(sink);
         treble.connect(bp); bp.connect(wet); wet.connect(sink);
         self.node = node;
+        node.port.onmessage = function (m) { self.voiceMessage(m.data || {}); };
         self.filters = { bass: bass, mid: mid, treble: treble, dry: dry, bp: bp, wet: wet, ctx: ctx };
         self.applyEq();
         self.takeOver();
@@ -170,6 +179,7 @@ Plugins.k2aam_nr.getState = function () {
     var bypass = this.BYPASS_MODES.indexOf(mode.primary) >= 0;
     var notchOk = !bypass && !mode.secondary && this.profile !== 'beacon'
         && this.NOTCH_MODES.indexOf(mode.primary) >= 0;
+    var voiceOk = !bypass && !mode.secondary && this.VOICE_MODES.indexOf(mode.primary) >= 0;
     return {
         mode: mode.secondary || mode.primary,
         bypass: bypass,
@@ -177,7 +187,8 @@ Plugins.k2aam_nr.getState = function () {
         wanted: { enabled: !!UI.nrEnabled, notch: this.notch, profile: this.profile },
         enabled: !!UI.nrEnabled && !bypass,
         notch: this.notch && notchOk,
-        profile: this.profile,
+        profile: this.profile === 'voice' && !voiceOk ? 'normal' : this.profile,
+        voiceAvailable: voiceOk,
         strength: Math.min(1, Math.max(0, (level + 20) / 40)),
         level: level,
         family: this.FAMILIES[mode.secondary ? '' : mode.primary] || null,
@@ -261,7 +272,7 @@ Plugins.k2aam_nr.followFamily = function (s) {
     var saved = s.family && this.memory[s.family];
     if (!saved) return false;
     this.notch = !!saved.notch;
-    this.profile = saved.profile === 'beacon' ? 'beacon' : 'normal';
+    this.profile = this.PROFILES.indexOf(saved.profile) >= 0 ? saved.profile : 'normal';
     if (typeof saved.level === 'number') UI.setNR(saved.level);
     if (!!UI.nrEnabled !== !!saved.enabled) UI.toggleNR(!!saved.enabled);
     return true;
@@ -274,7 +285,7 @@ Plugins.k2aam_nr.setNotch = function (on) {
 };
 
 Plugins.k2aam_nr.setProfile = function (profile) {
-    this.profile = profile === 'beacon' ? 'beacon' : 'normal';
+    this.profile = this.PROFILES.indexOf(profile) >= 0 ? profile : 'normal';
     LS.save('k2aam_nr_profile', this.profile);
     this.apply();
 };
@@ -290,9 +301,11 @@ Plugins.k2aam_nr._apply = function () {
     var s = this.getState();
     if (this.followFamily(s)) s = this.getState();
     this.applyPeak(s);
+    if (s.enabled && s.profile === 'voice' && !this.voiceState) this.loadVoice();
     var msg = { enabled: s.enabled, strength: s.strength, notch: s.notch, profile: s.profile,
                 tilt: s.tilt, bypass: s.ab };
-    var key = JSON.stringify(msg) + s.bypass + s.notchAvailable + this.notch + s.peak + s.peakAvailable;
+    var key = JSON.stringify(msg) + s.bypass + s.notchAvailable + this.notch + s.peak + s.peakAvailable
+        + s.voiceAvailable + this.profile + this.voiceState;
     var rebuilt = this.placeButtons();
     if (key === this.sent && !rebuilt) return;
 
@@ -319,6 +332,17 @@ Plugins.k2aam_nr._apply = function () {
         .attr('title', s.peakAvailable
             ? 'CW peak: narrow filter on the CW tone, follows the passband centre'
             : 'CW peak works in CW mode only');
+    var voiceOn = this.profile === 'voice';
+    $('.k2aam-nr-voice')
+        .toggleClass('highlighted rd-active', voiceOn && s.voiceAvailable)
+        .attr('aria-pressed', String(voiceOn))
+        .toggleClass('disabled', !s.voiceAvailable)
+        .text(voiceOn && this.voiceState === 'loading' ? 'Voice…' : 'Voice')
+        .attr('title', !s.voiceAvailable
+            ? 'Voice (AI) noise reduction works in SSB and AM only'
+            : /^failed/.test(this.voiceState)
+                ? 'Voice (AI) could not start (' + this.voiceState.slice(8) + '); the normal NR is used instead'
+                : 'Voice: AI speech noise reduction (RNNoise). Removes everything that is not speech. The NR slider blends in the original audio.');
     $('.k2aam-nr-ab').toggleClass('highlighted rd-active', s.ab).attr('aria-pressed', String(s.ab));
     $('.k2aam-nr-beacon')
         .toggleClass('highlighted rd-active', s.profile === 'beacon')
@@ -355,6 +379,7 @@ Plugins.k2aam_nr.placeButtons = function () {
         '<div class="k2aam-nr-buttons" data-where="' + where + '">'
       + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-notch">Notch</button>'
       + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-beacon">Beacon</button>'
+      + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-voice">Voice</button>'
       + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-peak">Peak</button>'
       + '<button type="button" class="' + kind + ' k2aam-nr-btn k2aam-nr-ab" title="Hold to hear the audio without NR, Notch or Peak">A/B</button>'
       + '</div>'
@@ -369,6 +394,11 @@ Plugins.k2aam_nr.placeButtons = function () {
         self.setProfile(self.profile === 'beacon' ? 'normal' : 'beacon');
     });
     $box.find('.k2aam-nr-peak').on('click', function () { self.setPeak(!self.peak); });
+    $box.find('.k2aam-nr-voice').on('click', function () {
+        self.setProfile(self.profile === 'voice' ? 'normal' : 'voice');
+        // turning Voice on implies wanting NR on
+        if (self.profile === 'voice' && !UI.nrEnabled) UI.toggleNR(true);
+    });
     // A/B is held: pointer or touch down to compare, up (or leaving) to return.
     // Space or Enter held on the focused button does the same.
     var ab = $box.find('.k2aam-nr-ab');
@@ -451,4 +481,37 @@ Plugins.k2aam_nr.createAudioPanel = function () {
             node.remove();
         }
     };
+};
+
+// Fetch and compile rnnoise.wasm (about 1 MB) the first time Voice is used,
+// then hand the compiled module to the audio worklet.
+Plugins.k2aam_nr.loadVoice = function () {
+    var self = this;
+    if (!self.node || self.voiceState) return;
+    self.voiceState = 'loading';
+    var url = self.base + 'rnnoise.wasm?v=' + self._version;
+    fetch(url).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.arrayBuffer();
+    }).then(function (bytes) {
+        return WebAssembly.compile(bytes);
+    }).then(function (module) {
+        self.node.port.postMessage({ rnnoise: module });
+    }).catch(function (e) {
+        self.voiceMessage({ voiceError: e && e.message ? e.message : String(e) });
+    });
+};
+
+Plugins.k2aam_nr.voiceMessage = function (d) {
+    if (d.voiceReady) {
+        this.voiceState = 'ready';
+        console.info('k2aam_nr: Voice (RNNoise 0.2) ready.');
+    } else if (d.voiceError) {
+        this.voiceState = 'failed: ' + d.voiceError;
+        console.error('k2aam_nr: Voice could not start: ' + d.voiceError);
+    } else {
+        return;
+    }
+    this.sent = '';
+    this.apply();
 };

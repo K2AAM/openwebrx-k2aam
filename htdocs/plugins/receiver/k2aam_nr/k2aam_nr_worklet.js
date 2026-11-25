@@ -450,6 +450,114 @@ SpectralNR.BIAS_BEACON = 1.99;
 // profile opens it. Lower digs deeper but leaves more faint steady tones.
 SpectralNR.BEACON_THRESHOLD = 0.4;
 
+
+// ---------------------------------------------------------------------------
+// Voice (AI) engine: RNNoise 0.2 (xiph.org, BSD), compiled to WebAssembly as
+// rnnoise.wasm. Speech-only: it keeps voices and removes everything else,
+// including CW and carriers, so the plugin only offers it in SSB and AM.
+// RNNoise works on 10 ms frames at 48 kHz; other rates are resampled.
+// ---------------------------------------------------------------------------
+
+// Streaming cubic (Catmull-Rom) resampler, mono. Radio audio is narrow, so
+// this is clean enough between 44.1, 48 and 96 kHz.
+class Resampler {
+    constructor(from, to) {
+        this.identity = from === to;
+        this.step = from / to;
+        this.pos = 0;
+        this.h0 = this.h1 = this.h2 = this.h3 = 0;
+    }
+    // Feed one input sample; calls emit(y) for each output sample it completes.
+    push(x, emit) {
+        if (this.identity) { emit(x); return; }
+        this.h0 = this.h1; this.h1 = this.h2; this.h2 = this.h3; this.h3 = x;
+        var p0 = this.h0, p1 = this.h1, p2 = this.h2, p3 = this.h3;
+        while (this.pos < 1) {
+            var t = this.pos;
+            emit(p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0))));
+            this.pos += this.step;
+        }
+        this.pos -= 1;
+    }
+}
+
+class VoiceNR {
+    constructor(module, sampleRate) {
+        // The module needs no host functions for normal operation; stub
+        // whatever WASI imports the C library pulled in.
+        var imports = {};
+        WebAssembly.Module.imports(module).forEach(function (imp) {
+            if (imp.kind !== 'function') return;
+            (imports[imp.module] = imports[imp.module] || {})[imp.name] = function () { return 0; };
+        });
+        var e = new WebAssembly.Instance(module, imports).exports;
+        if (e._initialize) e._initialize();
+        if (!e.k_init()) throw new Error('RNNoise could not start');
+        this.e = e;
+        this.frame = e.k_frame();
+        this.inPtr = e.k_in() >> 2;
+        this.outPtr = e.k_out() >> 2;
+        this.sampleRate = sampleRate;
+        this.up = new Resampler(sampleRate, 48000);
+        this.down = new Resampler(48000, sampleRate);
+        // dry copy at 48 kHz, delayed to line up with RNNoise's output
+        this.delay = VoiceNR.DELAY;
+        this.dryRing = new Float32Array(4096);
+        this.dryPos = 0;
+        this.frameBuf = new Float32Array(this.frame);
+        this.fill = 0;
+        // output queue at the context rate; pre-filled so a whole frame can
+        // be computed before the first samples are needed
+        this.q = new Float32Array(16384);
+        this.qr = 0;
+        this.qw = Math.ceil(this.frame * sampleRate / 48000) + 8;
+        this.mix = 1;
+        this.bypass = false;
+        this.vad = 0;
+        var self = this;
+        this._toFrame = function (y) { self.addSample(y); };
+        this._toQueue = function (y) { self.q[self.qw & 16383] = y; self.qw++; };
+    }
+
+    reset() {
+        this.e.k_reset();
+        this.dryRing.fill(0); this.fill = 0;
+        this.qr = 0; this.qw = Math.ceil(this.frame * this.sampleRate / 48000) + 8; this.q.fill(0);
+    }
+
+    addSample(x) {
+        this.dryRing[this.dryPos & 4095] = x;
+        this.dryPos++;
+        this.frameBuf[this.fill++] = x;
+        if (this.fill < this.frame) return;
+        this.fill = 0;
+        var heap = new Float32Array(this.e.memory.buffer), n = this.frame, i;
+        for (i = 0; i < n; i++) heap[this.inPtr + i] = this.frameBuf[i] * 32768;
+        this.vad = this.e.k_process();
+        heap = new Float32Array(this.e.memory.buffer);
+        var mix = this.bypass ? 0 : this.mix, start = this.dryPos - n - this.delay;
+        for (i = 0; i < n; i++) {
+            var wet = heap[this.outPtr + i] / 32768;
+            var dry = this.dryRing[(start + i) & 4095];
+            this.down.push(mix * wet + (1 - mix) * dry, this._toQueue);
+        }
+    }
+
+    // mono in, mono out, `length` samples
+    process(input, output, length) {
+        for (var i = 0; i < length; i++) this.up.push(input[i], this._toFrame);
+        for (i = 0; i < length; i++) {
+            output[i] = this.qr < this.qw ? this.q[this.qr & 16383] : 0;
+            if (this.qr < this.qw) this.qr++;
+        }
+        // keep the indices small
+        if (this.qr > 1 << 30) { this.qw -= this.qr; this.qr = 0; }
+    }
+}
+// RNNoise 0.2's own delay at 48 kHz: one frame of overlap plus one frame of
+// look-ahead. Measured by cross-correlating its output with the input.
+VoiceNR.DELAY = 960;
+
 // ---------------------------------------------------------------------------
 // Audio worklet wrapper
 // ---------------------------------------------------------------------------
@@ -465,17 +573,41 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         }
 
         build() {
-            this.nr = new SpectralNR(sampleRate, this.state.profile);
+            this.nr = new SpectralNR(sampleRate, this.state.profile === 'beacon' ? 'beacon' : 'normal');
             for (var key in this.tuned) this.nr[key] = this.tuned[key];
             this.nr.setStrength(this.state.strength);
             this.nr.nrOn = this.state.enabled;
             this.nr.notchOn = this.state.notch;
             this.nr.setTilt(this.state.tilt);
             this.nr.bypass = this.state.bypass;
+            this.voiceSettings();
+        }
+
+        voiceSettings() {
+            var st = this.state;
+            if (this.voice) {
+                this.voice.mix = 0.4 + 0.6 * st.strength;   // strength blends in the original
+                this.voice.bypass = st.bypass;
+            }
+            // while the voice engine runs, the spectral NR only does the notch
+            if (this.nr) this.nr.nrOn = st.enabled && !this.voiceActive();
+        }
+
+        voiceActive() {
+            return !!this.voice && this.state.enabled && this.state.profile === 'voice';
         }
 
         update(d) {
             var st = this.state, wasActive = st.enabled || st.notch;
+            if (d.rnnoise) {
+                try {
+                    this.voice = new VoiceNR(d.rnnoise, sampleRate);
+                    this.port.postMessage({ voiceReady: true });
+                } catch (e) {
+                    this.voice = null;
+                    this.port.postMessage({ voiceError: String(e && e.message || e) });
+                }
+            }
             if (d.tune) {
                 // live tuning from the browser console, see README
                 var ok = ['ddAlphaBase', 'ddAlphaSlope', 'steadyThreshold', 'steadyClamp',
@@ -492,14 +624,17 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
             if (typeof d.notch === 'boolean') st.notch = d.notch;
             if (typeof d.tilt === 'number') { st.tilt = d.tilt; this.nr.setTilt(d.tilt); }
             if (typeof d.bypass === 'boolean') { st.bypass = d.bypass; this.nr.bypass = d.bypass; }
-            if ((d.profile === 'normal' || d.profile === 'beacon') && d.profile !== st.profile) {
+            if ((d.profile === 'normal' || d.profile === 'beacon' || d.profile === 'voice') && d.profile !== st.profile) {
+                var wasBeacon = st.profile === 'beacon';
                 st.profile = d.profile;
-                this.build();
+                if (wasBeacon !== (st.profile === 'beacon')) this.build();
+                if (this.voice && st.profile === 'voice') this.voice.reset();
             }
             // start clean when switching in, so stale audio is not replayed
             if (!wasActive && (st.enabled || st.notch)) this.nr.reset();
             this.nr.nrOn = st.enabled;
             this.nr.notchOn = st.notch;
+            this.voiceSettings();
         }
 
         process(inputs, outputs) {
@@ -521,7 +656,14 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
             if (inR && outR) {
                 for (i = 0; i < n; i++) if (inL[i] !== inR[i]) { stereo = true; break; }
             }
-            if (stereo) {
+            if (this.voiceActive()) {
+                // mono speech path: RNNoise, then the spectral stage for the notch
+                if (!this.tmp || this.tmp.length < n) this.tmp = new Float32Array(n);
+                this.voice.process(inL, this.tmp, n);
+                if (this.state.notch) this.nr.process(this.tmp, null, outL, null, n);
+                else outL.set(this.tmp.subarray(0, n));
+                if (outR) outR.set(outL);
+            } else if (stereo) {
                 this.nr.process(inL, inR, outL, outR, n);
             } else {
                 this.nr.process(inL, null, outL, null, n);
@@ -535,5 +677,5 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { SpectralNR: SpectralNR, FFT: FFT };
+    module.exports = { SpectralNR: SpectralNR, FFT: FFT, VoiceNR: VoiceNR, Resampler: Resampler };
 }
