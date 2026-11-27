@@ -34,6 +34,26 @@ class GzipMixin(object):
         return gzip.compress(content)
 
 
+class ContentTagMixin(object):
+    """
+    Serve by content: an ETag of the bytes, and max-age=0 so the browser (and any proxy such as a
+    Cloudflare tunnel) keeps its copy but asks before each use. Dates don't work for this: a package
+    build stamps every file with the same date (the changelog's), so after an update "not modified
+    since" would stay true and the old file would be kept indefinitely.
+    """
+    def send_by_content(self, data, content_type):
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        etag = '"{0}"'.format(hashlib.sha1(data).hexdigest())
+        offered = self.handler.headers["If-None-Match"] if "If-None-Match" in self.handler.headers else ""
+        # A proxy that recompresses the file may mark the tag as weak (W/"...")
+        known = [tag.strip()[2:] if tag.strip().startswith("W/") else tag.strip() for tag in offered.split(",")]
+        if etag in known:
+            self.send_response("", code=304, content_type=None, max_age=0, headers={"ETag": etag})
+            return
+        self.send_response(data, content_type=content_type, max_age=0, headers={"ETag": etag})
+
+
 class ModificationAwareController(Controller, metaclass=ABCMeta):
     @abstractmethod
     def getModified(self, file):
@@ -55,7 +75,7 @@ class ModificationAwareController(Controller, metaclass=ABCMeta):
         return True
 
 
-class AssetsController(GzipMixin, ModificationAwareController, metaclass=ABCMeta):
+class AssetsController(GzipMixin, ContentTagMixin, ModificationAwareController, metaclass=ABCMeta):
     def getModified(self, file):
         return datetime.fromtimestamp(os.path.getmtime(self.getFilePath(file)), timezone.utc)
 
@@ -67,47 +87,17 @@ class AssetsController(GzipMixin, ModificationAwareController, metaclass=ABCMeta
         pass
 
     def serve_file(self, file, content_type=None):
+        # checked by content, not by date (see ContentTagMixin)
         try:
-            # Plugin files are checked by content, not by date. A package build
-            # stamps every file with the same date (the changelog's), so after
-            # an update "not modified since" would stay true and browsers would
-            # keep the old plugin indefinitely.
-            if str(file).startswith("plugins"):
-                return self.serve_plugin_file(file, content_type)
-
-            modified = self.getModified(file)
-
-            if not self.wasModified(file):
-                self.send_response("", code=304)
-                return
-
             f = self.openFile(file)
             data = f.read()
             f.close()
-
-            if content_type is None:
-                (content_type, encoding) = mimetypes.guess_type(self.getFilePath(file))
-            self.send_response(data, content_type=content_type, last_modified=modified, max_age=3600)
         except FileNotFoundError:
             self.send_response("file not found", code=404)
-
-    def serve_plugin_file(self, file, content_type=None):
-        f = self.openFile(file)
-        data = f.read()
-        f.close()
-
-        etag = '"{0}"'.format(hashlib.sha1(data).hexdigest())
-        offered = self.handler.headers["If-None-Match"] if "If-None-Match" in self.handler.headers else ""
-        # A proxy that recompresses the file may mark the tag as weak (W/"...")
-        known = [tag.strip()[2:] if tag.strip().startswith("W/") else tag.strip() for tag in offered.split(",")]
-        if etag in known:
-            self.send_response("", code=304, content_type=None, max_age=0, headers={"ETag": etag})
             return
-
         if content_type is None:
             (content_type, encoding) = mimetypes.guess_type(self.getFilePath(file))
-        # max-age=0: the browser keeps its copy but asks before each use
-        self.send_response(data, content_type=content_type, max_age=0, headers={"ETag": etag})
+        self.send_by_content(data, content_type)
 
     def indexAction(self):
         filename = self.request.matches.group(1)
@@ -141,7 +131,7 @@ class AprsSymbolsController(AssetsController):
         return self.path + file
 
 
-class CompiledAssetsController(GzipMixin, ModificationAwareController):
+class CompiledAssetsController(GzipMixin, ContentTagMixin, ModificationAwareController):
     profiles = {
         "receiver.js": [
             "lib/chroma.min.js",
@@ -235,16 +225,11 @@ class CompiledAssetsController(GzipMixin, ModificationAwareController):
         files = CompiledAssetsController.profiles[profileName]
         files = [importlib.resources.files("htdocs").joinpath(f) for f in files]
 
-        modified = self.getModified(files)
-
-        if not self.wasModified(files):
-            self.send_response("", code=304)
-            return
-
         contents = [self.getContents(f) for f in files]
 
+        # checked by content, not by date (see ContentTagMixin)
         (content_type, encoding) = mimetypes.guess_type(profileName)
-        self.send_response("\n".join(contents), content_type=content_type, last_modified=modified, max_age=3600)
+        self.send_by_content("\n".join(contents), content_type)
 
     def getContents(self, file):
         with open(file) as f:

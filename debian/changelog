@@ -1,3 +1,10 @@
+openwebrx (1.2.131+k2aam1) bullseye jammy; urgency=low
+
+  * K2AAM fork build: own version so apt never treats stock 1.2.131 as the same package.
+  * Content-based ETag caching for static and compiled assets.
+
+ -- Adam <k2aam@optiplexsdr.lan>  Fri, 27 Nov 2026 12:24:23 -0500
+
 openwebrx (1.2.131) bullseye jammy; urgency=low
 
   * Switched DRM and DAB decoders to stereo.
